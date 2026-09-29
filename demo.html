@@ -31,7 +31,21 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1p
 nav.tabs{display:flex;gap:4px;padding:0 8px 8px;overflow-x:auto;scrollbar-width:none}
 nav.tabs button{flex:1 0 auto;border:0;background:transparent;padding:8px 10px;border-radius:10px;cursor:pointer;color:var(--muted);font-weight:600;min-height:36px}
 nav.tabs button[aria-current="page"]{background:var(--accent);color:var(--accent-ink)}
-main{padding:12px;max-width:980px;margin:0 auto}
+main{padding:12px;max-width:1500px;margin:0 auto}
+.cols{display:block}
+@media(min-width:1000px){.cols{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px;align-items:start}.cols>div>.card:first-child{margin-top:0}}
+.item{border-left-width:4px}
+.item.st-done{border-left-color:var(--ok)} .item.st-pulled{border-left-color:var(--info)} .item.st-todo{border-left-color:var(--warn)} .item.st-bad{border-left-color:var(--bad)} .item.st-off{border-left-color:var(--line)}
+.badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;margin-left:4px}
+nav.tabs button[aria-current="page"] .badge{background:var(--accent-ink);color:var(--accent)}
+.next{display:flex;gap:10px;align-items:center;background:var(--surface2);border-radius:10px;padding:10px 12px;font-weight:600}
+.next .n{font-size:18px}
+.dayhead{display:flex;align-items:baseline;gap:8px;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.dayhead b{font-size:14px} .dayhead span{color:var(--muted);font-size:12px}
+.linkbtn{background:none;border:0;color:var(--accent);font-weight:600;cursor:pointer;padding:4px 2px;font-size:13px}
+.linkbtn:hover{text-decoration:underline}
+#modal .sheet.wide{max-width:980px}
+iframe.print{width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;margin-bottom:12px}
 .card h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .card h2 .sp{flex:1}
@@ -185,7 +199,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'' };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
@@ -382,7 +396,7 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
@@ -429,7 +443,7 @@ function derive(){
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '' };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -501,13 +515,29 @@ function todayModel(day){
   return items;
 }
 function schedGaps(){
-  const T = todaySerial(); const mon = T - ((dowOf(T) + 6) % 7), sun = mon + 6; const lim = T + CFG.schedDays;
-  const wk = new Set(S.A.filter(a => a.active && a.date >= mon && a.date <= sun).map(a => a.mrn));
-  const A = [...wk].map(mrn => ({ mrn, thru: scheduledThru(mrn), p: S.byMrn.get(mrn) })).filter(x => x.thru == null || x.thru < lim).sort((a, b) => (a.thru ?? 0) - (b.thru ?? 0));
-  const inA = new Set(A.map(x => x.mrn));
-  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && !inA.has(p.mrn) && scheduledThru(p.mrn) == null).map(p => ({ mrn: p.mrn, p, last: Math.max(0, ...S.A.filter(a => a.mrn === p.mrn && a.status === 'Kept').map(a => a.date)) || null }));
-  return { A, B, lim };
+  const T = todaySerial(), end = T + 6, lim = T + CFG.schedDays;
+  const first = new Map();
+  for (const a of S.A){ if (!a.active || a.date < T || a.date > end) continue; const f = first.get(a.mrn); if (!f || a.date < f.date || (a.date === f.date && (a.time ?? 0) < (f.time ?? 0))) first.set(a.mrn, a); }
+  const groups = new Map();
+  for (const [mrn, a] of first){ const thru = scheduledThru(mrn); if (thru != null && thru >= lim) continue; if (!groups.has(a.date)) groups.set(a.date, []); groups.get(a.date).push({ mrn, a, thru, p: S.byMrn.get(mrn) }); }
+  const days = [...groups.entries()].sort((x, y) => x[0] - y[0]).map(([d, list]) => ({ d, list: list.sort((x, y) => (x.a.time ?? 0) - (y.a.time ?? 0)) }));
+  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && scheduledThru(p.mrn) == null).map(p => ({ mrn: p.mrn, p, last: Math.max(0, ...S.A.filter(a => a.mrn === p.mrn && a.status === 'Kept').map(a => a.date)) || null }));
+  const count = days.reduce((n, g) => n + g.list.length, 0) + B.length;
+  return { days, B, lim, count };
 }
+function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip">Protocol exp —</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">Protocol exp ${fmtD(p.protoExp, 'full')}</span>`; }
+function schedHTML(){
+  const g = schedGaps(); const T = todaySerial();
+  const row = x => `<div class="item st-todo"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
+    <div class="line row"><span class="chip warn">${x.thru ? 'Booked thru ' + fmtD(x.thru) : 'Nothing booked after'}</span>${protoChip(x.p, g.lim)}</div>${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`;
+  return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
+    <div class="small muted">Patients seen in the next 7 days who aren’t booked through ${fmtD(g.lim, 'full')}, grouped by the day they’re in clinic — schedule them out at that visit.</div>
+    ${g.days.length ? g.days.map(d => `<div class="dayhead"><b>${d.d === T ? 'Today' : DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.length}</span></div><div class="list">${d.list.map(row).join('')}</div>`).join('') : '<div class="msg ok">Everyone seen this week is booked through the next ' + CFG.schedDays + ' days.</div>'}
+    <div class="dayhead"><b>No appointments</b><span>Active or Pending Start · ${g.B.length}</span></div>
+    ${g.B.length ? `<div class="list">${g.B.map(x => `<div class="item st-bad"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip bad">${x.last ? 'Last seen ' + fmtD(x.last) : 'Never seen'}</span>${protoChip(x.p, g.lim)}</div>${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">None.</div>'}
+  </div>`;
+}
+const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 async function savePull(){
   const keep = {}; const T = todaySerial();
   for (const [d, v] of Object.entries(S.pull)){ const s = fromIso(d); if (s != null && s >= T - 14 && Object.keys(v).length) keep[d] = v; }
@@ -613,69 +643,130 @@ function render(){
   const act = document.activeElement; const keepId = act && act.id; const keepVal = act && act.value; const selS = act?.selectionStart;
   const app = $('#app');
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
+  S._b = badges();
   app.innerHTML = `
     ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
     <header class="top">
       <div class="bar"><div class="brand"><span class="dot">ESK</span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
+        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen">⛶ Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
-      <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
+      <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
-    <main>${S.view === 'today' ? todayHTML() : S.view === 'receive' ? receiveHTML() : S.view === 'order' ? orderHTML() : S.view === 'patients' ? patientsHTML() : inventoryHTML()}</main>`;
+    <main>${S.full ? `<div class="card"><h2>Working in full screen</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'receive' ? receiveHTML() : S.view === 'order' ? orderHTML() : S.view === 'patients' ? patientsHTML() : inventoryHTML()}</main>`;
   if (!CFG.me && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
+function badges(){
+  const d = {};
+  const it = todayModel(todaySerial()).filter(i => i.a.active && !i.adminKit && !i.pulledKit); if (it.length) d.today = it.length;
+  const open = S.K.filter(k => k.openOrder).length; if (open) d.receive = open;
+  const need = genoaModel().rows.filter(r => r.cover === 'need' && r.a.date - todaySerial() <= 7).length; if (need) d.order = need;
+  const disp = S.K.filter(k => k.needsDisposal).length; if (disp) d.inventory = disp;
+  return d;
+}
 function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+function itemState(i){
+  if (!i.a.active) return 'off'; if (i.adminKit) return 'done'; if (i.pulledKit) return 'pulled';
+  if (i.suggest) return 'todo'; return 'bad';
+}
 function todayHTML(){
-  const T = todaySerial(); const day = S.day; const items = todayModel(day); const gaps = schedGaps();
+  const T = todaySerial(); const day = S.day; const items = todayModel(day);
   const act = items.filter(i => i.a.active);
-  const pulled = act.filter(i => i.pulledKit || i.adminKit).length, done = act.filter(i => i.adminKit).length;
+  const done = act.filter(i => i.adminKit).length, pulled = act.filter(i => i.pulledKit && !i.adminKit).length;
+  const toPull = act.filter(i => !i.adminKit && !i.pulledKit).length, noKit = act.filter(i => itemState(i) === 'bad').length;
   const tgt = S.target ? items.find(i => i.a.key === S.target) : null;
   const pullList = items.filter(i => i.pulledKit || i.adminKit);
+  let next;
+  if (!act.length) next = 'No appointments on this day.';
+  else if (toPull) next = `<span class="n">${toPull}</span> kit${toPull > 1 ? 's' : ''} left to pull${noKit ? ` · <span style="color:var(--bad)">${noKit} with no kit available</span>` : ''} — scan them below.`;
+  else if (pulled) next = `All kits pulled. <span class="n">${pulled}</span> left to administer.`;
+  else next = 'All done for this day ✓';
   return `
   <div class="card">
     <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
-      <div class="grow" style="text-align:center"><b>${day === T ? 'Today' : fmtD(day, 'dow')}</b> <span class="muted">${fmtD(day, 'full')}</span></div>
+      <div class="grow" style="text-align:center"><b>${day === T ? 'Today' : DAYNAME[dowOf(day)]}</b> <span class="muted">${fmtD(day, 'full')}</span></div>
       <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Today</button>' : ''}</div>
-    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n">${pulled}/${act.length}</div><div class="l">meds pulled</div></div><div class="stat"><div class="n">${done}</div><div class="l">administered</div></div></div>
+    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">patients</div></div><div class="stat"><div class="n">${pulled + done}/${act.length}</div><div class="l">kits pulled</div></div><div class="stat"><div class="n">${done}/${act.length}</div><div class="l">administered</div></div></div>
+    <div class="next" style="margin-top:10px">${next}</div>
+    <div class="row" style="margin-top:10px"><button class="btn" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy pull list</button><button class="btn" data-act="print" data-t="daylist" ${pullList.length ? '' : 'disabled'}>Print pull list</button></div>
   </div>
-  <div class="card noprint">
-    <div class="scan"><span aria-hidden="true">▦</span><input id="scanToday" data-scan="today" placeholder="${tgt ? 'Scan kit for ' + esc(nm(tgt.a.mrn)) : 'Scan a kit to pull it for today'}" autocomplete="off" aria-label="Scan kit"></div>
-    ${tgt ? `<div class="row small" style="margin-top:6px"><span class="chip acc">Pulling for ${esc(nm(tgt.a.mrn))} · ${fmtT(tgt.a.time)}</span><button class="btn sm ghost" data-act="untarget">Clear</button></div>` : '<div class="small muted" style="margin-top:6px">Besse kits go to the next Besse patient who needs that dose; Genoa kits go to their own patient. Tap “Pull” on a card to scan for one patient.</div>'}
+  <div class="card noprint" style="position:sticky;top:${S.mode === 'dialog' ? 96 : 92}px;z-index:3">
+    <div class="scan"><span aria-hidden="true">▦</span><input id="scanToday" data-scan="today" placeholder="${tgt ? 'Scan kit for ' + esc(nm(tgt.a.mrn)) : 'Scan a kit to pull it (press / to jump here)'}" autocomplete="off" aria-label="Scan kit"></div>
+    ${tgt ? `<div class="row small" style="margin-top:6px"><span class="chip acc">Pulling for ${esc(nm(tgt.a.mrn))} · ${fmtT(tgt.a.time)}</span><button class="linkbtn" data-act="untarget">Cancel</button></div>` : ''}
     ${msgHTML(S.todayMsg)}
   </div>
-  <div class="card"><h2>Schedule<span class="sp"></span></h2>
-    ${items.length ? `<div class="list">${items.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments on this day.</div>'}
-  </div>
-  <div class="card print-target" id="daylist"><h2>Med pull list · ${fmtD(day, 'full')}<span class="sp"></span>
-      <button class="btn sm noprint" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy</button><button class="btn sm noprint" data-act="print" data-t="daylist" ${pullList.length ? '' : 'disabled'}>Print</button></h2>
-    ${pullList.length ? `<div class="tw"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th class="num">mg</th><th>Pharmacy</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Status</th></tr></thead><tbody>
-      ${pullList.map(i => { const k = i.adminKit || i.pulledKit; return `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b></td><td>${esc(i.a.mrn)}</td><td class="num">${k.recv ?? ''}</td><td>${PH_LABEL[k.pharm]}</td><td class="mono">${esc(k.serial)}</td><td class="mono">${esc(k.lot)}</td><td>${fmtD(k.expDate)}</td><td>${i.adminKit ? 'Administered' : 'Pulled'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="muted small">Scan kits in the morning — they’ll be listed here with patient, MRN, serial and lot. The list is saved with the workbook, so it’s there for anyone who opens the panel today.</div>'}
-  </div>
-  <div class="card"><details class="sec" ${gaps.A.length + gaps.B.length ? 'open' : ''}><summary>Needs scheduling <span class="chip ${gaps.A.length + gaps.B.length ? 'warn' : 'ok'}">${gaps.A.length + gaps.B.length}</span></summary>
-    <h3>On this week’s schedule, not booked through ${fmtD(gaps.lim)}</h3>
-    ${gaps.A.length ? `<div class="list">${gaps.A.map(x => `<div class="item"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p?.freq || '')}</span><span class="sp grow"></span><span class="chip warn">${x.thru ? 'thru ' + fmtD(x.thru) : 'nothing booked'}</span></div>${x.p?.prefs ? `<div class="line muted small">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">Everyone on this week’s schedule is booked through the next ' + CFG.schedDays + ' days.</div>'}
-    <h3>Active or Pending Start with no appointments</h3>
-    ${gaps.B.length ? `<div class="list">${gaps.B.map(x => `<div class="item"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span><span class="sp grow"></span><span class="chip bad">${x.last ? 'last ' + fmtD(x.last) : 'never seen'}</span></div>${x.p.prefs ? `<div class="line muted small">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">None.</div>'}
-  </details></div>`;
+  <div class="cols"><div>
+    <div class="card"><h2>Schedule</h2>
+      ${items.length ? `<div class="list">${items.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments on this day.</div>'}
+    </div></div><div>
+    <div class="card print-target" id="daylist"><h2>Med pull list · ${fmtD(day, 'full')}</h2>
+      ${pullList.length ? `<div class="tw"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th class="num">mg</th><th>Pharmacy</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Status</th></tr></thead><tbody>
+        ${pullList.map(i => { const k = i.adminKit || i.pulledKit; return `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b></td><td>${esc(i.a.mrn)}</td><td class="num">${k.recv ?? ''}</td><td>${PH_LABEL[k.pharm]}</td><td class="mono">${esc(k.serial)}</td><td class="mono">${esc(k.lot)}</td><td>${fmtD(k.expDate)}</td><td>${i.adminKit ? 'Given' : 'Pulled'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="muted small">Kits you scan are listed here with patient, MRN, serial and lot. The list is saved with the workbook, so anyone who opens ESK Tracker today sees it.</div>'}
+    </div>
+    ${schedHTML()}
+  </div></div>`;
 }
 function itemHTML(i){
-  const a = i.a; const k = i.adminKit || i.pulledKit || i.suggest;
+  const a = i.a; const st = itemState(i);
   let line;
   if (!a.active) line = `<span class="chip">${esc(a.hold ? 'Hold' : a.status)}</span>`;
   else if (i.adminKit) line = `<span class="chip ok">Administered ✓</span> ${kitLine(i.adminKit)}`;
-  else if (i.pulledKit) line = `<span class="chip ok">Pulled</span> ${kitLine(i.pulledKit)}`;
-  else if (i.suggest) line = `<span class="chip info">Pull</span> ${kitLine(i.suggest)}`;
+  else if (i.pulledKit) line = `<span class="chip info">Pulled</span> ${kitLine(i.pulledKit)}`;
+  else if (i.suggest) line = `<span class="chip warn">Pull this kit</span> ${kitLine(i.suggest)}`;
   else if (i.inf.pharm === 'GENOA') line = `<span class="chip bad">No Genoa kit on hand for this patient</span>`;
   else if (!i.inf.pharm) line = `<span class="chip warn">Not on the patient tracker — pharmacy unknown</span>`;
   else line = `<span class="chip bad">No ${PH_LABEL[i.inf.pharm]} ${i.inf.mg ?? ''} mg kit available</span>`;
-  const sched = a.active ? `<span class="chip ${i.needsSched ? 'warn' : ''}">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}</span>` : '';
-  return `<div class="item ${a.active ? '' : 'dim'} ${S.target === a.key ? 'target' : ''}">
+  const p = S.byMrn.get(a.mrn);
+  const primary = !a.active || i.adminKit ? '' : (i.pulledKit || st === 'bad') ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : `<button class="btn sm primary" data-act="target" data-k="${esc(a.key)}">${S.target === a.key ? 'Scanning…' : 'Scan to pull'}</button><button class="btn sm" data-act="admin" data-k="${esc(a.key)}">Administer</button>`;
+  return `<div class="item st-${st} ${S.target === a.key ? 'target' : ''}">
     <div class="head"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · ${i.inf.mg ?? '?'} mg · ${PH_LABEL[i.inf.pharm]}</span></div>
     <div class="line">${line}</div>
-    <div class="line">${sched}${i.inf.mg === 56 && !a.isStart ? ' <span class="chip warn">56 mg on a non-Start visit — verify</span>' : ''}</div>
-    ${a.active && !i.adminKit ? `<div class="acts noprint"><button class="btn sm" data-act="target" data-k="${esc(a.key)}">${S.target === a.key ? 'Scanning…' : 'Pull'}</button>${i.pulledKit ? `<button class="btn sm ghost" data-act="unpull" data-k="${esc(a.key)}">Undo pull</button>` : ''}<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}" ${k ? '' : ''}>Administer</button><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient</button></div>` : `<div class="acts noprint"><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient</button></div>`}
+    ${a.active ? `<div class="line row"><span class="chip ${i.needsSched ? 'warn' : ''}">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}</span>${p?.protoExp && p.protoExp < todaySerial() + CFG.schedDays ? protoChip(p, todaySerial() + CFG.schedDays) : ''}${i.inf.mg === 56 && !a.isStart ? '<span class="chip warn">56 mg on a non-Start visit — verify</span>' : ''}</div>` : ''}
+    <div class="acts noprint">${primary}${i.pulledKit && !i.adminKit ? `<button class="linkbtn" data-act="unpull" data-k="${esc(a.key)}">Undo pull</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
   </div>`;
+}
+
+// ---------- vitals tracker (print) ----------
+function vitalsDoc(day){
+  const rows = todayModel(day).filter(i => i.a.active);
+  const pages = []; for (let i = 0; i < Math.max(rows.length, 1); i += 6) pages.push(rows.slice(i, i + 6));
+  const todo = ['Esk tracker', 'Buy &amp; Bill', 'Med Logs', 'Tx Report', 'REMS monitoring'];
+  const vit = `<td class="v"><div>BP:</div><div class="ln"></div><div>BPM:</div><div>O2:</div></td>`;
+  const block = it => {
+    const k = it ? (it.adminKit || it.pulledKit || it.suggest) : null;
+    const pt = it ? `<div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>` : '';
+    const note = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
+    return `<tr class="pt"><td class="pc">${pt}</td><td></td><td></td>${vit}${vit}${vit}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
+  };
+  const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
+    <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>40 min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
+    ${[0,1,2,3,4,5].map(i => block(list[i])).join('')}
+    <tr class="an"><td colspan="7"><b>Additional Notes</b></td></tr></table>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Esketamine Daily Patient Tracker ${fmtD(day, 'full')}</title><style>
+    @page{size:letter portrait;margin:0.35in}
+    *{box-sizing:border-box} body{margin:0;font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:10pt;color:#000;background:#fff}
+    .sheet{width:100%;border-collapse:collapse;border:2px solid #000;table-layout:fixed;page-break-after:always;break-after:page}
+    .sheet:last-child{page-break-after:auto;break-after:auto}
+    .sheet td,.sheet th{border:1px solid #000;padding:3px 5px;vertical-align:top}
+    .ti td{border-bottom:1px solid #000;height:0.32in;vertical-align:middle}
+    .title{font-size:14pt;font-weight:700} .date{text-align:center;font-weight:700}
+    .hd th{font-weight:400;height:0.22in;padding:1px}
+    tr.pt td{height:1.1in;border-top:2px solid #000}
+    .pc .pn{font-weight:700;font-size:11pt;margin-bottom:2px}
+    .v div{height:0.2in} .v .ln{border-bottom:1px solid #000;width:80%;height:0.12in;margin-bottom:0.08in}
+    .todo div{display:flex;align-items:center;gap:6px;height:0.2in;font-size:9.5pt;white-space:nowrap}
+    .box{display:inline-block;width:0.14in;height:0.14in;border:1.5px solid #000;border-radius:2px;flex:none}
+    tr.nt td{height:0.36in;font-size:9.5pt}
+    tr.an td{height:0.62in;border-top:2px solid #000}
+  </style></head><body>${pages.map(page).join('')}</body></html>`;
+}
+function openPrintable(html, title){
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  openModal(`<h2>${esc(title)}</h2><div class="small muted">Contains patient identifiers — shred after use.</div>
+    <iframe class="print" id="printFrame" title="${esc(title)}"></iframe>
+    <div class="row" style="margin-top:10px;justify-content:flex-end"><a class="btn ghost" href="${url}" target="_blank" rel="noopener">Open in new tab</a><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="printFrame">Print</button></div>`, true);
+  const f = $('#printFrame'); f.srcdoc = html;
 }
 
 // ---------- administer ----------
@@ -981,13 +1072,14 @@ function openSettings(){
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
+    ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open full screen automatically when the panel opens</label>` : ''}
     ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
     <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn primary" data-act="cfgSave">Done</button></div>`);
 }
 
 // ---------- modal / toast / busy ----------
-function openModal(html){ $('#sheet').innerHTML = html; $('#modal').hidden = false; }
+function openModal(html, wide){ $('#sheet').innerHTML = html; $('#sheet').classList.toggle('wide', !!wide); $('#modal').hidden = false; }
 function closeModal(){ $('#modal').hidden = true; $('#sheet').innerHTML = ''; S.adm = null; S.disp = null; }
 function toast(kind, html){ $('#toast').innerHTML = ''; const el = document.createElement('div'); el.className = 'msg ' + kind; el.innerHTML = html; $('#toast').appendChild(el); setTimeout(() => el.remove(), kind === 'bad' ? 9000 : 2600); }
 function busy(t){ $('#busy').hidden = !t; if (t) $('#busyText').textContent = t; }
@@ -1009,6 +1101,10 @@ const ACT = {
   untarget: () => { S.target = null; render(); },
   unpull: el => { const d = isoOf(S.day); if (S.pull[d]) delete S.pull[d][el.dataset.k]; savePull(); S.todayMsg = { kind:'info', html:'Pull undone.' }; render(); },
   admin: el => openAdmin(el.dataset.k),
+  vitals: () => openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`),
+  printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'Use “Open in new tab” and print from there.'); } },
+  full: () => openFull(),
+  exitFull: () => { if (S.store.close) S.store.close(); },
   admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
   admSave: adminSave,
   patient: el => openPatient(el.dataset.m),
@@ -1042,7 +1138,7 @@ const ACT = {
   saveRow: el => saveRow(el.dataset.t, +el.dataset.r),
   cfgSave: async () => {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
-    saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
+    const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
   demo: () => { location.search = '?demo=1'; },
@@ -1055,6 +1151,7 @@ document.addEventListener('click', e => {
   const f = ACT[el.dataset.act]; if (f){ e.preventDefault(); f(el, e); }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') && $('#modal').hidden){ const el = document.querySelector('[data-scan]'); if (el){ e.preventDefault(); el.focus(); } return; }
   if (e.key === 'Escape' && !$('#modal').hidden){ closeModal(); return; }
   const el = e.target; if (e.key !== 'Enter' || !el.dataset?.scan) return;
   e.preventDefault(); const v = el.value; el.value = ''; if (!cleanScan(v)) return;
@@ -1198,13 +1295,70 @@ const MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
 </OfficeApp>
 `;
 
+// ---------- full screen: an Office dialog; the pane stays open and does the Excel work ----------
+const CH = 12000;
+function sendChunks(fn, obj){ const s = JSON.stringify(obj); const id = Math.random().toString(36).slice(2); const n = Math.max(1, Math.ceil(s.length / CH)); for (let i = 0; i < n; i++) fn(JSON.stringify({ c: id, i, n, d: s.slice(i * CH, (i + 1) * CH) })); }
+function makeRx(handler){ const buf = {}; return str => { let m; try { m = JSON.parse(str); } catch { return; } if (!m || !m.c) return; const b = buf[m.c] || (buf[m.c] = []); b[m.i] = m.d; if (b.filter(x => x != null).length === m.n){ delete buf[m.c]; try { handler(JSON.parse(b.join(''))); } catch (e){ console.error(e); } } }; }
+function packLoad(d, store){
+  const tables = {};
+  for (const [k, tb] of Object.entries(d.tables)){
+    let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
+    tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
+  }
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+}
+function hydrate(d){
+  const tables = {};
+  for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet };
+}
+function RemoteStore(){
+  const pend = new Map(); let docs = {}; let onChanged = null;
+  const rx = makeRx(m => { if (m.rid && pend.has(m.rid)){ const p = pend.get(m.rid); pend.delete(m.rid); m.ok ? p.res(m.res) : p.rej(new Error(m.err)); } else if (m.ev === 'changed' && onChanged) onChanged(); });
+  Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, a => rx(a.message));
+  const up = obj => sendChunks(s => Office.context.ui.messageParent(s), obj);
+  const call = (op, args) => new Promise((res, rej) => { const rid = Math.random().toString(36).slice(2); pend.set(rid, { res, rej }); up({ rid, op, args }); setTimeout(() => { if (pend.has(rid)){ pend.delete(rid); rej(new Error('Excel didn’t answer. Keep the ESK Tracker panel open behind this window, then try again.')); } }, 45000); });
+  return {
+    live: true, remote: true,
+    async load(){ const d = await call('load'); docs = d.docs || {}; return hydrate(d); },
+    update: (k, r, snap, ch) => call('update', [k, r, snap, ch]),
+    add: (k, ch) => call('add', [k, ch]),
+    setCells: (sh, cells) => call('setCells', [sh, cells]),
+    getDoc: k => docs[k] ?? null,
+    async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
+    watch(cb){ onChanged = cb; },
+    close(){ up({ ev: 'close' }); },
+  };
+}
+let DLG = null;
+function openFull(){
+  if (DLG) return;
+  const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog';
+  Office.context.ui.displayDialogAsync(url, { height: 96, width: 96, displayInIframe: true }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded){ toast('bad', 'Couldn’t open full screen: ' + esc(res.error?.message || '')); return; }
+    DLG = res.value; S.full = true; render();
+    const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
+    const rx = makeRx(async m => {
+      if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
+      const { rid, op, args } = m;
+      try { if (!['load','update','add','setCells','setDoc'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
+      catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
+    });
+    DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
+    DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; reload(true); });
+    S.notifyDialog = () => reply({ ev: 'changed' });
+  });
+}
+
 (function boot(){
   const demo = true;
-  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
+  S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
+  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if (DLG && S.notifyDialog){ S.notifyDialog(); return; } if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
+  if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
   if (demo){ start(DemoStore()); return; }
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel) start(OfficeStore()); else $('#app').innerHTML = notInExcelHTML(); });
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()); if (S.canFull && CFG.autoFull) setTimeout(openFull, 600); } else $('#app').innerHTML = notInExcelHTML(); });
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>
