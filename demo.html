@@ -444,7 +444,7 @@ function DemoStore(){
 const S = {
   store:null, tables:{}, ref:{}, besse:null, besseSheet:null, P:[], A:[], K:[], byMrn:new Map(), loaded:false, loadErr:null,
   view:'today', day:todaySerial(), orderDate:todaySerial(), orderTab:'NEED', win:null, target:null, pull:{},
-  patQ:'', patAll:false, invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
+  patQ:'', patAll:false, range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
 
@@ -630,19 +630,34 @@ function genoaModel(from, to){
   return { rows, from, to };
 }
 function followModel(){
-  const T = todaySerial();
-  return S.K.filter(k => k.openOrder).map(k => {
-    const next = S.A.filter(a => a.mrn === k.mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0] || null;
-    const need = next?.date ?? null; const waited = k.ordered != null ? T - k.ordered : null;
-    let st, cls;
-    if (need == null){ st = 'No upcoming appointment'; cls = ''; }
-    else if (need === T){ st = 'Needed today'; cls = 'bad'; }
-    else if (need - T === 1){ st = 'Needed tomorrow'; cls = 'bad'; }
-    else if (need - T <= 3){ st = `Needed in ${need - T} days`; cls = 'warn'; }
-    else { st = `Needed ${fmtD(need, 'dow')}`; cls = 'info'; }
-    const fus = String(k.comments ?? '').split('|').map(x => x.trim()).filter(x => /^F\/U/i.test(x));
-    return { k, next, need, waited, st, cls, fu: fus[fus.length - 1] || '' };
-  }).sort((a, b) => (a.need ?? 1e9) - (b.need ?? 1e9) || (a.k.ordered ?? 0) - (b.k.ordered ?? 0));
+  const T = todaySerial(); const out = [];
+  const byMrn = new Map(); for (const k of S.K) if (k.openOrder){ if (!byMrn.has(k.mrn)) byMrn.set(k.mrn, []); byMrn.get(k.mrn).push(k); }
+  for (const [mrn, orders] of byMrn){
+    orders.sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0) || a.r - b.r);
+    const appts = S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+    const onhand = S.K.filter(k => k.mrn === mrn && k.available && k.pharm !== 'BESSE').sort(fifo);
+    const oh = onhand.slice(); const uncovered = [];
+    for (const a of appts){ const i = oh.findIndex(k => k.expDate == null || k.expDate >= a.date); if (i >= 0) oh.splice(i, 1); else uncovered.push(a); }
+    orders.forEach((k, idx) => {
+      const next = uncovered[idx] || null; const need = next?.date ?? null; const waited = k.ordered != null ? T - k.ordered : null;
+      const recvAfter = k.ordered != null ? S.K.filter(x => x.mrn === mrn && x.isReceived && x.received != null && x.received >= k.ordered && x.pharm !== 'BESSE') : [];
+      let st, cls;
+      if (need == null){ st = onhand.length ? 'Covered — kit on hand' : 'No upcoming appointment'; cls = onhand.length ? 'ok' : ''; }
+      else if (need === T){ st = 'Needed today'; cls = 'bad'; }
+      else if (need - T === 1){ st = 'Needed tomorrow'; cls = 'bad'; }
+      else if (need - T <= 3){ st = `Needed in ${need - T} days`; cls = 'warn'; }
+      else { st = `Needed ${fmtD(need, 'dow')}`; cls = 'info'; }
+      const fus = String(k.comments ?? '').split('|').map(x => x.trim()).filter(x => /^F\/U/i.test(x));
+      out.push({ k, next, need, waited, st, cls, fu: fus[fus.length - 1] || '', onhand: onhand.length, stale: recvAfter.length ? recvAfter[recvAfter.length - 1] : null });
+    });
+  }
+  return out.sort((a, b) => (a.need ?? 1e9) - (b.need ?? 1e9) || (a.k.ordered ?? 0) - (b.k.ordered ?? 0));
+}
+function patientMeds(mrn){
+  const onhand = S.K.filter(k => k.mrn === mrn && k.available && k.pharm !== 'BESSE').sort(fifo);
+  const ordered = S.K.filter(k => k.mrn === mrn && k.openOrder);
+  const expired = S.K.filter(k => k.mrn === mrn && k.needsDisposal);
+  return { onhand, ordered, expired };
 }
 
 // ---------- write helpers ----------
@@ -694,11 +709,76 @@ function badges(){
   return d;
 }
 function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+// look-ahead: allocate kits across a date range (Besse from shared stock oldest-first; Genoa per patient, then open orders)
+function rangeModel(from, to){
+  const T = todaySerial();
+  const appts = S.A.filter(a => a.date >= from && a.date <= to).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  const used = new Set(); Object.values(S.pull).forEach(m => Object.values(m).forEach(id => used.add(id)));
+  const pool = S.K.filter(k => k.pharm === 'BESSE' && k.available && !used.has(k.id)).sort(fifo);
+  const per = new Map(), open = new Map();
+  for (const k of S.K){ if (!k.mrn || k.pharm === 'BESSE') continue; if (k.available && !used.has(k.id)){ if (!per.has(k.mrn)) per.set(k.mrn, []); per.get(k.mrn).push(k); } if (k.openOrder){ if (!open.has(k.mrn)) open.set(k.mrn, []); open.get(k.mrn).push(k); } }
+  for (const l of per.values()) l.sort(fifo); for (const l of open.values()) l.sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
+  return appts.map(a => {
+    const inf = apptInfo(a); const r = { a, inf, thru: scheduledThru(a.mrn) };
+    r.needsSched = r.thru == null || r.thru < T + CFG.schedDays;
+    r.adminKit = S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date) || null;
+    const pid = S.pull[isoOf(a.date)]?.[a.key]; r.pulledKit = pid ? S.K.find(k => k.id === pid) || null : null;
+    if (!a.active) r.st = 'off';
+    else if (r.adminKit) r.st = 'done';
+    else if (r.pulledKit) r.st = 'pulled';
+    else if (a.date < T) r.st = 'past';
+    else if (inf.pharm === 'BESSE'){ const i = pool.findIndex(k => k.recv === inf.mg && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
+    else if (PS(inf.pharm)){ const l = per.get(a.mrn) || []; const i = l.findIndex(k => (!inf.mg || k.recv === inf.mg) && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = l.splice(i, 1)[0]; r.st = 'avail'; } else { const o = open.get(a.mrn) || []; if (o.length){ r.kit = o.shift(); r.st = 'ordered'; } else r.st = 'need'; } }
+    else r.st = 'unknown';
+    return r;
+  });
+}
+const ST_LABEL = { done:['ok','Given'], pulled:['info','Pulled'], avail:['ok','Kit on hand'], ordered:['info','On order'], need:['bad','Needs med'], off:['','Not active'], past:['warn','Not logged'], unknown:['warn','Pharmacy unknown'], todo:['warn','To pull'], bad:['bad','No kit'] };
+function filterSort(list, stOf){
+  const q = S.fQ.trim().toLowerCase();
+  let out = list.filter(x => (S.fPh === 'all' || x.inf.pharm === S.fPh) && (!q || nm(x.a.mrn).toLowerCase().includes(q) || x.a.mrn.includes(q)));
+  if (S.fSt !== 'all') out = out.filter(x => { const st = stOf(x); return S.fSt === 'attention' ? ['need', 'bad', 'todo', 'past', 'unknown'].includes(st) : S.fSt === 'sched' ? x.needsSched && x.a.active : st === S.fSt; });
+  const cmp = { time: (x, y) => x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0), patient: (x, y) => nm(x.a.mrn).localeCompare(nm(y.a.mrn)) || x.a.date - y.a.date, pharmacy: (x, y) => (x.inf.pharm || 'Z').localeCompare(y.inf.pharm || 'Z') || x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0), status: (x, y) => stOf(x).localeCompare(stOf(y)) || x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0) }[S.sortBy];
+  return out.sort(cmp);
+}
+function toolbarHTML(){
+  const sel = (id, key, opts) => `<select id="${id}" class="fld" style="width:auto" data-f="${key}">${opts.map(([v, l]) => `<option value="${v}" ${S[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  return `<div class="row" style="margin-top:10px">
+    <input id="fQ" class="fld" style="flex:1;min-width:140px" data-input="fQ" placeholder="Find patient or MRN" value="${esc(S.fQ)}" aria-label="Find patient">
+    ${sel('fPh', 'fPh', [['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']])}
+    ${sel('fSt', 'fSt', [['all', 'All statuses'], ['attention', 'Needs attention'], ...(S.range === 'week' ? [['avail', 'Kit on hand'], ['ordered', 'On order'], ['need', 'Needs med']] : [['todo', 'To pull'], ['bad', 'No kit']]), ['pulled', 'Pulled'], ['done', 'Given'], ['sched', 'Needs scheduling']])}
+    ${sel('sortBy', 'sortBy', [['time', 'Sort: time'], ['patient', 'Sort: patient'], ['pharmacy', 'Sort: pharmacy'], ['status', 'Sort: status']])}
+    ${S.fQ || S.fPh !== 'all' || S.fSt !== 'all' || S.sortBy !== 'time' ? '<button class="linkbtn" data-act="fClear">Clear</button>' : ''}</div>`;
+}
+function weekHTML(){
+  const T = todaySerial(); const from = S.day, to = S.day + 6;
+  const all = rangeModel(from, to); const act = all.filter(r => r.a.active);
+  const cnt = st => act.filter(r => r.st === st).length;
+  const list = filterSort(all, r => r.st);
+  const groups = []; if (S.sortBy === 'time'){ for (const r of list){ const g = groups[groups.length - 1]; if (g && g.d === r.a.date) g.rows.push(r); else groups.push({ d: r.a.date, rows: [r] }); } } else groups.push({ d: null, rows: list });
+  const row = r => { const [c, l] = ST_LABEL[r.st]; const k = r.adminKit || r.pulledKit || r.kit;
+    return `<tr><td data-l="When">${S.sortBy !== 'time' ? `<b>${fmtD(r.a.date, 'dow')}</b> ` : ''}${fmtT(r.a.time)}</td><td data-l="Patient"><button class="linkbtn" style="padding:0;font-weight:700;color:inherit" data-act="patient" data-m="${esc(r.a.mrn)}">${esc(nm(r.a.mrn))}</button></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Visit">${r.a.isStart ? 'Start' : r.a.isEFU ? 'EFU' : esc(r.a.event)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'}</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td>
+      <td data-l="Med"><span class="chip ${c}">${l}</span> <span class="small muted">${k ? (r.st === 'ordered' ? 'ordered ' + fmtD(k.ordered) : 'SN …' + esc(String(k.serial).slice(-5)) + ' · use by ' + fmtD(k.expDate)) : ''}</span></td>
+      <td data-l="Booked thru">${r.a.active ? `<span class="chip ${r.needsSched ? 'warn' : ''}">${r.thru ? fmtD(r.thru) : 'none'}</span>` : ''}</td></tr>`; };
+  return `
+  <div class="card">
+    <div class="row"><button class="btn sm" data-act="day" data-d="-7" aria-label="Previous week">◀</button>
+      <div class="grow" style="text-align:center"><b>${fmtD(from, 'dow')} – ${fmtD(to, 'dow')}</b></div>
+      <button class="btn sm" data-act="day" data-d="7" aria-label="Next week">▶</button>${from !== T ? '<button class="btn sm" data-act="day" data-d="0">This week</button>' : ''}
+      <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
+    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n" style="color:var(--ok)">${cnt('avail') + cnt('pulled') + cnt('done')}</div><div class="l">med covered</div></div><div class="stat"><div class="n" style="color:var(--info)">${cnt('ordered')}</div><div class="l">covered by an order</div></div><div class="stat"><div class="n" style="color:var(--bad)">${cnt('need')}</div><div class="l">need a med</div></div><div class="stat"><div class="n" style="color:var(--warn)">${new Set(act.filter(r => r.needsSched).map(r => r.a.mrn)).size}</div><div class="l">need scheduling</div></div></div>
+    ${toolbarHTML()}
+  </div>
+  <div class="card">${list.length ? groups.map(g => `${g.d != null ? `<div class="dayhead"><b>${g.d === T ? 'Today' : DAYNAME[dowOf(g.d)]}</b><span>${fmtD(g.d, 'full')} · ${g.rows.filter(r => r.a.active).length} appts</span><span class="grow"></span>${g.d >= T ? `<button class="linkbtn" data-act="gotoDay" data-d="${g.d}">Open day</button>` : ''}</div>` : ''}
+    <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
+  </div>`;
+}
 function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done'; if (i.pulledKit) return 'pulled';
   if (i.suggest) return 'todo'; return 'bad';
 }
 function todayHTML(){
+  if (S.range === 'week') return weekHTML();
   const T = todaySerial(); const day = S.day; const items = todayModel(day);
   const act = items.filter(i => i.a.active);
   const done = act.filter(i => i.adminKit).length, pulled = act.filter(i => i.pulledKit && !i.adminKit).length;
@@ -714,7 +794,8 @@ function todayHTML(){
   <div class="card">
     <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
       <div class="grow" style="text-align:center"><b>${day === T ? 'Today' : DAYNAME[dowOf(day)]}</b> <span class="muted">${fmtD(day, 'full')}</span></div>
-      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Today</button>' : ''}</div>
+      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Today</button>' : ''}
+      <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
     <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">patients</div></div><div class="stat"><div class="n">${pulled + done}/${act.length}</div><div class="l">kits pulled</div></div><div class="stat"><div class="n">${done}/${act.length}</div><div class="l">administered</div></div></div>
     <div class="next" style="margin-top:10px">${next}</div>
     <div class="row" style="margin-top:10px"><button class="btn" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy pull list</button><button class="btn" data-act="print" data-t="daylist" ${pullList.length ? '' : 'disabled'}>Print pull list</button></div>
@@ -725,8 +806,8 @@ function todayHTML(){
     ${msgHTML(S.todayMsg)}
   </div>
   <div class="cols"><div>
-    <div class="card"><h2>Schedule</h2>
-      ${items.length ? `<div class="list">${items.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments on this day.</div>'}
+    <div class="card"><h2>Schedule</h2>${toolbarHTML()}
+      ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div></div><div>
     <div class="card print-target" id="daylist"><h2>Med pull list · ${fmtD(day, 'full')}</h2>
       ${pullList.length ? `<div class="tw"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th class="num">mg</th><th>Pharmacy</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Status</th></tr></thead><tbody>
@@ -781,7 +862,7 @@ function vitalsDoc(day){
     .title{font-size:14pt;font-weight:700} .date{text-align:center;font-weight:700}
     .hd th{font-weight:400;height:0.22in;padding:1px}
     tr.pt td{height:1.1in;border-top:2px solid #000}
-    .pc .pn{font-weight:700;font-size:11pt;margin-bottom:2px}
+    .pc{text-align:center;vertical-align:middle!important;font-size:11.5pt} .pc .pn{font-weight:700;font-size:13.5pt;margin-bottom:3px}
     .v div{height:0.2in} .v .ln{border-bottom:1px solid #000;width:80%;height:0.12in;margin-bottom:0.08in}
     .todo div{display:flex;align-items:center;gap:6px;height:0.2in;font-size:9.5pt;white-space:nowrap}
     .box{display:inline-block;width:0.14in;height:0.14in;border:1.5px solid #000;border-radius:2px;flex:none}
@@ -933,9 +1014,9 @@ function needHTML(g){
 }
 function followHTML(fm){
   return `<div class="card"><h2>On order <span class="chip">${fm.length}</span><span class="sp"></span><button class="btn sm" data-act="copyFollow" ${fm.length ? '' : 'disabled'}>Copy follow-up list</button></h2>
-    <div class="small muted" style="margin-bottom:10px">Every Inventory line with an MRN and no scan yet, soonest need first. Log calls to the pharmacy here — notes are added to the line’s Comments.</div>
-    ${fm.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient</th><th>MRN</th><th>Pharmacy</th><th>Ordered</th><th>Next appointment</th><th>Last follow-up</th><th></th></tr></thead><tbody>
-      ${fm.map(f => `<tr><td data-l="Status"><span class="chip ${f.cls}">${esc(f.st)}</span>${f.waited >= 5 ? ' <span class="chip warn">Waiting ' + f.waited + ' days</span>' : ''}</td><td data-l="Patient"><b>${esc(nm(f.k.mrn))}</b></td><td data-l="MRN">${esc(f.k.mrn)}</td><td data-l="Pharmacy">${PH_LABEL[f.k.pharm] || '—'}</td><td data-l="Ordered">${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` <span class="muted small">(${f.waited}d)</span>` : ''}</td><td data-l="Next appt">${f.next ? `${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : '—'}</td><td data-l="Follow-up" style="white-space:normal;max-width:260px" class="small">${esc(f.fu) || '<span class="muted">—</span>'}</td>
+    <div class="small muted" style="margin-bottom:10px">Every Inventory line with an MRN and no scan yet. Kits already on hand cover the earliest visits first; each order is matched to the first visit they don’t cover. Log calls to the pharmacy here — notes are added to the line’s Comments.</div>
+    ${fm.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient</th><th>MRN</th><th>Pharmacy</th><th class="num">On hand</th><th>Ordered</th><th>Needed for</th><th>Last follow-up</th><th></th></tr></thead><tbody>
+      ${fm.map(f => `<tr><td data-l="Status"><span class="chip ${f.cls}">${esc(f.st)}</span>${f.waited >= 5 && f.need != null ? ' <span class="chip warn">Waiting ' + f.waited + ' days</span>' : ''}${f.stale ? `<div class="small" style="margin-top:4px;color:var(--warn);white-space:normal">A kit for this patient was received ${fmtD(f.stale.received)} (row ${f.stale.r + 3}), after this order. If that was this order, cancel this line.</div>` : ''}</td><td data-l="Patient"><b>${esc(nm(f.k.mrn))}</b></td><td data-l="MRN">${esc(f.k.mrn)}</td><td data-l="Pharmacy">${PH_LABEL[f.k.pharm] || '—'}</td><td data-l="On hand" class="num">${f.onhand}</td><td data-l="Ordered">${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` <span class="muted small">(${f.waited}d)</span>` : ''}</td><td data-l="Next appt">${f.next ? `${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : '—'}</td><td data-l="Follow-up" style="white-space:normal;max-width:260px" class="small">${esc(f.fu) || '<span class="muted">—</span>'}</td>
         <td data-l="" style="text-align:right"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm primary" data-act="recvGo" data-id="${esc(f.k.id)}">Receive</button><button class="btn sm" data-act="fuLog" data-id="${esc(f.k.id)}">Log follow-up</button><button class="linkbtn" data-act="cancelLine" data-id="${esc(f.k.id)}">Cancel</button></div></td></tr>`).join('')}
     </tbody></table></div>` : '<div class="msg ok">Nothing on order.</div>'}
   </div>`;
@@ -1033,17 +1114,17 @@ function patientsHTML(){
   return `<div class="card noprint"><div class="row"><input id="patQ" class="fld grow" data-input="patQ" placeholder="Search short name or MRN" value="${esc(S.patQ)}" aria-label="Search patients"><div class="seg">${[[false, 'Current'], [true, 'All']].map(([v, l]) => `<button data-act="patAll" data-v="${v}" aria-pressed="${S.patAll === v}">${l}</button>`).join('')}</div></div></div>
   <div class="card print-target" id="guide"><h2>Patient guide <span class="chip">${list.length}</span><span class="sp"></span><button class="btn sm noprint" data-act="print" data-t="guide">Print</button></h2>
     <div class="printonly small">Printed ${new Date().toLocaleString()} — contains patient identifiers. Shred after use.</div>
-    <div class="tw"><table class="t"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th></tr></thead><tbody>
-    ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr data-act="patient" data-m="${esc(p.mrn)}" style="cursor:pointer"><td><b>${esc(p.name)}</b></td><td>${esc(p.mrn)}</td><td>${esc(p.status)}</td><td>${PH_LABEL[p.pharm]}</td><td class="num">${p.mg ?? ''}</td><td>${esc(p.freq)}</td><td>${n ? fmtD(n.date) : '—'}</td><td>${th ? fmtD(th) : '—'}</td></tr>`; }).join('')}
+    <div class="tw"><table class="t"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th><th>Meds on hand</th><th>On order</th></tr></thead><tbody>
+    ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr data-act="patient" data-m="${esc(p.mrn)}" style="cursor:pointer"><td><b>${esc(p.name)}</b></td><td>${esc(p.mrn)}</td><td>${esc(p.status)}</td><td>${PH_LABEL[p.pharm]}</td><td class="num">${p.mg ?? ''}</td><td>${esc(p.freq)}</td><td>${n ? fmtD(n.date) : '—'}</td><td>${th ? fmtD(th) : '—'}</td>${(() => { if (p.pharm === 'BESSE') return '<td class="muted small">Besse stock</td><td></td>'; const m = patientMeds(p.mrn); return `<td>${m.onhand.length ? `<span class="chip ok">${m.onhand.length}</span> <span class="small muted">use by ${fmtD(m.onhand[0].expDate)}</span>` : '<span class="chip bad">0</span>'}${m.expired.length ? ` <span class="chip bad">${m.expired.length} expired</span>` : ''}</td><td>${m.ordered.length ? `<span class="chip info">${m.ordered.length}</span> <span class="small muted">since ${fmtD(m.ordered[0].ordered)}</span>` : '—'}</td>`; })()}</tr>`; }).join('')}
     </tbody></table></div></div>`;
 }
 function openPatient(mrn){
   const p = S.byMrn.get(mrn); const T = todaySerial();
   const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
-  const kits = S.K.filter(k => k.mrn === mrn && (k.openOrder || k.full || k.needsDisposal));
+  const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
   openModal(`<h2>${esc(nm(mrn))}</h2><div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
-    <h3>Kits</h3>${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
+    <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
 }
@@ -1211,6 +1292,9 @@ const ACT = {
   saveBesse,
   gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
   genoaOrder,
+  range: el => { S.range = el.dataset.v; if (S.range === 'week' && S.fSt !== 'all' && !['attention','pulled','done','sched'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'day' && ['avail','ordered','need'].includes(S.fSt)) S.fSt = 'all'; render(); },
+  gotoDay: el => { S.day = +el.dataset.d; S.range = 'day'; render(); },
+  fClear: () => { S.fQ = ''; S.fPh = 'all'; S.fSt = 'all'; S.sortBy = 'time'; render(); },
   winReset: () => { S.win = defaultWindow(); render(); },
   copyNeed: async () => { const rows = genoaModel().rows.filter(r => r.cover === 'need'); const t = rows.map(r => `${nm(r.a.mrn)}\tMRN ${r.a.mrn}\t${r.inf.mg ?? '?'} mg\t${PH_LABEL[r.inf.pharm]}\tneeded ${fmtD(r.a.date, 'full')} ${fmtT(r.a.time)}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Order list copied.'); },
   copyFollow: async () => { const t = followModel().map(f => `${nm(f.k.mrn)}\tMRN ${f.k.mrn}\t${PH_LABEL[f.k.pharm]}\tordered ${fmtD(f.k.ordered, 'full')}\t${f.next ? 'needed ' + fmtD(f.next.date, 'full') + ' ' + fmtT(f.next.time) : 'no appt'}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Follow-up list copied.'); },
@@ -1260,6 +1344,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
   if (el.dataset.ov){ const v = Number(el.value); if (!isNaN(v)){ S.ov[el.dataset.ov] = v; render(); } }
+  if (el.dataset.f){ S[el.dataset.f] = el.value; render(); }
   if (el.dataset.win){ const v = fromIso(el.value); if (v != null){ S.win[el.dataset.win] = v; if (S.win.to < S.win.from) S.win.to = S.win.from; render(); } }
   if ('gall' in el.dataset){ genoaModel().rows.filter(r => r.cover === 'need').forEach(r => el.checked ? S.genoaSel.add(r.a.key) : S.genoaSel.delete(r.a.key)); render(); }
   if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
