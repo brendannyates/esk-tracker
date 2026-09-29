@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESK Tracker</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+:root{
+  --bg:#f6f1e7;--surface:#fffdf8;--surface2:#f1eadc;--ink:#2b2622;--muted:#6f665c;--line:#e3d9c6;
+  --accent:#b5532f;--accent-ink:#fff;--accent-soft:#f6e3da;
+  --ok:#2f7a45;--ok-soft:#e3f1e6;--warn:#9a6a0b;--warn-soft:#fbf0d6;--bad:#b3261e;--bad-soft:#fbe4e1;--info:#2d5f8a;--info-soft:#e2edf6;
+  --radius:12px;--shadow:0 1px 2px rgba(60,40,20,.06),0 2px 8px rgba(60,40,20,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1c1916;--surface:#26221e;--surface2:#2f2a25;--ink:#efe8dc;--muted:#a89f92;--line:#3b352f;
+  --accent:#e0805c;--accent-ink:#1c1916;--accent-soft:#3a2a22;
+  --ok:#7cc592;--ok-soft:#1f3326;--warn:#e3b75a;--warn-soft:#3a3020;--bad:#f08a80;--bad-soft:#3d2320;--info:#8ab8e0;--info-soft:#1f2c38;
+  --shadow:none;}}
+:root[data-theme="dark"]{--bg:#1c1916;--surface:#26221e;--surface2:#2f2a25;--ink:#efe8dc;--muted:#a89f92;--line:#3b352f;--accent:#e0805c;--accent-ink:#1c1916;--accent-soft:#3a2a22;--ok:#7cc592;--ok-soft:#1f3326;--warn:#e3b75a;--warn-soft:#3a3020;--bad:#f08a80;--bad-soft:#3d2320;--info:#8ab8e0;--info-soft:#1f2c38;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif}
+body{overflow-x:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 12px 6px}
+.brand{font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.brand .dot{width:22px;height:22px;border-radius:7px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:11px;font-weight:800}
+.brand small{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
+.iconbtn:hover{border-color:var(--accent)}
+nav.tabs{display:flex;gap:4px;padding:0 8px 8px;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{flex:1 0 auto;border:0;background:transparent;padding:8px 10px;border-radius:10px;cursor:pointer;color:var(--muted);font-weight:600;min-height:36px}
+nav.tabs button[aria-current="page"]{background:var(--accent);color:var(--accent-ink)}
+main{padding:12px;max-width:980px;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+h3{font-size:13px;margin:12px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.muted{color:var(--muted)} .small{font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1;min-width:0}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 12px;min-height:38px;cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent}
+.btn.sm{min-height:32px;padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:7px 12px;cursor:pointer;font-weight:600;color:var(--muted);min-height:36px}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+input.fld,select.fld,textarea.fld{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;min-height:38px}
+input.fld:focus,select.fld:focus,textarea.fld:focus,.btn:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+label.lbl{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px;font-weight:600}
+.scan{display:flex;gap:8px;align-items:center;background:var(--accent-soft);border:1px dashed var(--accent);border-radius:var(--radius);padding:10px}
+.scan input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface);font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.info{background:var(--info-soft);color:var(--info)} .chip.acc{background:var(--accent-soft);color:var(--accent)}
+.list{display:flex;flex-direction:column;gap:8px}
+.item{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface)}
+.item.dim{opacity:.6}
+.item.target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.item .head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.item .time{font-weight:700;min-width:64px}
+.item .name{font-weight:700}
+.item .meta{color:var(--muted);font-size:12px}
+.item .line{margin-top:6px;font-size:13px}
+.item .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.msg{border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:flex-start}
+.msg.ok{background:var(--ok-soft);color:var(--ok)} .msg.bad{background:var(--bad-soft);color:var(--bad)} .msg.warn{background:var(--warn-soft);color:var(--warn)} .msg.info{background:var(--info-soft);color:var(--info)}
+.msg b{color:inherit}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.stat{background:var(--surface2);border-radius:10px;padding:8px 10px}
+.stat .n{font-size:22px;font-weight:700;line-height:1.1}
+.stat .l{font-size:12px;color:var(--muted)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table.t{border-collapse:collapse;width:100%;font-size:13px;background:var(--surface)}
+table.t th,table.t td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+table.t th{background:var(--surface2);font-size:12px;color:var(--muted)}
+table.t td.num,table.t th.num{text-align:right}
+table.t tr:last-child td{border-bottom:0}
+input.ov{width:100%;max-width:70px;font-size:20px;font-weight:700;text-align:right;border:1px solid var(--line);border-radius:8px;padding:4px 6px;background:var(--surface)}
+.big{font-size:20px;font-weight:800;color:var(--accent)}
+details.sec>summary{cursor:pointer;font-weight:700;list-style:none;display:flex;gap:8px;align-items:center}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::before{content:"▸";color:var(--muted)}
+details.sec[open]>summary::before{content:"▾"}
+.empty{padding:18px;text-align:center;color:var(--muted)}
+#modal{position:fixed;inset:0;background:rgba(20,14,8,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+#modal[hidden]{display:none}
+#modal .sheet{background:var(--surface);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px;box-shadow:0 -6px 30px rgba(0,0,0,.2)}
+@media(min-width:700px){#modal{align-items:center}#modal .sheet{border-radius:16px}}
+.sheet h2{margin:0 0 4px;font-size:17px}
+.form2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+@media(max-width:420px){.form2{grid-template-columns:1fr}}
+.writes{background:var(--surface2);border-radius:10px;padding:8px 10px;font-size:12px;margin-top:10px}
+.writes code{font-family:ui-monospace,Consolas,monospace}
+.fx{font-size:11px;color:var(--muted);font-weight:600;margin-left:4px}
+.ro{background:var(--surface2)!important;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:calc(100% - 24px);max-width:520px}
+#toast .msg{box-shadow:0 4px 16px rgba(0,0,0,.15);pointer-events:auto;width:100%}
+#busy{position:fixed;inset:0;background:rgba(255,253,248,.55);z-index:40;display:flex;gap:10px;align-items:center;justify-content:center;font-weight:600}
+#busy[hidden]{display:none}
+.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.banner{background:var(--warn-soft);color:var(--warn);font-size:12px;padding:6px 12px;text-align:center;font-weight:600}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.printonly{display:none}
+@media print{
+  header.top,nav,.noprint,#toast,#busy,.banner{display:none!important}
+  body{background:#fff;color:#000}
+  body[data-print] main>*:not(.print-target){display:none!important}
+  .card{border:0;box-shadow:none;padding:0}
+  .printonly{display:block}
+  table.t th,table.t td{border:1px solid #999}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
+<div id="toast" aria-live="polite"></div>
+<div id="busy" hidden><div class="spin"></div><span id="busyText">Working…</span></div>
+<script>
+'use strict';
+/* =====================================================================
+   ESK Tracker — Excel add-in task pane
+   Reads and writes the Esketamine Master Tracker workbook in place.
+   - Finds tables by their headers (not by name or position).
+   - Never writes into a formula cell.
+   - Re-checks a row before writing; if someone changed it, it stops.
+   ===================================================================== */
+
+// ---------- small utils ----------
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = h => String(h ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const isF = x => typeof x === 'string' && x.startsWith('=');
+const blank = v => (v === '' || v === undefined) ? null : v;
+const MS = 864e5;
+const ymd = (y,m,d) => Math.round(Date.UTC(y, m-1, d) / MS) + 25569;
+const todaySerial = () => { const d = new Date(); return ymd(d.getFullYear(), d.getMonth()+1, d.getDate()); };
+const sDate = s => new Date((s - 25569) * MS);
+const dowOf = s => sDate(s).getUTCDay();
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function fmtD(s, mode){ if (s == null) return '—'; const d = sDate(s); const t = `${d.getUTCMonth()+1}/${d.getUTCDate()}`;
+  return mode === 'dow' ? `${DOW[d.getUTCDay()]} ${t}` : mode === 'full' ? `${t}/${d.getUTCFullYear()}` : t; }
+const isoOf = s => s == null ? '' : sDate(s).toISOString().slice(0,10);
+function fromIso(v){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? ymd(+m[1], +m[2], +m[3]) : null; }
+function fmtT(m){ if (m == null) return ''; let h = Math.floor(m/60), mi = m % 60; const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return `${h}:${String(mi).padStart(2,'0')} ${ap}`; }
+function toSerial(v){
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return (v > 1000 && v < 100000) ? Math.floor(v) : null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (m){ let y = +m[3]; if (y < 100) y += 2000; return ymd(y, +m[1], +m[2]); }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return ymd(+m[1], +m[2], +m[3]);
+  return null;
+}
+function toMinutes(v){
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Math.round((v % 1) * 1440) % 1440;
+  const m = String(v).trim().match(/^(\d{1,2}):(\d{2})\s*([AP]M)?/i); if (!m) return null;
+  let h = +m[1]; if (m[3]){ if (/pm/i.test(m[3]) && h < 12) h += 12; if (/am/i.test(m[3]) && h === 12) h = 0; }
+  return h*60 + +m[2];
+}
+const mrnKey = v => { if (v == null || v === '') return ''; if (typeof v === 'number') return String(Math.round(v)); return String(v).trim().replace(/\.0+$/, ''); };
+const num = v => { if (v == null || v === '') return null; if (typeof v === 'number') return v; const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; };
+const yes = v => /^(y|yes|true|x)$/i.test(String(v ?? '').trim());
+const cleanScan = s => String(s ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+const normScan = s => cleanScan(s).replace(/\s+/g, '').toUpperCase();
+function pharmOf(v){ const s = String(v ?? '').toUpperCase(); if (s.includes('BESSE')) return 'BESSE'; if (s.includes('GENOA')) return 'GENOA'; return s.trim() ? 'OTHER' : ''; }
+const PH_LABEL = { BESSE:'Besse', GENOA:'Genoa', OTHER:'Other', '':'—' };
+
+// Spravato GS1 code — same layout the Inventory formulas use:
+// 01 + GTIN(14) | 21 + serial(12) | 17 + YYMMDD | 10 + lot
+function parseScan(raw){
+  const s = cleanScan(raw).replace(/\s+/g, '');
+  if (!/^01\d{14}21/.test(s) || s.length < 44) return null;
+  const mg = s.startsWith('0100350458028034') ? 84 : s.startsWith('0100350458028027') ? 56 : null;
+  const serial = s.slice(18, 30);
+  const exp = s.slice(30, 32) === '17' ? ymd(2000 + +s.slice(32,34), +s.slice(34,36), +s.slice(36,38)) : null;
+  const lot = /\d$/.test(s) ? s.slice(40, 47) : s.slice(40, 48);
+  return { s, mg, serial, exp, lot };
+}
+
+// ---------- settings (this device only; no patient data) ----------
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'' };
+let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
+function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
+function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
+applyTheme();
+
+// ---------- table model ----------
+class Tbl {
+  constructor(key, name, sheet, headers, values, formulas){
+    this.key = key; this.name = name; this.sheet = sheet;
+    this.headers = headers.map(h => String(h ?? '')); this.values = values; this.formulas = formulas;
+    this.cols = {}; this.headers.forEach((h,i) => { const n = norm(h); if (n && !(n in this.cols)) this.cols[n] = i; });
+    this.formulaCol = this.headers.map((_, c) => { let f = 0, n = 0; for (const r of formulas){ const x = r[c]; if (x !== '' && x != null){ n++; if (isF(x)) f++; } } return n > 0 && f / n >= 0.5; });
+  }
+  get(r, k){ const c = this.cols[k]; return c == null ? null : blank(this.values[r]?.[c]); }
+  isFormula(r, c){ return isF(this.formulas[r]?.[c]); }
+  snap(r){ return this.headers.map((_, c) => this.isFormula(r, c) ? null : this.values[r][c]); }
+}
+const SIG = {
+  patients: ['mrn','patientname','status','txfrequency','pharmacy'],
+  kits:     ['scanhere','mrn','receivedmg','mgremaining','administeredmg'],
+  appts:    ['mrn','patient','date','time','event','status'],
+};
+const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
+const snapMatch = (vals, snap) => snap.every((s, c) => s === null || same(vals[c], s));
+
+function parseRef(values){
+  const out = {}; let hr = values.findIndex(r => r.some(v => norm(v) === 'pharmacy') && r.some(v => norm(v) === 'dose'));
+  if (hr < 0) return out;
+  values[hr].forEach((h, c) => { const k = norm(h); if (!k) return; const list = []; for (let r = hr+1; r < values.length; r++){ const v = values[r][c]; if (v === '' || v == null) continue; list.push(v); } out[k] = list; });
+  return out;
+}
+// Besse Order tab: the summary table (Clinic/Date/Dose/…/To Be Ordered) and the weekly history (DATE | 56 | 84)
+function parseBesse(values, formulas){
+  const out = { rows:{}, hist:null, vals:values };
+  for (let r = 0; r < values.length; r++){
+    const row = values[r].map(norm);
+    const cOv = row.indexOf('approvedoverage');
+    if (cOv >= 0 && out.hdr == null){
+      out.hdr = r; const col = k => row.indexOf(k);
+      out.c = { clinic:col('clinic'), date:col('date'), dose:col('dose'), oh:col('besseoh'), w1:col('apptsnextweek'), w2:col('appts2weekout'), ov:cOv, order:col('tobeordered') };
+      for (let k = r+1; k < Math.min(values.length, r+6); k++){ const d = num(values[k][out.c.dose]); if (d === 56 || d === 84) out.rows[d] = { r:k, ov:num(values[k][cOv]), oh:num(values[k][out.c.oh]) }; }
+    }
+    for (let c = 0; c < row.length - 2; c++){
+      if (row[c] === 'date' && num(values[r][c+1]) === 56 && num(values[r][c+2]) === 84 && !out.hist){ out.hist = { hdr:r, c }; }
+    }
+  }
+  return out;
+}
+const colLetter = n => { let s = ''; n++; while (n){ const m = (n-1) % 26; s = String.fromCharCode(65+m) + s; n = Math.floor((n-1)/26); } return s; };
+
+// ---------- store: live workbook (Office.js) ----------
+function OfficeStore(){
+  const names = {}; let besseSheet = null, besseUsedAddr = null;
+  async function tableBody(ctx, k){ const t = ctx.workbook.tables.getItem(names[k]); const b = t.getDataBodyRange(); b.load('values,formulas,rowCount'); await ctx.sync(); return { t, b }; }
+  async function writeCells(ctx, b, row, changes){
+    const cells = [];
+    for (const [c, v] of changes){ if (isF(b.formulas[row][c])) throw new Error('Stopped: that column holds a formula in the workbook.'); const cell = b.getCell(row, c); cell.load('numberFormat'); cells.push([cell, v]); }
+    await ctx.sync();
+    for (const [cell, v] of cells){
+      if (v && typeof v === 'object' && 'date' in v){ cell.values = [[v.date]]; if (/general/i.test(String(cell.numberFormat[0][0]))) cell.numberFormat = [['m/d/yyyy']]; }
+      else cell.values = [[v]];
+    }
+    await ctx.sync();
+  }
+  return {
+    live: true,
+    async load(){
+      return Excel.run(async ctx => {
+        const ts = ctx.workbook.tables; ts.load('items/name'); await ctx.sync();
+        const hs = ts.items.map(t => { const h = t.getHeaderRowRange(); h.load('values'); const ws = t.worksheet; ws.load('name'); return { t, h, ws }; });
+        await ctx.sync();
+        const found = {};
+        for (const x of hs){ const set = new Set(x.h.values[0].map(norm)); for (const [k, req] of Object.entries(SIG)) if (!found[k] && req.every(q => set.has(q))) found[k] = x; }
+        const bodies = {};
+        for (const [k, x] of Object.entries(found)){ names[k] = x.t.name; const b = x.t.getDataBodyRange(); b.load('values,formulas'); bodies[k] = { b, x }; }
+        const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
+        const tables = {};
+        for (const [k, { b, x }] of Object.entries(bodies)) tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], b.values, b.formulas);
+        const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
+        const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
+        let rr = null, br = null;
+        if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
+        if (bo){ br = bo.getRange('A1:Z200'); br.load('values,formulas'); besseSheet = bo.name; }
+        await ctx.sync();
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values, br.formulas) : null, besseSheet };
+      });
+    },
+    async update(k, r, snap, changes){
+      return Excel.run(async ctx => {
+        const { b } = await tableBody(ctx, k);
+        let row = r;
+        if (!(row < b.values.length && snapMatch(b.values[row], snap))){
+          row = b.values.findIndex(v => snapMatch(v, snap));
+          if (row < 0) throw new Error('That row was changed in the workbook by someone else. The panel has refreshed — check it and try again.');
+        }
+        await writeCells(ctx, b, row, changes);
+      });
+    },
+    async add(k, changes){
+      return Excel.run(async ctx => {
+        let { t, b } = await tableBody(ctx, k);
+        let last = -1;
+        b.values.forEach((v, i) => { if (v.some((x, c) => !isF(b.formulas[i][c]) && x !== '' && x != null)) last = i; });
+        let row = last + 1;
+        if (row >= b.values.length){
+          t.rows.add(null); await ctx.sync();
+          b = t.getDataBodyRange(); b.load('values,formulas,rowCount'); await ctx.sync();
+          row = b.rowCount - 1;
+          const prev = b.getRow(row - 1); prev.load('formulasR1C1'); const cur = b.getRow(row); cur.load('formulasR1C1'); await ctx.sync();
+          prev.formulasR1C1[0].forEach((f, c) => { const cf = cur.formulasR1C1[0][c]; if ((cf === '' || cf == null) && isF(f)) b.getCell(row, c).formulasR1C1 = [[f]]; });
+          await ctx.sync(); b.load('values,formulas'); await ctx.sync();
+        }
+        await writeCells(ctx, b, row, changes);
+      });
+    },
+    async setCells(sheet, cells){ // cells: [[a1, value, expectFormula=false]]
+      return Excel.run(async ctx => {
+        const ws = ctx.workbook.worksheets.getItem(sheet);
+        const rs = cells.map(([a]) => { const r = ws.getRange(a); r.load('formulas,numberFormat'); return r; });
+        await ctx.sync();
+        rs.forEach((r, i) => { if (isF(r.formulas[0][0])) throw new Error(`Stopped: ${cells[i][0]} on "${sheet}" holds a formula.`); });
+        rs.forEach((r, i) => { const v = cells[i][1]; if (v && typeof v === 'object' && 'date' in v){ r.values = [[v.date]]; if (/general/i.test(String(r.numberFormat[0][0]))) r.numberFormat = [['m/d/yyyy']]; } else r.values = [[v]]; });
+        await ctx.sync();
+      });
+    },
+    getDoc(key){ try { return Office.context.document.settings.get(key); } catch { return null; } },
+    setDoc(key, val){ return new Promise(res => { try { Office.context.document.settings.set(key, val); Office.context.document.settings.saveAsync(() => res()); } catch { res(); } }); },
+    watch(cb){
+      Excel.run(async ctx => { for (const k in names){ ctx.workbook.tables.getItem(names[k]).onChanged.add(() => { cb(); return Promise.resolve(); }); } await ctx.sync(); }).catch(() => {});
+    },
+  };
+}
+
+// ---------- store: demo (fake data, same behavior as the workbook formulas) ----------
+function DemoStore(){
+  const T = todaySerial();
+  const INV_H = ['Logging PCT','Scan Here','MRN','Pharmacy','Date Ordered','Date Received ','Expiration Date','Use By Date','Received (mg)','Serial Number','Lot Number','Administered (mg)','Date Administered','DOW','Partial?','Treating Technician','Supervising Physician ','Comments','Expired?','Marked for Disposal?','Date of Disposal','Disposal Method','mg Disposed','mg Remaining','Disposing PCT','Practice Manager'];
+  const PT_H = ['MRN','Patient Name','Status','Rendering Provider','Auth Exp.','Tx Frequency','Tx Start Date','Protocol Exp Date','Order Status','# Doses On Hand','# Partial On Hand','Pharmacy ','Protocol mg','Last Treatment','Next Treatment','Scheduled Thru','Auth Start','Authorized Txs','Coverage Options','Insurance','PA Number','Last MADRS','Last WHO5','Scheduling Preferences ','Notes:','PCN Notes'];
+  const AP_H = ['MRN','Patient','Date','Time','Event','Dose','Status','Lookup Key'];
+  const INV_F = new Set([6,7,8,9,10,13,14,18,23]); const PT_F = new Set([9,10,13,14,15]); const AP_F = new Set([1,5,7]);
+  const pts = [
+    [900101,'ALDBEN','Active','BESSE',84,'1x per week',6,'Mon mornings'],[900102,'BROCAM','Active','GENOA',84,'1x per week',3,''],
+    [900103,'CARDEL','Active','BESSE',84,'1x per 2 weeks',1,''],[900104,'DUNEMI','Pending Start','BESSE',56,'2x per week',0,'Tue/Thu'],
+    [900105,'EVAFRA','Active','GENOA',84,'1x per 4 weeks',2,''],[900106,'FOXGIN','Active','BESSE',84,'1x per week',5,''],
+    [900107,'GRAHAL','Active','GENOA',84,'1x per week',6,'Fri only'],[900108,'HOLIVY','Paused','BESSE',84,'1x per week',0,''],
+    [900109,'IRWJAN','Active','BESSE',84,'1x per week',2,''],[900110,'JONKAI','Active','GENOA',84,'1x per 2 weeks',2,''],
+    [900111,'KIMLEO','Discontinued','BESSE',84,'1x per week',0,''],[900112,'LOPMIA','Active','BESSE',84,'1x per week',0,''],
+    [900113,'MOONED','Active','GENOA',56,'2x per week',3,''],
+  ];
+  const step = f => f.includes('2x') ? 3.5 : f.includes('2 weeks') ? 14 : f.includes('4 weeks') ? 28 : 7;
+  const appts = []; const times = [9*60, 9*60+30, 10*60, 10*60+30, 13*60, 13*60+30, 14*60, 15*60];
+  // find this week's Monday so demo "today" always has appointments on weekdays
+  const base = dowOf(T) === 0 ? T+1 : dowOf(T) === 6 ? T+2 : T;
+  pts.forEach((p, i) => {
+    const [mrn, , st, , mg, freq, weeksAhead] = p;
+    if (st === 'Discontinued') { appts.push([mrn, base-30, times[i%8], 'Esketamine Follow Up', 'Kept']); return; }
+    const s = step(freq);
+    for (let k = -3; k <= 12; k++){
+      let d = Math.round(base + k*s); if (dowOf(d) === 0) d += 1; if (dowOf(d) === 6) d += 2;
+      if (d < base - 21) continue;
+      const isStart = st === 'Pending Start' && d >= base;
+      if (d >= base && (d - base) > weeksAhead * 7) break;
+      if (st === 'Paused' && d >= base) break;
+      appts.push([mrn, d, times[(i + k + 8) % 8], isStart ? 'Esketamine Tx Start' : 'Esketamine Follow Up', d < base ? (k === -2 && i === 4 ? 'No Show' : 'Kept') : 'Expected']);
+    }
+  });
+  const apVals = appts.sort((a,b) => a[1]-b[1] || a[2]-b[2]).map(([mrn,d,t,ev,st]) => {
+    const p = pts.find(x => x[0] === mrn); const dose = /Start/.test(ev) ? 56 : p[4];
+    return [mrn, p[1], d, t/1440, ev, dose, st, `${d}|${fmtT(t)}|${mrn}`];
+  });
+  // inventory
+  let sn = 100000000000; const code = (mg, ser, exp) => { const d = sDate(exp); const yy = String(d.getUTCFullYear()).slice(2), mm = String(d.getUTCMonth()+1).padStart(2,'0'), dd = String(d.getUTCDate()).padStart(2,'0'); return `01${mg===84?'00350458028034':'00350458028027'}21${ser}17${yy}${mm}${dd}10AB12345`; };
+  const inv = [];
+  const addKit = o => { const r = Array(26).fill(''); r[0] = o.pct||'Taylor R.'; if (o.scan !== false){ r[1] = code(o.mg, String(++sn), o.exp); } r[2] = o.mrn ?? ''; r[3] = o.ph; r[4] = o.ordered ?? ''; r[5] = o.rec ?? ''; if (o.admin){ r[11] = o.admin; r[12] = o.adminDate; r[15] = 'Taylor R.'; r[16] = 'Dr. Aujla'; } r[17] = o.cmt ?? ''; if (o.disp){ r[19]='Yes'; r[20]=o.disp; r[21]='Blue Bin'; r[22]=o.mg; r[11]='Marked For Disposal'; r[24]='Taylor R.'; r[25]='Jordan P.'; } inv.push(r); };
+  for (let i = 0; i < 20; i++) addKit({ mg:84, ph:'Besse', rec:T-40+i, exp:T+200, admin:84, adminDate:T-30+i, mrn:900101 });
+  for (let i = 0; i < 13; i++) addKit({ mg:84, ph:'Besse', rec:T-20+i, exp:T+120+i });
+  addKit({ mg:84, ph:'Besse', rec:T-90, exp:T-3 }); // expired, unused
+  addKit({ mg:56, ph:'Besse', rec:T-10, exp:T+150 });
+  addKit({ mg:84, ph:'Genoa', mrn:900102, rec:T-4, exp:T+300, cmt:'BROCAM' });
+  addKit({ mg:84, ph:'Genoa', mrn:900107, rec:T-6, exp:T+300, cmt:'GRAHAL' });
+  addKit({ mg:84, ph:'Genoa', mrn:900107, rec:T-2, exp:T+300, cmt:'GRAHAL' });
+  addKit({ mg:84, ph:'Genoa', mrn:900110, rec:T-20, exp:T+300, cmt:'JONKAI' }); // Genoa use-by = received + 14 → expired
+  addKit({ mg:56, ph:'Genoa', mrn:900113, rec:T-3, exp:T+300, cmt:'MOONED' });
+  addKit({ mg:84, ph:'Genoa', mrn:900105, ordered:T-3, scan:false, cmt:'EVAFRA' });
+  addKit({ mg:84, ph:'Genoa', mrn:900102, ordered:T-2, scan:false, cmt:'BROCAM' });
+  for (let i = 0; i < 12; i++) inv.push(Array(26).fill(''));
+  const invCalc = r => {
+    const p = parseScan(r[1]); const ph = String(r[3]);
+    r[6] = p?.exp ?? ''; r[7] = !r[1] ? '' : /besse/i.test(ph) ? r[6] : (r[5] !== '' ? r[5] + 14 : '');
+    r[8] = p?.mg ?? (r[1] ? ' ' : ''); r[9] = p?.serial ?? ''; r[10] = p?.lot ?? '';
+    r[13] = r[12] !== '' ? DOW[dowOf(r[12])] : ''; r[14] = (typeof r[11] === 'number' && r[11] !== r[8]) ? 'Yes' : 'No';
+    r[18] = (r[7] !== '' && r[7] < T) ? 'Yes' : 'No';
+    const a = typeof r[11] === 'number' ? r[11] : (r[11] === '' ? 0 : NaN); const d = r[22] === '' ? 0 : +r[22];
+    r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
+  };
+  inv.forEach(invCalc);
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
+  ptCalc();
+  const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
+  const besse = [['BESSE WEEKLY ORDERING GUIDE','','','','','','','','','','',''],['Clinic','Date','Dose','Besse O/H','Appts Next Week','Appts 2 Week Out','Approved Overage','To Be Ordered','','DATE',56,84],['SRL',T-3,'56mg',1,0,0,1,'','',T-3,'',''],['','','84mg',13,12,6,-2,'','',T+4,'','']];
+  const docs = {};
+  const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null] };
+  return {
+    live: false,
+    async load(){
+      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, k === 'kits' ? 'Table2' : k === 'patients' ? 'Table1' : 'Table47', k === 'kits' ? 'Inventory' : k === 'patients' ? 'Master Patient Tracker' : 'Appt List', h, v.map(r => r.slice()), F(v, fs));
+      return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
+        besse: parseBesse(besse, besse), besseSheet: 'Besse Order' };
+    },
+    async update(k, r, snap, changes){
+      const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
+      if (row < 0) throw new Error('That row changed. Refresh and try again.');
+      for (const [c, v] of changes){ if (fs.has(c)) throw new Error('Stopped: formula column.'); vals[row][c] = (v && typeof v === 'object') ? v.date : v; }
+      calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
+    },
+    async add(k, changes){
+      const [, vals, fs, calc] = t[k]; let last = -1; vals.forEach((v, i) => { if (v.some((x, c) => !fs.has(c) && x !== '')) last = i; });
+      let row = last + 1; if (row >= vals.length){ vals.push(Array(vals[0].length).fill('')); }
+      for (const [c, v] of changes){ if (fs.has(c)) throw new Error('Stopped: formula column.'); vals[row][c] = (v && typeof v === 'object') ? v.date : v; }
+      calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
+    },
+    async setCells(sheet, cells){ for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
+    getDoc(key){ return docs[key] ?? null; },
+    async setDoc(key, val){ docs[key] = JSON.parse(JSON.stringify(val)); },
+    watch(){},
+  };
+}
+
+// ---------- app state ----------
+const S = {
+  store:null, tables:{}, ref:{}, besse:null, besseSheet:null, P:[], A:[], K:[], byMrn:new Map(), loaded:false, loadErr:null,
+  view:'today', day:todaySerial(), orderDate:todaySerial(), orderTab:'BESSE', target:null, pull:{},
+  patQ:'', patAll:false, invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
+  todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
+};
+
+function derive(){
+  const T = todaySerial();
+  const P = [], A = [], K = [], byMrn = new Map();
+  const tp = S.tables.patients;
+  if (tp) tp.values.forEach((_, r) => {
+    const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '' };
+    P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
+  });
+  const ta = S.tables.appts; const keys = new Set();
+  if (ta) ta.values.forEach((_, r) => {
+    const mrn = mrnKey(ta.get(r,'mrn')); const date = toSerial(ta.get(r,'date')); if (!mrn || date == null) return;
+    const ev = String(ta.get(r,'event') ?? ''); const st = String(ta.get(r,'status') ?? ''); const time = toMinutes(ta.get(r,'time'));
+    let key = `${mrn}|${date}|${time ?? ''}`; if (keys.has(key)) key += '#' + r; keys.add(key);
+    const hold = /^\s*hold/i.test(ev);
+    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: st, hold,
+      active: !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
+  });
+  const tk = S.tables.kits; const ids = new Map();
+  if (tk) tk.values.forEach((_, r) => {
+    if (!tk.snap(r).some(v => v !== null && v !== '')) return;
+    const g = k => tk.get(r, k); const adminRaw = g('administeredmg');
+    const k = { r, pct:g('loggingpct'), scan: g('scanhere') == null ? '' : String(g('scanhere')), mrn: mrnKey(g('mrn')), pharmRaw: g('pharmacy'), pharm: pharmOf(g('pharmacy')),
+      ordered: toSerial(g('dateordered')), received: toSerial(g('datereceived')), exp: toSerial(g('expirationdate')), useBy: toSerial(g('usebydate')), recv: num(g('receivedmg')),
+      serial: g('serialnumber') == null ? '' : String(g('serialnumber')), lot: g('lotnumber') ?? '', adminRaw, admin: num(adminRaw), adminDate: toSerial(g('dateadministered')),
+      tech: g('treatingtechnician'), sup: g('supervisingphysician'), comments: g('comments'), expFlag: g('expired'), marked: g('markedfordisposal'), dispDate: toSerial(g('dateofdisposal')),
+      dispMethod: g('disposalmethod'), mgDisp: num(g('mgdisposed')), remaining: num(g('mgremaining')) };
+    k.scanN = normScan(k.scan); k.serialN = normScan(k.serial);
+    let id = k.serialN ? 'S:' + k.serialN : k.scanN ? 'C:' + k.scanN : 'R:' + [k.mrn, k.ordered, k.pct].join('|');
+    const n = ids.get(id) || 0; ids.set(id, n + 1); if (n) id += '#' + n; k.id = id;
+    k.markedDisp = /dispos/i.test(String(adminRaw ?? ''));
+    k.administered = adminRaw != null && !k.markedDisp;
+    k.disposed = yes(k.marked) || k.dispDate != null || k.markedDisp;
+    k.isReceived = !!k.scanN;
+    k.openOrder = !k.isReceived && !!k.mrn && !k.administered && !k.disposed;
+    k.expDate = k.useBy ?? k.exp;
+    k.expired = k.expDate != null ? k.expDate < T : yes(k.expFlag);
+    k.full = k.isReceived && !k.administered && !k.disposed && k.recv > 0 && (k.remaining == null || k.remaining >= k.recv);
+    k.available = k.full && !k.expired;
+    k.needsDisposal = k.isReceived && !k.disposed && !k.administered && k.expired;
+    k.partialOpen = !k.disposed && k.recv > 0 && k.remaining > 0 && k.remaining < k.recv;
+    K.push(k);
+  });
+  Object.assign(S, { P, A, K, byMrn });
+}
+const nm = mrn => S.byMrn.get(mrn)?.name || S.A.find(a => a.mrn === mrn)?.patient || mrn;
+const fifo = (a, b) => (a.received ?? 1e9) - (b.received ?? 1e9) || (a.expDate ?? 1e9) - (b.expDate ?? 1e9) || a.r - b.r;
+function apptInfo(a){
+  const p = S.byMrn.get(a.mrn); const pharm = p?.pharm || '';
+  let mg = a.dose, src = 'schedule';
+  if (!(mg > 0)) { if (a.isStart) { mg = 56; src = 'start'; } else if (p?.mg) { mg = p.mg; src = 'tracker'; } else { mg = null; src = 'unknown'; } }
+  return { p, pharm, mg, src };
+}
+function scheduledThru(mrn){ const T = todaySerial(); let m = null; for (const a of S.A) if (a.mrn === mrn && a.active && a.date >= T && (m == null || a.date > m)) m = a.date; return m; }
+
+// ---------- today ----------
+function todayModel(day){
+  const T = todaySerial(); const pull = S.pull[isoOf(day)] || {};
+  const list = S.A.filter(a => a.date === day).sort((x, y) => (x.time ?? 0) - (y.time ?? 0));
+  const used = new Set(Object.values(pull));
+  const items = list.map(a => {
+    const inf = apptInfo(a);
+    const adminKit = S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === day) || null;
+    const pulledKit = pull[a.key] ? S.K.find(k => k.id === pull[a.key]) || null : null;
+    const fut = S.A.filter(x => x.mrn === a.mrn && x.active && x.date > day);
+    const thru = scheduledThru(a.mrn);
+    if (adminKit) used.add(adminKit.id);
+    return { a, inf, adminKit, pulledKit, remaining: fut.length, thru, needsSched: thru == null || thru < T + CFG.schedDays };
+  });
+  const pool = S.K.filter(k => k.available && !used.has(k.id)).sort(fifo);
+  for (const it of items){
+    if (!it.a.active || it.adminKit || it.pulledKit || !it.inf.mg) continue;
+    const i = pool.findIndex(k => k.recv === it.inf.mg && (it.inf.pharm === 'BESSE' ? k.pharm === 'BESSE' : it.inf.pharm === 'GENOA' ? (k.pharm === 'GENOA' && k.mrn === it.a.mrn) : false));
+    if (i >= 0){ it.suggest = pool[i]; pool.splice(i, 1); } else it.noKit = true;
+  }
+  return items;
+}
+function schedGaps(){
+  const T = todaySerial(); const mon = T - ((dowOf(T) + 6) % 7), sun = mon + 6; const lim = T + CFG.schedDays;
+  const wk = new Set(S.A.filter(a => a.active && a.date >= mon && a.date <= sun).map(a => a.mrn));
+  const A = [...wk].map(mrn => ({ mrn, thru: scheduledThru(mrn), p: S.byMrn.get(mrn) })).filter(x => x.thru == null || x.thru < lim).sort((a, b) => (a.thru ?? 0) - (b.thru ?? 0));
+  const inA = new Set(A.map(x => x.mrn));
+  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && !inA.has(p.mrn) && scheduledThru(p.mrn) == null).map(p => ({ mrn: p.mrn, p, last: Math.max(0, ...S.A.filter(a => a.mrn === p.mrn && a.status === 'Kept').map(a => a.date)) || null }));
+  return { A, B, lim };
+}
+async function savePull(){
+  const keep = {}; const T = todaySerial();
+  for (const [d, v] of Object.entries(S.pull)){ const s = fromIso(d); if (s != null && s >= T - 14 && Object.keys(v).length) keep[d] = v; }
+  S.pull = keep; await S.store.setDoc('eskPull', keep);
+}
+function findByScan(raw){
+  const p = parseScan(raw); const n = normScan(raw); if (!n) return { p, list: [] };
+  let list = S.K.filter(k => k.scanN === n);
+  if (!list.length && p) list = S.K.filter(k => k.serialN && k.serialN === normScan(p.serial));
+  if (!list.length && n.length >= 8) list = S.K.filter(k => k.serialN && k.serialN === n);
+  return { p, list };
+}
+function todayScan(raw){
+  const day = S.day; const { p, list } = findByScan(raw);
+  if (!list.length) return setMsg('todayMsg', 'bad', p ? `Serial ${p.serial} isn't in the Inventory log yet. Receive it first on the Receive tab.` : `That scan isn't a Spravato code and doesn't match any serial in the log.`);
+  const k = list.find(x => !x.administered && !x.disposed) || list[0];
+  if (k.administered) return setMsg('todayMsg', 'bad', `Serial ${k.serial} was already administered (${fmtD(k.adminDate,'full')}, ${esc(nm(k.mrn))}).`);
+  if (k.disposed) return setMsg('todayMsg', 'bad', `Serial ${k.serial} is marked for disposal. Do not use.`);
+  if (k.expired) return setMsg('todayMsg', 'bad', `Serial ${k.serial} is <b>expired</b> (use by ${fmtD(k.expDate,'full')}). Do not use — set it aside for disposal.`);
+  const items = todayModel(day); const d = isoOf(day); S.pull[d] = S.pull[d] || {};
+  const already = Object.entries(S.pull[d]).find(([, id]) => id === k.id);
+  if (already){ const it = items.find(i => i.a.key === already[0]); return setMsg('todayMsg', 'info', `Already pulled for ${esc(it ? nm(it.a.mrn) : 'a patient')}.`); }
+  const open = i => i.a.active && !i.pulledKit && !i.adminKit;
+  let it = S.target ? items.find(i => i.a.key === S.target) : null;
+  if (!it){
+    if (k.pharm === 'GENOA') it = items.find(i => open(i) && i.a.mrn === k.mrn);
+    else it = items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv) || items.find(i => open(i) && i.inf.pharm === 'BESSE');
+  }
+  if (!it) return setMsg('todayMsg', 'bad', k.pharm === 'GENOA' ? `This Genoa kit belongs to <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}), who has no open appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)}.` : `No open Besse appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)} needs this kit.`);
+  if (k.pharm === 'GENOA' && k.mrn !== it.a.mrn) return setMsg('todayMsg', 'bad', `<b>Wrong patient.</b> This Genoa kit is for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}), not ${esc(nm(it.a.mrn))}.`);
+  if (k.pharm !== it.inf.pharm && it.inf.pharm) return setMsg('todayMsg', 'bad', `${esc(nm(it.a.mrn))} gets ${PH_LABEL[it.inf.pharm]} medication, but this kit is ${PH_LABEL[k.pharm]}.`);
+  const notes = [];
+  if (it.inf.mg && k.recv !== it.inf.mg) notes.push(`<b>Dose check:</b> kit is ${k.recv} mg, appointment is ${it.inf.mg} mg.`);
+  if (k.pharm === 'BESSE'){ const older = S.K.filter(x => x.pharm === 'BESSE' && x.available && x.recv === k.recv && x.id !== k.id && !Object.values(S.pull[d]).includes(x.id) && fifo(x, k) < 0); if (older.length) notes.push(`An older Besse ${k.recv} mg kit is available (received ${fmtD(older.sort(fifo)[0].received)}).`); }
+  S.pull[d][it.a.key] = k.id; S.target = null; savePull();
+  setMsg('todayMsg', notes.length ? 'warn' : 'ok', `Pulled serial ${esc(k.serial)} (${k.recv} mg ${PH_LABEL[k.pharm]}) for <b>${esc(nm(it.a.mrn))}</b> at ${fmtT(it.a.time)}.` + (notes.length ? '<br>' + notes.join('<br>') : ''));
+}
+
+// ---------- ordering ----------
+function weeksFor(od){ const d = dowOf(od); let add = (1 - d + 7) % 7; if (add === 0) add = 7; const m = od + add; return [[m, m+4], [m+7, m+11]]; }
+function besseModel(){
+  const w = weeksFor(S.orderDate); const rows = { 56:{ w1:0, w2:0 }, 84:{ w1:0, w2:0 } }; const list = [], review = [];
+  for (const a of S.A){
+    if (!a.active || a.date < w[0][0] || a.date > w[1][1]) continue;
+    const wk = a.date <= w[0][1] ? 1 : a.date >= w[1][0] ? 2 : 0; if (!wk) continue;
+    const inf = apptInfo(a);
+    if (inf.pharm !== 'BESSE'){ if (!inf.pharm) review.push({ a, why:'Not on the patient tracker — pharmacy unknown' }); continue; }
+    if (inf.mg !== 56 && inf.mg !== 84){ review.push({ a, why:`Dose ${inf.mg ?? 'unknown'}` }); continue; }
+    rows[inf.mg]['w' + wk]++; list.push({ a, wk, mg: inf.mg, verify: inf.mg === 56 && !a.isStart });
+  }
+  const besseKits = S.K.filter(k => k.pharm === 'BESSE' && k.full);
+  for (const mg of [56, 84]){
+    const r = rows[mg]; r.oh = besseKits.filter(k => k.recv === mg && !k.expired).length;
+    r.expiredFull = besseKits.filter(k => k.recv === mg && k.expired).length;
+    r.expSoon = besseKits.filter(k => k.recv === mg && !k.expired && k.expDate != null && k.expDate <= w[1][1]).length;
+    const sheetOv = S.besse?.rows?.[mg]?.ov; r.sheetOv = sheetOv; r.ov = S.ov[mg] ?? sheetOv ?? (mg === 56 ? 1 : -2);
+    r.order = Math.max(0, r.w1 + r.w2 - r.oh + r.ov);
+  }
+  return { w, rows, list: list.sort((a, b) => a.a.date - b.a.date || (a.a.time ?? 0) - (b.a.time ?? 0)), review };
+}
+function genoaModel(){
+  const T = todaySerial(), end = T + CFG.genoaDays;
+  const appts = S.A.filter(a => a.active && a.date >= T && a.date <= end && apptInfo(a).pharm === 'GENOA').sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  const onhand = new Map(), open = new Map();
+  for (const k of S.K){ if (!k.mrn) continue;
+    if (k.available && k.pharm !== 'BESSE'){ if (!onhand.has(k.mrn)) onhand.set(k.mrn, []); onhand.get(k.mrn).push(k); }
+    if (k.openOrder && k.pharm !== 'BESSE'){ if (!open.has(k.mrn)) open.set(k.mrn, []); open.get(k.mrn).push(k); } }
+  for (const l of onhand.values()) l.sort(fifo); for (const l of open.values()) l.sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0) || a.r - b.r);
+  const rows = appts.map(a => { const inf = apptInfo(a);
+    const oh = onhand.get(a.mrn) || []; let i = oh.findIndex(k => !inf.mg || k.recv === inf.mg);
+    if (i >= 0 && oh[i].expDate != null && oh[i].expDate < a.date) i = -1; // Genoa kits expire 14 days after receipt
+    if (i >= 0){ const k = oh.splice(i, 1)[0]; return { a, inf, cover:'onhand', k }; }
+    const op = open.get(a.mrn) || []; if (op.length){ const k = op.shift(); return { a, inf, cover:'ordered', k }; }
+    return { a, inf, cover:'need' };
+  });
+  const expiring = S.K.filter(k => k.pharm === 'GENOA' && k.needsDisposal);
+  return { rows, end, expiring };
+}
+
+// ---------- write helpers ----------
+function changesFor(tkey, obj){
+  const t = S.tables[tkey]; const out = [], skipped = [];
+  for (const [key, v] of Object.entries(obj)){ const c = t.cols[key]; if (c == null){ skipped.push(key); continue; } if (t.formulaCol[c]){ skipped.push(t.headers[c]); continue; } out.push([c, v]); }
+  return { out, skipped };
+}
+function describe(tkey, out){ const t = S.tables[tkey]; return out.map(([c, v]) => `<div><code>${esc(colLetterFor(tkey, c))}</code> ${esc(t.headers[c].trim())} = <b>${esc(v && typeof v === 'object' ? fmtD(v.date, 'full') : v === '' ? '(clear)' : v)}</b></div>`).join(''); }
+const TABLE_OFFSET = { kits: 1, patients: 1, appts: 12 }; // column where each table starts (B, B, M) — display only
+const colLetterFor = (k, c) => colLetter((TABLE_OFFSET[k] ?? 0) + c);
+const mrnVal = m => /^\d+$/.test(m) ? Number(m) : m;
+function pharmText(code){ const want = code === 'BESSE' ? 'Besse' : code === 'GENOA' ? 'Genoa' : code; const refv = (S.ref.pharmacy || []).find(v => pharmOf(v) === code); return refv || want; }
+async function write(label, fn, okText){
+  busy(label);
+  try { await fn(); await reload(true); toast('ok', okText || 'Saved to the workbook.'); return true; }
+  catch (e){ console.error(e); try { await reload(true); } catch {} toast('bad', esc(e.message || String(e))); return false; }
+  finally { busy(false); }
+}
+
+// ---------- rendering ----------
+const VIEWS = [['today','Today'],['receive','Receive'],['order','Order'],['patients','Patients'],['inventory','Inventory']];
+function setMsg(k, kind, html){ S[k] = { kind, html }; render(); }
+function msgHTML(m){ return m ? `<div class="msg ${m.kind}" role="status">${m.html}</div>` : ''; }
+function render(){
+  const act = document.activeElement; const keepId = act && act.id; const keepVal = act && act.value; const selS = act?.selectionStart;
+  const app = $('#app');
+  if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
+  app.innerHTML = `
+    ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
+    <header class="top">
+      <div class="bar"><div class="brand"><span class="dot">ESK</span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
+        <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
+        <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
+      <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}</nav>
+    </header>
+    <main>${S.view === 'today' ? todayHTML() : S.view === 'receive' ? receiveHTML() : S.view === 'order' ? orderHTML() : S.view === 'patients' ? patientsHTML() : inventoryHTML()}</main>`;
+  if (!CFG.me && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
+  if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
+}
+function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+function todayHTML(){
+  const T = todaySerial(); const day = S.day; const items = todayModel(day); const gaps = schedGaps();
+  const act = items.filter(i => i.a.active);
+  const pulled = act.filter(i => i.pulledKit || i.adminKit).length, done = act.filter(i => i.adminKit).length;
+  const tgt = S.target ? items.find(i => i.a.key === S.target) : null;
+  const pullList = items.filter(i => i.pulledKit || i.adminKit);
+  return `
+  <div class="card">
+    <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
+      <div class="grow" style="text-align:center"><b>${day === T ? 'Today' : fmtD(day, 'dow')}</b> <span class="muted">${fmtD(day, 'full')}</span></div>
+      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Today</button>' : ''}</div>
+    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n">${pulled}/${act.length}</div><div class="l">meds pulled</div></div><div class="stat"><div class="n">${done}</div><div class="l">administered</div></div></div>
+  </div>
+  <div class="card noprint">
+    <div class="scan"><span aria-hidden="true">▦</span><input id="scanToday" data-scan="today" placeholder="${tgt ? 'Scan kit for ' + esc(nm(tgt.a.mrn)) : 'Scan a kit to pull it for today'}" autocomplete="off" aria-label="Scan kit"></div>
+    ${tgt ? `<div class="row small" style="margin-top:6px"><span class="chip acc">Pulling for ${esc(nm(tgt.a.mrn))} · ${fmtT(tgt.a.time)}</span><button class="btn sm ghost" data-act="untarget">Clear</button></div>` : '<div class="small muted" style="margin-top:6px">Besse kits go to the next Besse patient who needs that dose; Genoa kits go to their own patient. Tap “Pull” on a card to scan for one patient.</div>'}
+    ${msgHTML(S.todayMsg)}
+  </div>
+  <div class="card"><h2>Schedule<span class="sp"></span></h2>
+    ${items.length ? `<div class="list">${items.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments on this day.</div>'}
+  </div>
+  <div class="card print-target" id="daylist"><h2>Med pull list · ${fmtD(day, 'full')}<span class="sp"></span>
+      <button class="btn sm noprint" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy</button><button class="btn sm noprint" data-act="print" data-t="daylist" ${pullList.length ? '' : 'disabled'}>Print</button></h2>
+    ${pullList.length ? `<div class="tw"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th class="num">mg</th><th>Pharmacy</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Status</th></tr></thead><tbody>
+      ${pullList.map(i => { const k = i.adminKit || i.pulledKit; return `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b></td><td>${esc(i.a.mrn)}</td><td class="num">${k.recv ?? ''}</td><td>${PH_LABEL[k.pharm]}</td><td class="mono">${esc(k.serial)}</td><td class="mono">${esc(k.lot)}</td><td>${fmtD(k.expDate)}</td><td>${i.adminKit ? 'Administered' : 'Pulled'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="muted small">Scan kits in the morning — they’ll be listed here with patient, MRN, serial and lot. The list is saved with the workbook, so it’s there for anyone who opens the panel today.</div>'}
+  </div>
+  <div class="card"><details class="sec" ${gaps.A.length + gaps.B.length ? 'open' : ''}><summary>Needs scheduling <span class="chip ${gaps.A.length + gaps.B.length ? 'warn' : 'ok'}">${gaps.A.length + gaps.B.length}</span></summary>
+    <h3>On this week’s schedule, not booked through ${fmtD(gaps.lim)}</h3>
+    ${gaps.A.length ? `<div class="list">${gaps.A.map(x => `<div class="item"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p?.freq || '')}</span><span class="sp grow"></span><span class="chip warn">${x.thru ? 'thru ' + fmtD(x.thru) : 'nothing booked'}</span></div>${x.p?.prefs ? `<div class="line muted small">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">Everyone on this week’s schedule is booked through the next ' + CFG.schedDays + ' days.</div>'}
+    <h3>Active or Pending Start with no appointments</h3>
+    ${gaps.B.length ? `<div class="list">${gaps.B.map(x => `<div class="item"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span><span class="sp grow"></span><span class="chip bad">${x.last ? 'last ' + fmtD(x.last) : 'never seen'}</span></div>${x.p.prefs ? `<div class="line muted small">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">None.</div>'}
+  </details></div>`;
+}
+function itemHTML(i){
+  const a = i.a; const k = i.adminKit || i.pulledKit || i.suggest;
+  let line;
+  if (!a.active) line = `<span class="chip">${esc(a.hold ? 'Hold' : a.status)}</span>`;
+  else if (i.adminKit) line = `<span class="chip ok">Administered ✓</span> ${kitLine(i.adminKit)}`;
+  else if (i.pulledKit) line = `<span class="chip ok">Pulled</span> ${kitLine(i.pulledKit)}`;
+  else if (i.suggest) line = `<span class="chip info">Pull</span> ${kitLine(i.suggest)}`;
+  else if (i.inf.pharm === 'GENOA') line = `<span class="chip bad">No Genoa kit on hand for this patient</span>`;
+  else if (!i.inf.pharm) line = `<span class="chip warn">Not on the patient tracker — pharmacy unknown</span>`;
+  else line = `<span class="chip bad">No ${PH_LABEL[i.inf.pharm]} ${i.inf.mg ?? ''} mg kit available</span>`;
+  const sched = a.active ? `<span class="chip ${i.needsSched ? 'warn' : ''}">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}</span>` : '';
+  return `<div class="item ${a.active ? '' : 'dim'} ${S.target === a.key ? 'target' : ''}">
+    <div class="head"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · ${i.inf.mg ?? '?'} mg · ${PH_LABEL[i.inf.pharm]}</span></div>
+    <div class="line">${line}</div>
+    <div class="line">${sched}${i.inf.mg === 56 && !a.isStart ? ' <span class="chip warn">56 mg on a non-Start visit — verify</span>' : ''}</div>
+    ${a.active && !i.adminKit ? `<div class="acts noprint"><button class="btn sm" data-act="target" data-k="${esc(a.key)}">${S.target === a.key ? 'Scanning…' : 'Pull'}</button>${i.pulledKit ? `<button class="btn sm ghost" data-act="unpull" data-k="${esc(a.key)}">Undo pull</button>` : ''}<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}" ${k ? '' : ''}>Administer</button><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient</button></div>` : `<div class="acts noprint"><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient</button></div>`}
+  </div>`;
+}
+
+// ---------- administer ----------
+function openAdmin(key){
+  const it = todayModel(S.day).find(i => i.a.key === key); if (!it) return;
+  const kit = it.pulledKit || it.suggest || null;
+  S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, msg: null };
+  renderAdmin();
+}
+function renderAdmin(){
+  const it = todayModel(S.day).find(i => i.a.key === S.adm.key); if (!it){ closeModal(); return; }
+  const k = S.K.find(x => x.id === S.adm.kitId) || null; const probs = [], warns = [];
+  if (!k) probs.push('Scan or choose the kit being used.');
+  else {
+    if (k.administered) probs.push(`Serial ${esc(k.serial)} is already administered.`);
+    if (k.disposed) probs.push('This kit is marked for disposal.');
+    if (k.expired) probs.push(`This kit is expired (use by ${fmtD(k.expDate, 'full')}).`);
+    if (k.pharm === 'GENOA' && k.mrn !== it.a.mrn) probs.push(`This Genoa kit belongs to ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}).`);
+    if (k.mrn && k.mrn !== it.a.mrn && k.pharm !== 'GENOA') probs.push(`This kit is already linked to MRN ${esc(k.mrn)}.`);
+    if (k.recv && +S.adm.mg !== k.recv) warns.push(`Kit is ${k.recv} mg; you're recording ${S.adm.mg} mg. The Inventory will mark it Partial.`);
+    if (it.inf.pharm && k.pharm !== it.inf.pharm) warns.push(`Patient is ${PH_LABEL[it.inf.pharm]}, kit is ${PH_LABEL[k.pharm]}.`);
+  }
+  if (!S.adm.tech) probs.push('Enter the treating technician.');
+  if (!S.adm.sup) probs.push('Enter the supervising physician.');
+  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup };
+  if (k && !k.mrn) obj.mrn = mrnVal(it.a.mrn);
+  if (k && !k.comments) obj.comments = nm(it.a.mrn);
+  const { out } = changesFor('kits', obj);
+  const cands = S.K.filter(x => x.available && (it.inf.pharm === 'GENOA' ? x.mrn === it.a.mrn : x.pharm === (it.inf.pharm || 'BESSE'))).sort(fifo).slice(0, 4);
+  openModal(`<h2>Administer — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
+    <label class="lbl" for="admScan">Kit</label>
+    <div class="scan"><input id="admScan" data-scan="admin" placeholder="Scan the kit to confirm" autocomplete="off"></div>
+    ${k ? `<div class="item" style="margin-top:8px"><div class="line">${kitLine(k)}</div></div>` : ''}
+    ${cands.length ? `<div class="small muted" style="margin-top:8px">Or pick (oldest first):</div><div class="row small" style="margin-top:4px">${cands.map(x => `<button class="btn sm ${x.id === S.adm.kitId ? 'primary' : ''}" data-act="admKit" data-id="${esc(x.id)}" style="flex:0 0 auto">…${esc(x.serial.slice(-5))} · rec ${fmtD(x.received)}</button>`).join('')}</div>` : ''}
+    <div class="form2">
+      <div><label class="lbl" for="admMg">Administered (mg)</label><select id="admMg" class="fld" data-adm="mg">${[56, 84, 28, 70, 14].map(v => `<option ${+S.adm.mg === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div><label class="lbl">Date administered</label><input class="fld ro" value="${fmtD(S.day, 'full')}" readonly></div>
+      <div><label class="lbl" for="admTech">Treating technician</label><input id="admTech" class="fld" data-adm="tech" list="dlTech" value="${esc(S.adm.tech)}"></div>
+      <div><label class="lbl" for="admSup">Supervising physician</label><input id="admSup" class="fld" data-adm="sup" list="dlSup" value="${esc(S.adm.sup)}"></div>
+    </div>
+    ${datalist('dlTech', distinct('kits', 'treatingtechnician'))}${datalist('dlSup', distinct('kits', 'supervisingphysician'))}
+    ${probs.map(p => `<div class="msg bad">${p}</div>`).join('')}${warns.map(p => `<div class="msg warn">${p}</div>`).join('')}${msgHTML(S.adm.msg)}
+    ${k ? `<div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>` : ''}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="admSave" ${probs.length ? 'disabled' : ''}>Record administration</button></div>`);
+  if (!k) setTimeout(() => $('#admScan')?.focus(), 30);
+}
+async function adminSave(){
+  const it = todayModel(S.day).find(i => i.a.key === S.adm.key); const k = S.K.find(x => x.id === S.adm.kitId); if (!it || !k) return;
+  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup };
+  if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
+  CFG.sup = S.adm.sup; if (!CFG.me) CFG.me = S.adm.tech; saveCfg();
+  const { out } = changesFor('kits', obj);
+  const ok = await write('Recording administration…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Recorded ${S.adm.mg} mg for ${nm(it.a.mrn)}.`);
+  if (ok){ const d = isoOf(S.day); if (S.pull[d]) { delete S.pull[d][it.a.key]; savePull(); } closeModal(); render(); }
+}
+
+// ---------- receive ----------
+function receiveHTML(){
+  const T = todaySerial(); const genoa = S.recvPharm === 'Genoa';
+  const openLines = S.K.filter(k => k.openOrder && (genoa ? k.pharm !== 'BESSE' : k.pharm === 'BESSE')).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
+  const sel = S.recvLine ? S.K.find(k => k.id === S.recvLine) : null;
+  const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
+  const L = S.lastRecv ? S.K.find(k => k.id === S.lastRecv) : null;
+  return `<div class="card">
+    <div class="row"><div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p}</button>`).join('')}</div><span class="grow"></span></div>
+    <div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="${genoa ? (sel ? 'Scan the kit for ' + esc(nm(sel.mrn)) : 'Pick the patient’s ordered line, then scan') : 'Scan each Besse kit as it’s unpacked'}" autocomplete="off" aria-label="Scan kit to receive"></div>
+    <div class="small muted" style="margin-top:6px">${genoa ? 'Receiving fills <b>Scan Here</b> and <b>Date Received</b> on the line that was opened when the order was placed.' : 'Each scan fills the oldest open Besse order line, or starts a new Inventory line.'} Expiration, serial, lot and mg are filled in by the workbook’s formulas.</div>
+    ${msgHTML(S.recvMsg)}
+    ${L ? `<div class="item" style="margin-top:8px"><b>Check against the box:</b><dl class="kv" style="margin-top:6px"><dt>Patient</dt><dd>${esc(L.mrn ? nm(L.mrn) + ' · MRN ' + L.mrn : '—')}</dd><dt>Dose</dt><dd>${L.recv ?? '—'} mg</dd><dt>Serial</dt><dd class="mono">${esc(L.serial)}</dd><dt>Lot</dt><dd class="mono">${esc(L.lot)}</dd><dt>Expiration</dt><dd>${fmtD(L.exp, 'full')}</dd><dt>Use by</dt><dd>${fmtD(L.useBy ?? L.expDate, 'full')}</dd><dt>Row</dt><dd>${L.r + 3}</dd></dl></div>` : ''}
+  </div>
+  <div class="card"><h2>Open ${S.recvPharm} order lines <span class="chip">${openLines.length}</span></h2>
+    ${openLines.length ? `<div class="list">${openLines.map(k => { const n = next(k.mrn); return `<div class="item ${sel?.id === k.id ? 'target' : ''}"><div class="head"><span class="name">${esc(k.mrn ? nm(k.mrn) : '—')}</span><span class="meta">${k.mrn ? 'MRN ' + esc(k.mrn) + ' · ' : ''}ordered ${fmtD(k.ordered)} (${k.ordered != null ? T - k.ordered + ' days' : '?'}) · row ${k.r + 3}</span></div>
+      <div class="line small">${n ? `Next appt ${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">No upcoming appointment</span>'}</div>
+      <div class="acts"><button class="btn sm ${sel?.id === k.id ? 'primary' : ''}" data-act="recvPick" data-id="${esc(k.id)}">${sel?.id === k.id ? 'Selected — scan now' : 'Receive this'}</button></div></div>`; }).join('')}</div>` : `<div class="muted small">No open ${S.recvPharm} lines. ${genoa ? 'Lines are opened from Order → Genoa (“Mark as ordered”).' : ''}</div>`}
+    ${genoa ? `<h3>Kit arrived without an order line?</h3><div class="row"><input id="recvNewPt" class="fld grow" list="dlPts" placeholder="Patient short name or MRN"><button class="btn" data-act="recvNew">Receive for this patient</button></div>${datalist('dlPts', S.P.filter(p => p.pharm !== 'BESSE').map(p => `${p.name} · ${p.mrn}`))}` : ''}
+  </div>`;
+}
+async function recvScan(raw){
+  const scan = cleanScan(raw); const p = parseScan(scan); const T = todaySerial();
+  if (!p) return setMsg('recvMsg', 'bad', 'That doesn’t read as a Spravato barcode. Scan the 2D code on the kit.');
+  if (!p.mg) return setMsg('recvMsg', 'warn', 'Scanned code isn’t a known 56 mg or 84 mg Spravato product. Check the kit.');
+  const dup = S.K.find(k => k.serialN === normScan(p.serial));
+  if (dup) return setMsg('recvMsg', 'bad', `Serial ${esc(p.serial)} is already in the log (row ${dup.r + 3}${dup.mrn ? ', ' + esc(nm(dup.mrn)) : ''}).`);
+  const me = CFG.me; if (!me) { openSettings(); return setMsg('recvMsg', 'warn', 'Add your name in Settings first — it goes in Logging PCT.'); }
+  if (S.recvPharm === 'Genoa'){
+    const line = S.recvLine ? S.K.find(k => k.id === S.recvLine) : null;
+    if (!line) return setMsg('recvMsg', 'warn', 'Pick the patient’s order line below first (or use “Receive for this patient”).');
+    const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText('GENOA');
+    const { out } = changesFor('kits', obj);
+    const ok = await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out), `Received for ${nm(line.mrn)}.`);
+    if (ok){ S.recvLine = null; S.lastRecv = 'S:' + normScan(p.serial); S.recvMsg = { kind:'ok', html:`Received ${p.mg} mg for <b>${esc(nm(line.mrn))}</b> into row ${line.r + 3}.` }; render(); }
+    return;
+  }
+  const line = S.recvLine ? S.K.find(k => k.id === S.recvLine) : S.K.filter(k => k.openOrder && k.pharm === 'BESSE').sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0))[0];
+  let ok;
+  if (line){ const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; const { out } = changesFor('kits', obj); ok = await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out)); }
+  else { const { out } = changesFor('kits', { loggingpct: me, scanhere: scan, pharmacy: pharmText('BESSE'), datereceived: { date: T } }); ok = await write('Receiving…', () => S.store.add('kits', out)); }
+  if (ok){ S.recvLine = null; S.lastRecv = 'S:' + normScan(p.serial); const L = S.K.find(k => k.id === S.lastRecv); S.recvMsg = { kind:'ok', html:`Received Besse ${p.mg} mg · serial ${esc(p.serial)}${L ? ' into row ' + (L.r + 3) : ''}. Scan the next kit.` }; render(); }
+}
+function mrnFromInput(v){ const m = String(v || '').match(/(\d{3,})\s*$/); if (m) return m[1]; const p = S.P.find(p => p.name.toUpperCase() === String(v || '').trim().toUpperCase()); return p?.mrn || null; }
+async function recvNew(){
+  const mrn = mrnFromInput($('#recvNewPt')?.value); if (!mrn || !S.byMrn.has(mrn)) return setMsg('recvMsg', 'bad', 'Choose a patient from the list.');
+  if (!CFG.me) return openSettings();
+  const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText('GENOA'), comments: nm(mrn) });
+  const ok = await write('Opening a line…', () => S.store.add('kits', out));
+  if (ok){ const line = S.K.filter(k => k.openOrder && k.mrn === mrn).sort((a, b) => b.r - a.r)[0]; S.recvLine = line?.id || null; S.recvMsg = { kind:'info', html:`Line opened for <b>${esc(nm(mrn))}</b>. Scan the kit now.` }; render(); }
+}
+
+// ---------- order ----------
+function orderHTML(){
+  return `<div class="card"><div class="row"><div class="seg" role="group" aria-label="Pharmacy">${[['BESSE', 'Besse'], ['GENOA', 'Genoa']].map(([k, l]) => `<button data-act="orderTab" data-p="${k}" aria-pressed="${S.orderTab === k}">${l}</button>`).join('')}</div><span class="grow"></span>
+    ${S.orderTab === 'BESSE' ? `<label class="small muted" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld" style="width:auto" data-act-change="orderDate" value="${isoOf(S.orderDate)}">` : `<span class="small muted">Looking ahead ${CFG.genoaDays} days</span>`}</div></div>
+    ${S.orderTab === 'BESSE' ? besseHTML() : genoaHTML()}`;
+}
+function besseHTML(){
+  const m = besseModel(); const [w1, w2] = m.w;
+  const rows = [56, 84].map(mg => ({ mg, ...m.rows[mg] }));
+  const diff = rows.filter(r => r.expiredFull);
+  return `<div class="card print-target" id="besseTbl"><h2>Besse weekly order<span class="sp"></span><button class="btn sm noprint" data-act="copyBesse">Copy table</button><button class="btn sm noprint" data-act="emailBesse">Email</button></h2>
+    <div class="small muted" style="margin-bottom:8px">Next week ${fmtD(w1[0], 'dow')}–${fmtD(w1[1], 'dow')} · 2 weeks out ${fmtD(w2[0], 'dow')}–${fmtD(w2[1], 'dow')}</div>
+    <div class="list">${rows.map(r => `<div class="item"><div class="head"><span class="name" style="font-size:16px">${r.mg} mg</span><span class="sp grow"></span><span class="muted small">To be ordered</span> <span class="big">${r.order}</span></div>
+      <div class="stats" style="margin-top:8px;grid-template-columns:repeat(4,1fr)"><div class="stat"><div class="n">${r.oh}</div><div class="l">on hand</div></div><div class="stat"><div class="n">${r.w1}</div><div class="l">next week</div></div><div class="stat"><div class="n">${r.w2}</div><div class="l">2 wks out</div></div><div class="stat"><div class="n"><input class="ov" type="number" step="1" data-ov="${r.mg}" value="${r.ov}" aria-label="Overage ${r.mg} mg"></div><div class="l">overage</div></div></div></div>`).join('')}</div>
+    <details class="sec" style="margin-top:10px"><summary>Email table preview</summary><div class="tw" style="margin-top:8px">${besseTableText().html.replace('<table ', '<table class="t" ')}</div></details>
+    <div class="small muted" style="margin-top:6px">To Be Ordered = next week + 2 weeks out + overage − on hand (never below 0). On hand counts full, unexpired Besse kits.${rows.some(r => r.sheetOv != null) ? ' Overage starts from the Besse Order tab.' : ''}</div>
+    ${diff.length ? `<div class="msg warn noprint">${diff.map(r => `${r.expiredFull} expired ${r.mg} mg kit${r.expiredFull > 1 ? 's are' : ' is'} not counted as on hand (the Besse Order tab still counts ${r.expiredFull > 1 ? 'them' : 'it'}).`).join(' ')}</div>` : ''}
+    ${rows.some(r => r.expSoon) ? `<div class="msg info noprint">${rows.filter(r => r.expSoon).map(r => `${r.expSoon} on-hand ${r.mg} mg kit${r.expSoon > 1 ? 's expire' : ' expires'} before ${fmtD(w2[1])}.`).join(' ')}</div>` : ''}
+    ${S.besse ? `<div class="row noprint" style="margin-top:10px"><button class="btn primary" data-act="saveBesse">Save to Besse Order tab</button><span class="small muted grow">Writes the date, appointment counts and overage${(() => { const h = findHistRow(); return h ? `, and logs the quantities in the order history for ${fmtD(h.d, 'dow')}` : ' (no order-history row for this week)'; })()}.</span></div>` : ''}
+  </div>
+  ${m.list.some(x => x.verify) ? `<div class="card"><h2>Verify 56 mg <span class="chip warn">${m.list.filter(x => x.verify).length}</span></h2><div class="small muted">56 mg on a follow-up visit is rare — confirm before ordering.</div><div class="list" style="margin-top:8px">${m.list.filter(x => x.verify).map(x => `<div class="item"><div class="head"><span class="name">${esc(nm(x.a.mrn))}</span><span class="meta">MRN ${esc(x.a.mrn)} · ${fmtD(x.a.date, 'dow')} ${fmtT(x.a.time)} · ${esc(x.a.event)}</span></div></div>`).join('')}</div></div>` : ''}
+  ${m.review.length ? `<div class="card"><h2>Needs review <span class="chip bad">${m.review.length}</span></h2><div class="list">${m.review.map(x => `<div class="item"><div class="head"><span class="name">${esc(nm(x.a.mrn))}</span><span class="meta">MRN ${esc(x.a.mrn)} · ${fmtD(x.a.date, 'dow')}</span></div><div class="line small">${esc(x.why)} — not counted.</div></div>`).join('')}</div></div>` : ''}
+  <div class="card"><details class="sec"><summary>Appointments counted <span class="chip">${m.list.length}</span></summary><div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Week</th><th>Date</th><th>Time</th><th>Patient</th><th>Visit</th><th class="num">mg</th></tr></thead><tbody>${m.list.map(x => `<tr><td>${x.wk === 1 ? 'Next' : '2 out'}</td><td>${fmtD(x.a.date, 'dow')}</td><td>${fmtT(x.a.time)}</td><td>${esc(nm(x.a.mrn))}</td><td>${x.a.isStart ? 'Start' : 'EFU'}</td><td class="num">${x.mg}</td></tr>`).join('')}</tbody></table></div></details></div>`;
+}
+function genoaHTML(){
+  const g = genoaModel(); const need = g.rows.filter(r => r.cover === 'need'); const T = todaySerial();
+  const sel = [...S.genoaSel].filter(k => need.some(r => r.a.key === k));
+  const pill = r => r.cover === 'onhand' ? `<span class="chip ok">On hand</span> <span class="small muted">rec ${fmtD(r.k.received)} · use by ${fmtD(r.k.expDate)}</span>` : r.cover === 'ordered' ? `<span class="chip info">Ordered ${fmtD(r.k.ordered)}</span>` : `<span class="chip bad">Order needed</span>`;
+  return `<div class="card"><h2>Genoa — next ${CFG.genoaDays} days<span class="sp"></span><span class="chip ${need.length ? 'bad' : 'ok'}">${need.length} to order</span></h2>
+    <div class="small muted">Each appointment is matched to a kit on hand for that patient, then to an open order line. Genoa kits are good for 14 days after they’re received.</div>
+    ${g.rows.length ? `<div class="list" style="margin-top:10px">${g.rows.map(r => `<div class="item"><div class="head">${r.cover === 'need' ? `<input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}" style="width:20px;height:20px">` : ''}<span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · needed ${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)} · ${r.inf.mg ?? '?'} mg</span><span class="sp grow"></span>${r.cover === 'need' && r.a.date - T <= 5 ? '<span class="chip bad">≤5 days</span>' : ''}</div><div class="line">${pill(r)}</div></div>`).join('')}</div>` : '<div class="empty">No Genoa appointments in this window.</div>'}
+    ${need.length ? `<div class="row" style="margin-top:10px"><button class="btn sm" data-act="gselAll">Select all needed</button><span class="grow"></span><button class="btn primary" data-act="genoaOrder" ${sel.length ? '' : 'disabled'}>Mark ${sel.length || ''} as ordered today</button></div><div class="small muted" style="margin-top:4px">Opens one Inventory line per kit (MRN, Pharmacy, Date Ordered). When it arrives, receive it into that line.</div>` : ''}
+  </div>
+  ${g.expiring.length ? `<div class="card"><h2>Expired Genoa kits <span class="chip bad">${g.expiring.length}</span></h2><div class="list">${g.expiring.map(k => `<div class="item"><div class="head"><span class="name">${esc(nm(k.mrn))}</span><span class="meta">${kitLine(k)}</span></div><div class="acts"><button class="btn sm" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button></div></div>`).join('')}</div></div>` : ''}`;
+}
+async function genoaOrder(){
+  const g = genoaModel(); const rows = g.rows.filter(r => r.cover === 'need' && S.genoaSel.has(r.a.key)); if (!rows.length) return;
+  if (!CFG.me) return openSettings();
+  const T = todaySerial();
+  const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
+    for (const r of rows){ const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText('GENOA'), dateordered: { date: T }, comments: nm(r.a.mrn) }); await S.store.add('kits', out); await reload(true); }
+  }, `Marked ${rows.length} Genoa kit${rows.length > 1 ? 's' : ''} as ordered.`);
+  if (ok){ S.genoaSel.clear(); render(); }
+}
+function besseTableText(){
+  const m = besseModel(); const H = ['Clinic', 'Date', 'Dose', 'Besse O/H', 'Appts Next Week', 'Appts 2 Week Out', 'Approved Overage', 'To Be Ordered'];
+  const R = [56, 84].map((mg, i) => { const r = m.rows[mg]; return [i ? '' : CFG.clinic, i ? '' : fmtD(S.orderDate, 'full'), mg + 'mg', r.oh, r.w1, r.w2, r.ov, r.order]; });
+  const html = `<table border="1" cellpadding="6" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:11pt"><tr>${H.map(h => `<th style="background:#f1eadc">${h}</th>`).join('')}</tr>${R.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`;
+  const text = [H, ...R].map(r => r.join('\t')).join('\n');
+  return { html, text, m };
+}
+async function saveBesse(){
+  const b = S.besse; if (!b || b.hdr == null) return toast('bad', 'Couldn’t find the summary table on the Besse Order tab.');
+  const m = besseModel(); const c = b.c; const cells = [];
+  const A = (r, col) => colLetter(col) + (r + 1);
+  if (c.date >= 0 && b.rows[56]) cells.push([A(b.rows[56].r, c.date), { date: S.orderDate }]);
+  for (const mg of [56, 84]){ const rr = b.rows[mg]; if (!rr) continue; const r = m.rows[mg];
+    if (c.w1 >= 0) cells.push([A(rr.r, c.w1), r.w1]); if (c.w2 >= 0) cells.push([A(rr.r, c.w2), r.w2]); if (c.ov >= 0) cells.push([A(rr.r, c.ov), r.ov]); }
+  let histNote = '';
+  if (b.hist){
+    const hr = findHistRow(); if (hr != null){ cells.push([colLetter(b.hist.c + 1) + (hr.r + 1), m.rows[56].order], [colLetter(b.hist.c + 2) + (hr.r + 1), m.rows[84].order]); histNote = ` and logged ${m.rows[56].order} × 56 / ${m.rows[84].order} × 84 for the week of ${fmtD(hr.d)}`; }
+    else histNote = ' (no history row matches this date, so the history wasn’t changed)';
+  }
+  await write('Saving to Besse Order…', () => S.store.setCells(S.besseSheet, cells), `Saved to Besse Order${histNote}.`);
+}
+function findHistRow(){ // the history's DATE column holds one row per order week: use this date, or the next one within 6 days
+  const b = S.besse; if (!b?.hist) return null; const vals = b.vals || []; let best = null;
+  for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null) continue; const diff = d - S.orderDate; if (diff >= 0 && diff <= 6 && (best == null || diff < best.diff)) best = { r, d, diff }; }
+  return best;
+}
+
+// ---------- patients ----------
+function patientsHTML(){
+  const q = S.patQ.trim().toLowerCase();
+  const list = S.P.filter(p => (S.patAll || !/discontinued|did not start/i.test(p.status)) && (!q || p.name.toLowerCase().includes(q) || p.mrn.includes(q))).sort((a, b) => a.name.localeCompare(b.name));
+  const T = todaySerial(); const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
+  return `<div class="card noprint"><div class="row"><input id="patQ" class="fld grow" data-input="patQ" placeholder="Search short name or MRN" value="${esc(S.patQ)}" aria-label="Search patients"><div class="seg">${[[false, 'Current'], [true, 'All']].map(([v, l]) => `<button data-act="patAll" data-v="${v}" aria-pressed="${S.patAll === v}">${l}</button>`).join('')}</div></div></div>
+  <div class="card print-target" id="guide"><h2>Patient guide <span class="chip">${list.length}</span><span class="sp"></span><button class="btn sm noprint" data-act="print" data-t="guide">Print</button></h2>
+    <div class="printonly small">Printed ${new Date().toLocaleString()} — contains patient identifiers. Shred after use.</div>
+    <div class="tw"><table class="t"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th></tr></thead><tbody>
+    ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr data-act="patient" data-m="${esc(p.mrn)}" style="cursor:pointer"><td><b>${esc(p.name)}</b></td><td>${esc(p.mrn)}</td><td>${esc(p.status)}</td><td>${PH_LABEL[p.pharm]}</td><td class="num">${p.mg ?? ''}</td><td>${esc(p.freq)}</td><td>${n ? fmtD(n.date) : '—'}</td><td>${th ? fmtD(th) : '—'}</td></tr>`; }).join('')}
+    </tbody></table></div></div>`;
+}
+function openPatient(mrn){
+  const p = S.byMrn.get(mrn); const T = todaySerial();
+  const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
+  const kits = S.K.filter(k => k.mrn === mrn && (k.openOrder || k.full || k.needsDisposal));
+  openModal(`<h2>${esc(nm(mrn))}</h2><div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
+    <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
+    <h3>Kits</h3>${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
+    ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+}
+
+// ---------- inventory ----------
+function inventoryHTML(){
+  const K = S.K; const q = S.invQ.trim().toLowerCase();
+  const cnt = f => K.filter(f).length;
+  const F = { attention: k => k.needsDisposal || k.partialOpen, available: k => k.available, ordered: k => k.openOrder, recent: k => k.administered && k.adminDate >= todaySerial() - 14, all: () => true };
+  let list = K.filter(F[S.invFilter]); if (q) list = list.filter(k => [k.serial, k.lot, k.mrn, nm(k.mrn), k.comments].some(v => String(v ?? '').toLowerCase().includes(q)));
+  list = list.sort((a, b) => b.r - a.r).slice(0, 150);
+  const chip = k => k.openOrder ? '<span class="chip info">On order</span>' : k.needsDisposal ? '<span class="chip bad">Expired — dispose</span>' : k.partialOpen ? '<span class="chip warn">Partial</span>' : k.disposed ? '<span class="chip">Disposed</span>' : k.administered ? '<span class="chip">Administered</span>' : k.available ? '<span class="chip ok">Available</span>' : '<span class="chip">—</span>';
+  return `<div class="card"><div class="stats">
+      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 84)}</div><div class="l">Besse 84 mg</div></div>
+      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 56)}</div><div class="l">Besse 56 mg</div></div>
+      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'GENOA')}</div><div class="l">Genoa on hand</div></div>
+      <div class="stat"><div class="n">${cnt(k => k.openOrder)}</div><div class="l">on order</div></div>
+      <div class="stat"><div class="n" style="color:var(--bad)">${cnt(k => k.needsDisposal)}</div><div class="l">expired, unused</div></div></div>
+    <div class="scan" style="margin-top:10px"><input id="scanInv" data-scan="inv" placeholder="Scan a kit to look it up" autocomplete="off" aria-label="Look up kit"></div></div>
+  <div class="card"><div class="row"><div class="seg" style="flex-wrap:wrap">${[['attention', 'Needs attention'], ['available', 'Available'], ['ordered', 'On order'], ['recent', 'Recent use'], ['all', 'All']].map(([k, l]) => `<button data-act="invF" data-v="${k}" aria-pressed="${S.invFilter === k}">${l}</button>`).join('')}</div>
+    <input id="invQ" class="fld grow" data-input="invQ" placeholder="Filter by serial, lot, MRN, name" value="${esc(S.invQ)}" style="min-width:160px"></div>
+    <div class="list" style="margin-top:10px">${list.length ? list.map(k => `<div class="item"><div class="head">${chip(k)}<span class="name">${k.mrn ? esc(nm(k.mrn)) : PH_LABEL[k.pharm] + ' stock'}</span><span class="meta">row ${k.r + 3}</span></div><div class="line small">${k.openOrder ? `Ordered ${fmtD(k.ordered)}${k.mrn ? ' · MRN ' + esc(k.mrn) : ''}` : kitLine(k)}${k.administered ? ` · given ${k.adminRaw} mg ${fmtD(k.adminDate)}` : ''}${k.remaining != null && k.partialOpen ? ` · ${k.remaining} mg left` : ''}</div>
+      <div class="acts">${(k.needsDisposal || k.partialOpen) ? `<button class="btn sm" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button>` : ''}<button class="btn sm ghost" data-act="editKit" data-id="${esc(k.id)}">Edit row</button></div></div>`).join('') : '<div class="empty">Nothing here.</div>'}</div></div>`;
+}
+function invScan(raw){ const { p, list } = findByScan(raw); if (!list.length) return toast(p ? 'warn' : 'bad', p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.'); openKit(list[0].id); }
+function openKit(id){
+  const k = S.K.find(x => x.id === id); if (!k) return;
+  openModal(`<h2>Inventory row ${k.r + 3}</h2><div class="muted small">${k.mrn ? esc(nm(k.mrn)) + ' · MRN ' + esc(k.mrn) + ' · ' : ''}${PH_LABEL[k.pharm]}</div>
+    ${editorHTML('kits', k.r)}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button>${(k.needsDisposal || k.partialOpen) ? `<button class="btn" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button>` : ''}<button class="btn primary" data-act="saveRow" data-t="kits" data-r="${k.r}">Save changes</button></div>`);
+}
+function openDispose(id){
+  const k = S.K.find(x => x.id === id); if (!k) return;
+  S.disp = { id, method: (S.ref.disposalmethod || ['Blue Bin'])[0], mg: k.remaining ?? k.recv ?? '', pct: CFG.me, pm: CFG.pm };
+  renderDispose();
+}
+function renderDispose(){
+  const k = S.K.find(x => x.id === S.disp.id); if (!k) return closeModal(); const T = todaySerial();
+  const obj = { markedfordisposal: 'Yes', dateofdisposal: { date: T }, disposalmethod: S.disp.method, mgdisposed: +S.disp.mg, disposingpct: S.disp.pct, practicemanager: S.disp.pm };
+  if (!k.administered && k.adminRaw == null) obj.administeredmg = 'Marked For Disposal';
+  const { out } = changesFor('kits', obj); const probs = [];
+  if (!S.disp.pct) probs.push('Enter the disposing PCT.'); if (!S.disp.pm) probs.push('Enter the practice manager.'); if (!(+S.disp.mg > 0)) probs.push('Enter mg disposed.');
+  openModal(`<h2>Dispose — row ${k.r + 3}</h2><div class="muted small">${kitLine(k)}</div>
+    <div class="form2"><div><label class="lbl" for="dMethod">Disposal method</label><select id="dMethod" class="fld" data-disp="method">${(S.ref.disposalmethod || ['Blue Bin', 'Spravato Return']).map(v => `<option ${v === S.disp.method ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+      <div><label class="lbl" for="dMg">mg disposed</label><input id="dMg" class="fld" type="number" data-disp="mg" value="${esc(S.disp.mg)}"></div>
+      <div><label class="lbl" for="dPct">Disposing PCT</label><input id="dPct" class="fld" data-disp="pct" list="dlPct" value="${esc(S.disp.pct)}"></div>
+      <div><label class="lbl" for="dPm">Practice manager</label><input id="dPm" class="fld" data-disp="pm" list="dlPm" value="${esc(S.disp.pm)}"></div></div>
+    ${datalist('dlPct', distinct('kits', 'disposingpct'))}${datalist('dlPm', distinct('kits', 'practicemanager'))}
+    ${probs.map(p => `<div class="msg bad">${p}</div>`).join('')}
+    <div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="dispSave" ${probs.length ? 'disabled' : ''}>Record disposal</button></div>`);
+}
+async function dispSave(){
+  const k = S.K.find(x => x.id === S.disp.id); if (!k) return; const T = todaySerial();
+  const obj = { markedfordisposal: 'Yes', dateofdisposal: { date: T }, disposalmethod: S.disp.method, mgdisposed: +S.disp.mg, disposingpct: S.disp.pct, practicemanager: S.disp.pm };
+  if (!k.administered && k.adminRaw == null) obj.administeredmg = 'Marked For Disposal';
+  CFG.pm = S.disp.pm; saveCfg();
+  const { out } = changesFor('kits', obj);
+  if (await write('Recording disposal…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), 'Disposal recorded.')){ closeModal(); render(); }
+}
+
+// ---------- generic row editor ----------
+const REFMAP = { pharmacy:'pharmacy', receivedmg:'dose', administeredmg:'dose', protocolmg:'dose', disposalmethod:'disposalmethod', markedfordisposal:'yesno', status:'status', txfrequency:'treatmentfrequency', coverageoptions:'coverageoptions' };
+function distinct(tkey, key, max = 40){ const t = S.tables[tkey]; if (!t || t.cols[key] == null) return []; const s = new Map(); for (let r = t.values.length - 1; r >= 0 && s.size < max; r--){ const v = t.values[r][t.cols[key]]; if (v !== '' && v != null && !s.has(String(v))) s.set(String(v), v); } return [...s.values()]; }
+const datalist = (id, vals) => `<datalist id="${id}">${[...new Set(vals.map(String))].map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+const isDateHeader = h => /date|expiration|use by|auth exp|auth start|thru|last treatment|next treatment/i.test(h);
+function editorHTML(tkey, r){
+  const t = S.tables[tkey]; let dl = '';
+  const fields = t.headers.map((h, c) => {
+    if (!h.trim()) return '';
+    const v = t.values[r][c]; const f = t.formulaCol[c] || t.isFormula(r, c); const n = norm(h);
+    const shown = typeof v === 'number' && isDateHeader(h) ? fmtD(toSerial(v), 'full') : (v ?? '');
+    if (f) return `<div><label class="lbl">${esc(h.trim())}<span class="fx">auto</span></label><input class="fld ro" value="${esc(shown)}" readonly tabindex="-1"></div>`;
+    if (isDateHeader(h) && (v === '' || v == null || typeof v === 'number')) return `<div><label class="lbl" for="e${c}">${esc(h.trim())}</label><input id="e${c}" class="fld" type="date" data-ec="${c}" data-kind="date" value="${isoOf(toSerial(v))}"></div>`;
+    const opts = [...(S.ref[REFMAP[n]] || []), ...distinct(tkey, n, 25)]; const lid = `dl_${tkey}_${c}`; if (opts.length) dl += datalist(lid, opts);
+    const kind = typeof v === 'number' || n === 'mrn' ? 'num' : 'text';
+    return `<div><label class="lbl" for="e${c}">${esc(h.trim())}</label><input id="e${c}" class="fld" data-ec="${c}" data-kind="${kind}" ${opts.length ? `list="${lid}"` : ''} value="${esc(v ?? '')}"></div>`;
+  }).join('');
+  return `<div class="small muted">Fields marked <b>auto</b> are formulas and are never written.</div><div class="form2">${fields}</div>${dl}`;
+}
+async function saveRow(tkey, r){
+  const t = S.tables[tkey]; const out = [];
+  document.querySelectorAll('[data-ec]').forEach(el => {
+    const c = +el.dataset.ec; const old = t.values[r][c]; let v = el.value;
+    if (el.dataset.kind === 'date'){ const s = fromIso(v); const o = toSerial(old); if (s === o) return; out.push([c, s == null ? '' : { date: s }]); return; }
+    if (String(old ?? '') === v) return;
+    if (el.dataset.kind === 'num' && /^-?\d+(\.\d+)?$/.test(v.trim())) v = Number(v); else if (/^-?\d+(\.\d+)?$/.test(String(v).trim()) && REFMAP[norm(t.headers[c])] === 'dose') v = Number(v);
+    out.push([c, v]);
+  });
+  if (!out.length){ toast('info', 'No changes.'); return; }
+  if (await write('Saving…', () => S.store.update(tkey, r, t.snap(r), out), `Saved ${out.length} field${out.length > 1 ? 's' : ''}.`)) closeModal();
+}
+
+// ---------- settings ----------
+function openSettings(){
+  openModal(`<h2>Settings</h2><div class="small muted">Saved on this computer only.</div>
+    <div class="form2">
+      <div><label class="lbl" for="sMe">Your name (Logging PCT / technician)</label><input id="sMe" class="fld" data-cfg="me" list="dlMe" value="${esc(CFG.me)}"></div>
+      <div><label class="lbl" for="sSup">Supervising physician (default)</label><input id="sSup" class="fld" data-cfg="sup" list="dlSup2" value="${esc(CFG.sup)}"></div>
+      <div><label class="lbl" for="sPm">Practice manager (default)</label><input id="sPm" class="fld" data-cfg="pm" list="dlPm2" value="${esc(CFG.pm)}"></div>
+      <div><label class="lbl" for="sClinic">Clinic code</label><input id="sClinic" class="fld" data-cfg="clinic" value="${esc(CFG.clinic)}"></div>
+      <div><label class="lbl" for="sEmail">Besse order email</label><input id="sEmail" class="fld" data-cfg="email" value="${esc(CFG.email)}"></div>
+      <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
+      <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
+      <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    </div>
+    ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
+    ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
+    <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn primary" data-act="cfgSave">Done</button></div>`);
+}
+
+// ---------- modal / toast / busy ----------
+function openModal(html){ $('#sheet').innerHTML = html; $('#modal').hidden = false; }
+function closeModal(){ $('#modal').hidden = true; $('#sheet').innerHTML = ''; S.adm = null; S.disp = null; }
+function toast(kind, html){ $('#toast').innerHTML = ''; const el = document.createElement('div'); el.className = 'msg ' + kind; el.innerHTML = html; $('#toast').appendChild(el); setTimeout(() => el.remove(), kind === 'bad' ? 9000 : 2600); }
+function busy(t){ $('#busy').hidden = !t; if (t) $('#busyText').textContent = t; }
+async function copyText(text, html){
+  try { if (html && window.ClipboardItem && navigator.clipboard?.write){ await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type:'text/html' }), 'text/plain': new Blob([text], { type:'text/plain' }) })]); return true; } } catch {}
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  const d = document.createElement('div'); d.contentEditable = 'true'; d.style.cssText = 'position:fixed;left:-9999px;top:0'; d.innerHTML = html || esc(text).replace(/\n/g, '<br>'); document.body.appendChild(d);
+  const rg = document.createRange(); rg.selectNodeContents(d); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); let ok = false; try { ok = document.execCommand('copy'); } catch {} sel.removeAllRanges(); d.remove(); return ok;
+}
+
+// ---------- events ----------
+const ACT = {
+  view: el => { S.view = el.dataset.v; render(); },
+  refresh: () => reload(),
+  settings: openSettings,
+  close: closeModal,
+  day: el => { const d = +el.dataset.d; S.day = d === 0 ? todaySerial() : S.day + d; S.todayMsg = null; S.target = null; render(); },
+  target: el => { S.target = S.target === el.dataset.k ? null : el.dataset.k; S.todayMsg = null; render(); setTimeout(() => $('#scanToday')?.focus(), 20); },
+  untarget: () => { S.target = null; render(); },
+  unpull: el => { const d = isoOf(S.day); if (S.pull[d]) delete S.pull[d][el.dataset.k]; savePull(); S.todayMsg = { kind:'info', html:'Pull undone.' }; render(); },
+  admin: el => openAdmin(el.dataset.k),
+  admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
+  admSave: adminSave,
+  patient: el => openPatient(el.dataset.m),
+  copyPull: async () => {
+    const items = todayModel(S.day).filter(i => i.pulledKit || i.adminKit);
+    const H = ['Time', 'Patient', 'MRN', 'mg', 'Pharmacy', 'Serial', 'Lot', 'Use by', 'Status'];
+    const R = items.map(i => { const k = i.adminKit || i.pulledKit; return [fmtT(i.a.time), nm(i.a.mrn), i.a.mrn, k.recv, PH_LABEL[k.pharm], k.serial, k.lot, fmtD(k.expDate, 'full'), i.adminKit ? 'Administered' : 'Pulled']; });
+    const ok = await copyText([H, ...R].map(r => r.join('\t')).join('\n'), `<table border="1">${[H, ...R].map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`);
+    toast(ok ? 'ok' : 'bad', ok ? 'Copied.' : 'Couldn’t copy — use Print instead.');
+  },
+  print: el => { const t = el.dataset.t; document.querySelectorAll('.print-target').forEach(x => x.classList.toggle('print-target', x.id === t)); document.body.dataset.print = t; setTimeout(() => { window.print(); delete document.body.dataset.print; }, 30); },
+  recvPh: el => { S.recvPharm = el.dataset.p; S.recvLine = null; S.recvMsg = null; render(); },
+  recvPick: el => { S.recvLine = S.recvLine === el.dataset.id ? null : el.dataset.id; S.recvMsg = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 20); },
+  recvNew,
+  orderTab: el => { S.orderTab = el.dataset.p; render(); },
+  copyBesse: async () => { const { html, text } = besseTableText(); const ok = await copyText(text, html); toast(ok ? 'ok' : 'bad', ok ? 'Table copied — paste it into the email.' : 'Couldn’t copy.'); },
+  emailBesse: async () => {
+    const { html, text } = besseTableText(); await copyText(text, html);
+    const subj = `Besse Order — ${CFG.clinic} — ${fmtD(S.orderDate, 'full')}`;
+    const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(CFG.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent('Hello,\n\nPlease see this week’s Besse order below.\n\n' + text + '\n\nThank you,\n' + (CFG.me || ''))}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+    toast('info', 'Email opened. The formatted table is also on your clipboard — paste it over the plain one if you prefer.');
+  },
+  saveBesse,
+  gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
+  genoaOrder,
+  patAll: el => { S.patAll = el.dataset.v === 'true'; render(); },
+  invF: el => { S.invFilter = el.dataset.v; render(); },
+  editKit: el => openKit(el.dataset.id),
+  dispose: el => openDispose(el.dataset.id),
+  dispSave,
+  saveRow: el => saveRow(el.dataset.t, +el.dataset.r),
+  cfgSave: async () => {
+    document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
+    saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
+    closeModal(); render();
+  },
+  demo: () => { location.search = '?demo=1'; },
+  dlManifest: () => downloadManifest(),
+};
+document.addEventListener('click', e => {
+  if (e.target.id === 'modal'){ closeModal(); return; }
+  const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
+  if (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'button') return;
+  const f = ACT[el.dataset.act]; if (f){ e.preventDefault(); f(el, e); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#modal').hidden){ closeModal(); return; }
+  const el = e.target; if (e.key !== 'Enter' || !el.dataset?.scan) return;
+  e.preventDefault(); const v = el.value; el.value = ''; if (!cleanScan(v)) return;
+  const k = el.dataset.scan;
+  if (k === 'today') todayScan(v);
+  else if (k === 'recv') recvScan(v);
+  else if (k === 'inv') invScan(v);
+  else if (k === 'admin'){ const { p, list } = findByScan(v); if (!list.length){ S.adm.msg = { kind:'bad', html: p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.' }; } else { S.adm.kitId = (list.find(x => !x.administered) || list[0]).id; S.adm.msg = null; } renderAdmin(); }
+});
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.dataset.input){ S[el.dataset.input] = el.value; clearTimeout(S._t); S._t = setTimeout(render, 180); }
+  if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; clearTimeout(S._a); S._a = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderAdmin(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
+  if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; clearTimeout(S._d); S._d = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderDispose(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
+  if (el.dataset.ov){ const v = Number(el.value); if (!isNaN(v)){ S.ov[el.dataset.ov] = v; render(); } }
+  if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
+  if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; renderAdmin(); }
+  if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; renderDispose(); }
+});
+
+// ---------- load ----------
+async function reload(quiet){
+  if (!quiet) busy('Refreshing…');
+  try {
+    const d = await S.store.load();
+    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
+    const missing = Object.keys(SIG).filter(k => !S.tables[k]);
+    if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+  } catch (e){ console.error(e); S.loadErr = e.message || String(e); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
+  finally { if (!quiet) busy(false); }
+}
+function setupErrorHTML(){ return `<main><div class="card"><h2>Can’t read the workbook</h2><div class="msg bad">${esc(S.loadErr)}</div><button class="btn primary" data-act="refresh">Try again</button></div></main>`; }
+function notInExcelHTML(){
+  return `<main style="max-width:640px"><div class="card"><h2><span class="brand"><span class="dot">ESK</span></span> ESK Tracker</h2>
+    <p>This page is an Excel add-in. It runs inside the Esketamine Master Tracker workbook in Excel.</p>
+    <h3>Install it (once)</h3>
+    <ol><li>Click <b>Download manifest</b> below — it’s set up for this web address.</li>
+      <li>Open the workbook in Excel on the web → <b>Home → Add-ins → More Add-ins → My Add-ins → Upload My Add-in</b>, and choose the file.</li>
+      <li>An <b>ESK Tracker</b> button appears on the Home tab.</li></ol>
+    <div class="row"><button class="btn primary" data-act="dlManifest">Download manifest</button><button class="btn" data-act="demo">Try the demo</button></div>
+    <div class="small muted" style="margin-top:10px">The add-in keeps patient data in the workbook. This site only serves the app’s code.</div></div></main>`;
+}
+function downloadManifest(){
+  const base = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, ''); const host = new URL(base).origin;
+  const x = MANIFEST.replaceAll('__BASE__', base.replace(/\/$/, '')).replaceAll('__HOST__', host);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type:'application/xml' })); a.download = 'esk-tracker-manifest.xml'; a.click();
+}
+const MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
+  <Id>d1ad2fb6-cbcf-456e-87ed-32e539d3efd7</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Mindful Health Solutions</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="ESK Tracker"/>
+  <Description DefaultValue="Daily Spravato schedule, med pulls, administration, receiving, disposal and ordering for the Esketamine Master Tracker."/>
+  <IconUrl DefaultValue="__BASE__/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="__BASE__/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="__BASE__/taskpane.html"/>
+  <AppDomains>
+    <AppDomain>__HOST__</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.7"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="__BASE__/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="Taskpane.Url"/>
+          </GetStarted>
+          <FunctionFile resid="Commands.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="ESK.Group">
+                <Label resid="Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16"/>
+                  <bt:Image size="32" resid="Icon.32"/>
+                  <bt:Image size="80" resid="Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="ESK.Open">
+                  <Label resid="Button.Label"/>
+                  <Supertip>
+                    <Title resid="Button.Label"/>
+                    <Description resid="Button.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16"/>
+                    <bt:Image size="32" resid="Icon.32"/>
+                    <bt:Image size="80" resid="Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>Office.AutoShowTaskpaneWithDocument</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="__BASE__/assets/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="__BASE__/assets/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="__BASE__/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="__BASE__/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="__BASE__/commands.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title" DefaultValue="ESK Tracker is ready"/>
+        <bt:String id="Group.Label" DefaultValue="Esketamine"/>
+        <bt:String id="Button.Label" DefaultValue="ESK Tracker"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Open ESK Tracker from the Home tab."/>
+        <bt:String id="Button.Tooltip" DefaultValue="Open the ESK Tracker panel for today's schedule, pulls, receiving and ordering."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
+`;
+
+(function boot(){
+  const demo = /[?&]demo\b/.test(location.search);
+  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
+  if (demo){ start(DemoStore()); return; }
+  if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
+  let settled = false;
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel) start(OfficeStore()); else $('#app').innerHTML = notInExcelHTML(); });
+  setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
+})();
+</script>
+</body>
+</html>
