@@ -33,7 +33,7 @@ nav.tabs button{flex:1 0 auto;border:0;background:transparent;padding:8px 10px;b
 nav.tabs button[aria-current="page"]{background:var(--accent);color:var(--accent-ink)}
 main{padding:12px;max-width:1500px;margin:0 auto}
 .cols{display:block}
-@media(min-width:1000px){.cols{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px;align-items:start}.cols>div>.card:first-child{margin-top:0}}
+@media(min-width:1000px){.cols{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px;align-items:start}.cols.swap{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)}.cols>div>.card:first-child{margin-top:0}}
 .item{border-left-width:4px}
 .item.st-done{border-left-color:var(--ok)} .item.st-pulled{border-left-color:var(--info)} .item.st-todo{border-left-color:var(--warn)} .item.st-bad{border-left-color:var(--bad)} .item.st-off{border-left-color:var(--line)}
 .badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;margin-left:4px}
@@ -68,7 +68,11 @@ table.rt td .row{gap:6px}
 .appt2 .ar .r1,.appt2 .ar .r2,.appt2 .ar .r3,.appt2 .ar .r4{justify-content:flex-end}
 .appt2 .al .r1 .btn{margin-left:4px}
 .appt2 .time{font-weight:800;font-size:15px} .appt2 .name{font-weight:800;font-size:15px}
-.appt2 .sn{font-size:13px;font-weight:700;letter-spacing:.3px} .appt2 .dose{font-weight:800;font-size:15px}
+.appt2 .sn{font-size:13px;font-weight:700;letter-spacing:.3px}
+.appt2 .notebox{border:1px solid var(--line);border-radius:10px;padding:5px 7px;background:var(--bg);align-self:flex-start;max-width:100%}
+.pill.start{background:#ece4fb;color:#5b3aa8;border-color:transparent}
+:root[data-theme="dark"] .pill.start{background:#2f2645;color:#c7b3f5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.start{background:#2f2645;color:#c7b3f5}}
 .appt2 .ar .r4{margin-top:auto}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:700;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink)}
 .pill.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent} .pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent} .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
@@ -80,7 +84,7 @@ table.rt td .row{gap:6px}
 .addnote{border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:3px 9px;font-size:12px;cursor:pointer} .addnote:hover{border-color:var(--accent);color:var(--accent)}
 .noteIn{max-width:320px;min-height:32px;padding:5px 9px}
 @media(max-width:520px){.item.appt2{grid-template-columns:1fr}.appt2 .ar{align-items:flex-start;text-align:left}.appt2 .ar .r1,.appt2 .ar .r2,.appt2 .ar .r3,.appt2 .ar .r4{justify-content:flex-start}}
-.apptcount{display:inline-grid;place-items:center;min-width:38px;height:32px;padding:0 10px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:20px;font-weight:800}
+.apptcount{display:inline-grid;place-items:center;min-width:24px;height:22px;padding:0 7px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:700}
 .item.appt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:stretch}
 .item.appt .ar{display:flex;flex-direction:column;align-items:flex-end;text-align:right;gap:2px}
 .item.appt .ar .acts{margin-top:auto;padding-top:6px;justify-content:flex-end}
@@ -972,22 +976,22 @@ function todayHTML(){
   const T = todaySerial(); const day = S.day; const items = todayModel(day);
   const act = items.filter(i => i.a.active);
   const done = act.filter(i => i.adminKit).length, noKit = act.filter(i => itemState(i) === 'bad').length, check = act.filter(i => itemState(i) === 'check').length;
-  const am = act.filter(i => (i.a.time ?? 0) < 12 * 60).length, pm = act.length - am; const la = S._la || lastAudit();
+  const am = act.filter(i => (i.a.time ?? 0) < 12 * 60).length, pm = act.length - am;
   return `
   <div class="card">
-    <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
-      <div class="grow" style="text-align:center">${day === T ? '<span class="todaypill">TODAY</span> ' : `<b>${DAYNAME[dowOf(day)]}</b> `}<span class="muted">${fmtD(day, 'full')}</span></div>
-      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}
-      <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="row small" style="margin-top:10px;gap:10px"><span class="chip">${done}/${act.length} given</span>${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}<span class="muted">Meds checked against the ${la.date != null ? `${esc(la.src)} of ${fmtD(la.date, 'full')}` : 'daily audit (none on file yet)'}</span>
-      <span class="grow"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></div>
+    <div class="row" style="justify-content:center"><div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
+      <div class="grow" style="text-align:center;font-weight:700">${day === T ? 'Today · ' : ''}${DAYNAME[dowOf(day)]}, ${fmtD(day, 'full')}</div>
+      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}</div>
+    <div class="row small" style="margin-top:10px;gap:8px;justify-content:center"><span class="chip">${done}/${act.length} given</span>${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}</div>
   </div>
-  <div class="cols"><div>
-    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span></h2>${toolbarHTML()}
-      ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
-    </div></div><div>
+  <div class="cols swap"><div>
     ${actionHTML()}
     ${schedHTML()}
+  </div><div>
+    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
+      ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
+    </div>
   </div></div>`;
 }
 // Most recent audit: today's in-app daily audit, or the latest date on the SN Audit tab.
@@ -1034,16 +1038,16 @@ function itemHTML(i){
   const adding = S.noteFor === a.key;
   return `<div class="item appt2 st-${st}">
     <div class="al">
-      <div class="r1"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="muted">${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)}</span><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+      <div class="r1"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span>${a.isStart ? '<span class="pill start">Start</span>' : `<span class="muted">${a.isEFU ? 'EFU' : esc(a.event)}</span>`}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
       <div class="r2 small"><span class="muted">MRN ${esc(a.mrn)}</span>${p ? (p.coverage ? `<span class="muted">${esc(p.coverage)}</span>` : '<span class="warnText">MD/NP not set</span>') : ''}</div>
-      <div class="r3">${notes.map((n, idx) => `<span class="note">${esc(n.t)}<span class="nby">${esc(n.by || '')} ${fmtD(fromIso(n.at))}</span><button class="x" data-act="noteDel" data-m="${esc(a.mrn)}" data-i="${idx}" aria-label="Remove note">×</button></span>`).join('')}
+      <div class="r3 notebox">${notes.map((n, idx) => `<span class="note">${esc(n.t)}<span class="nby">${esc(n.by || '')} ${fmtD(fromIso(n.at))}</span><button class="x" data-act="noteDel" data-m="${esc(a.mrn)}" data-i="${idx}" aria-label="Remove note">×</button></span>`).join('')}
         ${adding ? `<input id="noteIn" class="fld noteIn" data-note="${esc(a.mrn)}" placeholder="Note or alert — Enter to save" autocomplete="off">` : `<button class="addnote" data-act="noteAdd" data-k="${esc(a.key)}" title="Add a note or alert">+ ${notes.length ? '' : 'note / alert'}</button>`}</div>
       ${a.active ? `<div class="r4 small">${flags.join('')}<span class="muted">${i.remaining} more booked</span>${i.thru ? `<span class="muted">thru ${fmtD(i.thru)}</span>` : ''}</div>` : ''}
     </div>
     <div class="ar">
       <div class="r1">${SAFE(i.inf.pharm)}${status}</div>
-      ${k ? `<div class="r2"><span class="mono sn">SN ${esc(k.serial)}</span><span class="muted small">rec ${fmtD(k.received)}</span></div>` : '<div class="r2"></div>'}
-      <div class="r3">${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}<span class="dose">${i.inf.mg ?? '?'} mg</span></div>
+      <div class="r2">${k ? `<span class="mono sn">SN ${esc(k.serial)}</span>` : ''}<span class="mono sn">${i.inf.mg ?? '?'} mg</span></div>
+      <div class="r3">${k ? `<span class="muted small">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</div>
       <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}</div>
     </div>
   </div>`;
