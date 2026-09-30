@@ -70,6 +70,7 @@ table.rt td .row{gap:6px}
 @media(max-width:520px){.item.appt{grid-template-columns:1fr}.item.appt .ar{align-items:flex-start;text-align:left}.item.appt .ar .acts{justify-content:flex-start}}
 .bignum{font-size:34px;font-weight:800;line-height:1} .midnum{font-size:22px;font-weight:700;line-height:1}
 .item.st-onhand{border-left-color:var(--line)} .item.st-check{border-left-color:var(--warn)}
+.osec{border-left:5px solid;border-radius:10px;padding:8px 12px;margin-top:8px}
 .subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .subnav button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;color:var(--muted);cursor:pointer;min-height:36px}
 .subnav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -1320,52 +1321,60 @@ const EM = { font: 'font-family:Calibri,Segoe UI,Arial,sans-serif;font-size:11pt
 function emTable(head, rows, color){
   return `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:760px;border:1px solid #e3d9c6;${EM.font}"><thead><tr style="background:${color}">${head.map(h => `<th style="${EM.th}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#faf7f0' : '#ffffff'}">${r.map(v => `<td style="${EM.td}">${v}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
-const emSection = (title, color, inner) => `<div style="margin:18px 0 6px;padding:6px 10px;background:${color};border-radius:6px;font-weight:700;${EM.font}">${title}</div>${inner}`;
+const emSection = (title, sub, band, bar, inner) => `<table cellspacing="0" cellpadding="0" style="width:100%;max-width:760px;margin:20px 0 4px;border-collapse:collapse"><tr><td style="background:${band};border-left:5px solid ${bar};padding:8px 12px;${EM.font}"><b style="font-size:12pt">${title}</b>${sub ? `<br><span style="font-size:10pt;color:#555">${sub}</span>` : ''}</td></tr></table>${inner}`;
 function followRows(ids){
   const fm = followModel(); const pick = ids ? fm.filter(f => ids.includes(f.k.id)) : fm;
-  return pick.map(f => { const p = f.k.mrn ? S.byMrn.get(f.k.mrn) : null; const mg = f.next ? apptInfo(f.next).mg : num(String(f.k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]);
-    return { f, cells: [f.stock ? `${PH_LABEL[f.k.pharm]} stock` : esc(nm(f.k.mrn)), esc(f.k.mrn || '—'), esc(p?.rx || '—'), PH_LABEL[f.k.pharm] || '—', mg ? mg + ' mg' : '—', fmtD(f.k.ordered, 'full'), f.next ? fmtD(f.next.date, 'full') : '—', f.next ? fmtT(f.next.time) : '—'] }; });
+  return pick.map(f => { const mg = f.next ? apptInfo(f.next).mg : num(String(f.k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]);
+    return { f, cells: [f.stock ? `${PH_LABEL[f.k.pharm]} stock` : esc(nm(f.k.mrn)), esc(f.k.mrn || '—'), PH_LABEL[f.k.pharm] || '—', mg ? mg + ' mg' : '—', fmtD(f.k.ordered, 'full'), f.next ? fmtD(f.next.date, 'full') : '—', f.next ? fmtT(f.next.time) : '—'] }; });
 }
-const FU_HEAD = ['Patient', 'MRN', 'Rx #', 'Pharmacy', 'Dose', 'Ordered', 'Needed by', 'Time'];
+const FU_HEAD = ['Patient', 'MRN', 'Pharmacy', 'Dose', 'Ordered', 'Needed by', 'Time'];
+const FU_C = { band: '#e8f1f9', bar: '#2d6fa8', head: '#cddff0' }, PT_C = { band: '#fdf5e2', bar: '#b8860b', head: '#f4e2b5' }, BE_C = { band: '#f9ebe4', bar: '#b5532f', head: '#efd3c6' };
 function followEmail(ids){
   const rows = followRows(ids);
-  const html = `<div style="${EM.font}"><p>Hello!</p><p>We are hoping to follow up on the below medications and their estimated arrival dates.</p>${emTable(FU_HEAD, rows.map(r => r.cells), '#dbe8f3')}<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`;
+  const html = `<div style="${EM.font}"><p>Hello!</p><p>We are hoping to follow up on the below medications and their estimated arrival dates.</p>${emSection('Follow-up — updated ETA needed', `${rows.length} item${rows.length === 1 ? '' : 's'} not yet received`, FU_C.band, FU_C.bar, emTable(FU_HEAD, rows.map(r => r.cells), FU_C.head))}<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`;
   const text = `Hello!\n\nWe are hoping to follow up on the below medications and their estimated arrival dates.\n\n${[FU_HEAD, ...rows.map(r => r.cells.map(v => String(v).replace(/<[^>]+>/g, '')))].map(r => r.join('\t')).join('\n')}\n\nThank you,\n${CFG.me || ''}`;
   return { html, text, n: rows.length };
 }
+const pickList = (kind, items, sel) => `<div class="pick"><div class="row small" style="gap:10px;margin-bottom:4px"><button class="linkbtn" data-act="selAll" data-k="${kind}">Select all</button><button class="linkbtn" data-act="selNone" data-k="${kind}">Deselect all</button><span class="muted">${items.filter(x => sel.has(x.id)).length} of ${items.length} selected</span></div><div class="row small" style="flex-wrap:wrap;gap:6px">${items.map(x => `<label class="chip ${sel.has(x.id) ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-pick="${kind}" data-id="${esc(x.id)}" ${sel.has(x.id) ? 'checked' : ''} style="margin-right:4px">${x.label}</label>`).join('')}</div></div>`;
+function followItems(){ return followModel().map(f => ({ id: f.k.id, label: `${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))} · ordered ${fmtD(f.k.ordered)}` })); }
 function openFollowEmail(ids){
-  S.fuSel = new Set(ids); const all = followModel();
+  S.fuSel = new Set(ids);
   const draw = () => { const e = followEmail([...S.fuSel]);
     openModal(`<h2>Follow-up email</h2><div class="small muted">Choose the items to include, then copy and paste into your email.</div>
-      <div class="row small" style="margin:8px 0;flex-wrap:wrap">${all.map(f => `<label class="chip ${S.fuSel.has(f.k.id) ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-fusel="${esc(f.k.id)}" ${S.fuSel.has(f.k.id) ? 'checked' : ''} style="margin-right:4px">${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))} · ${fmtD(f.k.ordered)}</label>`).join('')}</div>
-      <div class="emailprev">${e.html}</div>
+      ${pickList('fu', followItems(), S.fuSel)}
+      <div class="emailprev" style="margin-top:10px">${e.html}</div>
       <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="fuCopy" ${e.n ? '' : 'disabled'}>Copy email</button></div>`, true); };
   S.fuDraw = draw; draw();
 }
+function patientOrderItems(){
+  const need = genoaModel().rows.filter(r => r.cover === 'need').map(r => ({ id: 'A:' + r.a.key, mrn: r.a.mrn, pharm: r.inf.pharm, mg: r.inf.mg, date: r.a.date, time: r.a.time }));
+  const sm = scheduledNeedingMeds().filter(x => PS(x.p?.pharm)).map(x => ({ id: 'S:' + x.mrn, mrn: x.mrn, pharm: x.p.pharm, mg: x.p.mg, date: null, time: null }));
+  return [...need, ...sm];
+}
 function orderEmail(){
-  const T = todaySerial(); const inc = S.oInc || (S.oInc = { besse: true, follow: true, patient: true });
-  const m = besseModel(); const fu = followRows(); const need = genoaModel().rows.filter(r => r.cover === 'need'); const sm = scheduledNeedingMeds().filter(x => PS(x.p?.pharm));
-  let html = `<div style="${EM.font}"><p>Hello,</p><p>Please see ${CFG.clinic}’s medication order below${inc.follow && fu.length ? ', along with a follow-up on items we haven’t received yet' : ''}.</p>`;
-  let text = `Hello,\n\nPlease see ${CFG.clinic}'s medication order below.\n`;
+  const inc = S.oInc || (S.oInc = { besse: true, follow: true, patient: true });
+  const m = besseModel(); const fu = followRows([...(S.oFu || new Set())]); const pts = patientOrderItems().filter(x => (S.oPt || new Set()).has(x.id));
+  let html = `<div style="${EM.font}"><p>Hello,</p><p>Please see the below order for reference.</p>`;
+  let text = `Hello,\n\nPlease see the below order for reference.\n`; let n = 0;
   if (inc.besse){ const rows = [56, 84].map(mg => { const r = m.rows[mg]; return [`${mg} mg`, r.oh, r.w1, r.w2, r.ov, `<b>${r.order}</b>`]; });
-    html += emSection(`1 · Besse order — week of ${fmtD(m.w[0][0], 'full')}`, '#f6e3da', emTable(['Dose', 'On hand', 'Appts next week', 'Appts 2 weeks out', 'Approved overage', 'To be ordered'], rows, '#efd3c6'));
+    html += emSection(`${++n} · Besse order`, `Week of ${fmtD(m.w[0][0], 'full')}`, BE_C.band, BE_C.bar, emTable(['Dose', 'On hand', 'Appts next week', 'Appts 2 weeks out', 'Approved overage', 'To be ordered'], rows, BE_C.head));
     text += `\nBESSE ORDER — week of ${fmtD(m.w[0][0], 'full')}\n` + rows.map(r => r.join('\t').replace(/<[^>]+>/g, '')).join('\n') + '\n'; }
-  if (inc.patient && (need.length || sm.length)){ const rows = [...need.map(r => [esc(nm(r.a.mrn)), esc(r.a.mrn), esc(S.byMrn.get(r.a.mrn)?.rx || '—'), PH_LABEL[r.inf.pharm], `${r.inf.mg ?? '?'} mg`, fmtD(r.a.date, 'full'), fmtT(r.a.time)]), ...sm.map(x => [esc(nm(x.mrn)), esc(x.mrn), esc(x.p.rx || '—'), PH_LABEL[x.p.pharm], `${x.p.mg ?? '?'} mg`, 'Newly scheduled', '—'])];
-    html += emSection('2 · Patient medications to order', '#fbf0d6', emTable(['Patient', 'MRN', 'Rx #', 'Pharmacy', 'Dose', 'Needed by', 'Time'], rows, '#f4e2b5'));
+  if (inc.patient && pts.length){ const rows = pts.map(x => [esc(nm(x.mrn)), esc(x.mrn), PH_LABEL[x.pharm], `${x.mg ?? '?'} mg`, x.date != null ? fmtD(x.date, 'full') : 'Newly scheduled', x.time != null ? fmtT(x.time) : '—']);
+    html += emSection(`${++n} · Patient medications to order`, `${rows.length} item${rows.length === 1 ? '' : 's'}`, PT_C.band, PT_C.bar, emTable(['Patient', 'MRN', 'Pharmacy', 'Dose', 'Needed by', 'Time'], rows, PT_C.head));
     text += '\nPATIENT MEDICATIONS TO ORDER\n' + rows.map(r => r.join('\t')).join('\n') + '\n'; }
-  if (inc.follow && fu.length){ html += emSection(`${inc.patient && (need.length || sm.length) ? 3 : 2} · Follow-up — not yet received`, '#e2edf6', emTable(FU_HEAD, fu.map(r => r.cells), '#cddff0'));
-    text += '\nFOLLOW-UP — NOT YET RECEIVED\n' + fu.map(r => r.cells.join('\t')).join('\n') + '\n'; }
-  html += `<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`; text += `\nThank you,\n${CFG.me || ''}`;
-  return { html, text, subj: `Medication order — ${CFG.clinic} — ${fmtD(S.orderDate, 'full')}`, counts: { follow: fu.length, patient: need.length + sm.length } };
+  if (inc.follow && fu.length){ html += emSection(`${++n} · Follow-up — updated ETA needed`, `${fu.length} item${fu.length === 1 ? '' : 's'} ordered but not yet received`, FU_C.band, FU_C.bar, emTable(FU_HEAD, fu.map(r => r.cells), FU_C.head));
+    text += '\nFOLLOW-UP — UPDATED ETA NEEDED\n' + fu.map(r => r.cells.join('\t')).join('\n') + '\n'; }
+  html += `<p style="margin-top:16px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`; text += `\nThank you,\n${CFG.me || ''}`;
+  return { html, text, subj: `Medication order — ${CFG.clinic} — ${fmtD(S.orderDate, 'full')}` };
 }
 function openOrderEmail(){
-  const draw = () => { const e = orderEmail(); const inc = S.oInc;
+  S.oFu = new Set(followModel().map(f => f.k.id)); S.oPt = new Set(patientOrderItems().map(x => x.id));
+  const draw = () => { const e = orderEmail(); const inc = S.oInc; const fi = followItems(); const pi = patientOrderItems().map(x => ({ id: x.id, label: `${esc(nm(x.mrn))} · ${x.date != null ? fmtD(x.date) : 'new'}` }));
     openModal(`<h2>Order email</h2><div class="small muted">To ${esc(CFG.email)} · choose what to include.</div>
-      <div class="row" style="margin:8px 0;gap:8px;flex-wrap:wrap">
-        <label class="chip ${inc.besse ? 'acc' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="besse" ${inc.besse ? 'checked' : ''} style="margin-right:4px">Besse order</label>
-        <label class="chip ${inc.patient ? 'warn' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="patient" ${inc.patient ? 'checked' : ''} style="margin-right:4px">Patient meds to order (${e.counts.patient})</label>
-        <label class="chip ${inc.follow ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="follow" ${inc.follow ? 'checked' : ''} style="margin-right:4px">Follow-up on unreceived (${e.counts.follow})</label></div>
-      <div class="emailprev">${e.html}</div>
+      <div class="osec" style="border-left-color:${BE_C.bar};background:${BE_C.band}"><label class="row" style="gap:6px;font-weight:700"><input type="checkbox" data-oinc="besse" ${inc.besse ? 'checked' : ''}>Besse order</label></div>
+      <div class="osec" style="border-left-color:${PT_C.bar};background:${PT_C.band}"><label class="row" style="gap:6px;font-weight:700"><input type="checkbox" data-oinc="patient" ${inc.patient ? 'checked' : ''}>Patient medications to order (${pi.length})</label>${inc.patient && pi.length ? pickList('pt', pi, S.oPt) : ''}</div>
+      <div class="osec" style="border-left-color:${FU_C.bar};background:${FU_C.band}"><label class="row" style="gap:6px;font-weight:700"><input type="checkbox" data-oinc="follow" ${inc.follow ? 'checked' : ''}>Follow-up — updated ETA needed (${fi.length})</label>${inc.follow && fi.length ? pickList('fu2', fi, S.oFu) : ''}</div>
+      <div class="emailprev" style="margin-top:10px">${e.html}</div>
       <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="oCopy">Copy email</button><button class="btn primary" data-act="oMail">Copy &amp; open email</button></div>`, true); };
   S.oDraw = draw; draw();
 }
@@ -1639,6 +1648,8 @@ const ACT = {
   protoSave: el => protoSave(el.dataset.m),
   taskUndo: el => taskSet(el.dataset.m, el.dataset.k, false),
   orderFor: async el => { const mrn = el.dataset.m; const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText(p.pharm), dateordered: { date: todaySerial() }, comments: `${nm(mrn)} | Ordered after scheduling ${fmtD(todaySerial())}` }); await write('Opening an order line…', () => S.store.add('kits', out), `${nm(mrn)} marked as ordered.`); },
+  selAll: el => { const k = el.dataset.k; if (k === 'fu'){ followItems().forEach(x => S.fuSel.add(x.id)); S.fuDraw(); } else if (k === 'fu2'){ followItems().forEach(x => S.oFu.add(x.id)); S.oDraw(); } else { patientOrderItems().forEach(x => S.oPt.add(x.id)); S.oDraw(); } },
+  selNone: el => { const k = el.dataset.k; if (k === 'fu'){ S.fuSel.clear(); S.fuDraw(); } else if (k === 'fu2'){ S.oFu.clear(); S.oDraw(); } else { S.oPt.clear(); S.oDraw(); } },
   goInv: el => { S.view = 'inventory'; S.invTab = el.dataset.v; render(); },
   fuEmail: el => openFollowEmail((el.dataset.ids || '').split(',').filter(Boolean)),
   fuCopy: async () => { const e = followEmail([...S.fuSel]); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Email copied — paste it into Outlook.'); },
@@ -1716,7 +1727,7 @@ document.addEventListener('change', e => {
   if (el.dataset.f){ S[el.dataset.f] = el.value; render(); }
   if (el.dataset.re){ S.re[el.dataset.re] = el.value; S.re.draw(); }
   if (el.id === 'reOk'){ S.re.ok = el.checked; S.re.draw(); }
-  if (el.dataset.fusel){ el.checked ? S.fuSel.add(el.dataset.fusel) : S.fuSel.delete(el.dataset.fusel); S.fuDraw(); }
+  if (el.dataset.pick){ const set = { fu: S.fuSel, fu2: S.oFu, pt: S.oPt }[el.dataset.pick]; el.checked ? set.add(el.dataset.id) : set.delete(el.dataset.id); (el.dataset.pick === 'fu' ? S.fuDraw : S.oDraw)(); }
   if (el.dataset.oinc){ S.oInc[el.dataset.oinc] = el.checked; S.oDraw(); }
   if (el.dataset.flag){ S[el.dataset.flag] = el.checked; render(); }
   if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); }
