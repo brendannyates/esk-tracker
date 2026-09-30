@@ -62,6 +62,13 @@ table.rt td .row{gap:6px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33}:root:not([data-theme="light"]) .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}}
 :root[data-theme="dark"] .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33} :root[data-theme="dark"] .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}
 .warnText{color:var(--warn);font-weight:600} .badText{color:var(--bad);font-weight:600}
+.apptcount{display:inline-grid;place-items:center;min-width:38px;height:32px;padding:0 10px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:20px;font-weight:800}
+.item.appt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:stretch}
+.item.appt .ar{display:flex;flex-direction:column;align-items:flex-end;text-align:right;gap:2px}
+.item.appt .ar .acts{margin-top:auto;padding-top:6px;justify-content:flex-end}
+.item.appt .sn{font-size:13px;font-weight:600;margin-top:4px;letter-spacing:.3px}
+.item.appt .meta{color:var(--muted);font-size:12.5px}
+@media(max-width:520px){.item.appt{grid-template-columns:1fr}.item.appt .ar{align-items:flex-start;text-align:left}.item.appt .ar .acts{justify-content:flex-start}}
 .bignum{font-size:34px;font-weight:800;line-height:1} .midnum{font-size:22px;font-weight:700;line-height:1}
 .item.st-onhand{border-left-color:var(--line)} .item.st-check{border-left-color:var(--warn)}
 .subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
@@ -953,15 +960,11 @@ function todayHTML(){
       <div class="grow" style="text-align:center">${day === T ? '<span class="todaypill">TODAY</span> ' : `<b>${DAYNAME[dowOf(day)]}</b> `}<span class="muted">${fmtD(day, 'full')}</span></div>
       <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}
       <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="row" style="margin-top:12px;align-items:flex-end;gap:18px">
-      <div><div class="bignum">${act.length}</div><div class="small muted">appointment${act.length === 1 ? '' : 's'} ${day === T ? 'today' : 'this day'}</div></div>
-      <div><div class="midnum">${am}</div><div class="small muted">AM</div></div><div><div class="midnum">${pm}</div><div class="small muted">PM</div></div>
-      <div><div class="midnum">${done}</div><div class="small muted">given</div></div>
-      <div class="grow small muted" style="text-align:right">Meds checked against the ${la.date != null ? `${esc(la.src)} of <b>${fmtD(la.date, 'full')}</b>` : 'daily audit (none on file yet)'}${check ? ` · <span class="warnText">${check} to confirm</span>` : ''}${noKit ? ` · <span class="badText">${noKit} with no kit</span>` : ''}</div></div>
-    <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></div>
+    <div class="row small" style="margin-top:10px;gap:10px"><span class="chip">${done}/${act.length} given</span>${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}<span class="muted">Meds checked against the ${la.date != null ? `${esc(la.src)} of ${fmtD(la.date, 'full')}` : 'daily audit (none on file yet)'}</span>
+      <span class="grow"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></div>
   </div>
   <div class="cols"><div>
-    <div class="card"><h2>Appointments</h2>${toolbarHTML()}
+    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span></h2>${toolbarHTML()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div></div><div>
     ${actionHTML()}
@@ -984,7 +987,7 @@ function auditStatus(k){
   if (k.received != null && k.received > la.date) return { cls: 'ok', text: `received ${fmtD(k.received)}, after last audit` };
   return { cls: 'warn', text: `not in last audit (${fmtD(la.date)}) — confirm` };
 }
-const SAFE = ph => `<span class="safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'BESSE' : ph === 'GENOA' ? 'GENOA' : ph === 'OTHER' ? 'OTHER' : '—'} SAFE</span>`;
+const SAFE = ph => `<span class="safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'Besse' : ph === 'GENOA' ? 'Genoa' : ph === 'OTHER' ? 'Other specialty' : 'Pharmacy ?'}</span>`;
 function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done';
   if (!i.suggest) return 'bad';
@@ -992,18 +995,24 @@ function itemState(i){
 }
 function itemHTML(i){
   const a = i.a; const st = itemState(i); const p = S.byMrn.get(a.mrn); const k = i.adminKit || i.suggest;
-  let med;
-  if (!a.active) med = `<span class="muted">${esc(a.hold ? 'Hold' : a.status)}</span>`;
-  else if (i.adminKit) med = `<span class="chip ok">Given ✓</span> <span class="muted small">SN …${esc(k.serial.slice(-6))}</span>`;
-  else if (k){ const au = auditStatus(k); med = `<b>On hand</b> <span class="mono">SN …<b>${esc(k.serial.slice(-6))}</b></span> <span class="muted small">· rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)}</span> <span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">· ${esc(au.text)}</span>${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''}`; }
-  else if (!i.inf.pharm) med = `<span class="chip warn">Not on the patient tracker</span>`;
-  else med = `<span class="chip bad">No ${i.inf.mg ?? ''} mg kit on hand</span>`;
+  let status, detail = '';
+  if (!a.active) status = `<span class="chip">${esc(a.hold ? 'Hold' : a.status)}</span>`;
+  else if (i.adminKit){ status = '<span class="chip ok">Given ✓</span>'; }
+  else if (k){ const au = auditStatus(k); status = `<span class="chip ${au.cls === 'warn' ? 'warn' : 'ok'}">${au.cls === 'warn' ? 'Confirm on hand' : 'On hand'}</span>${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''}`; detail = `<div class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</div>`; }
+  else if (!i.inf.pharm) status = '<span class="chip warn">Not on the patient tracker</span>';
+  else status = `<span class="chip bad">No ${i.inf.mg ?? ''} mg kit on hand</span>`;
+  const sn = k ? `<div class="sn mono">SN ${esc(k.serial)}</div><div class="small muted">rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)}</div>` : '';
   const flags = [i.needsSched ? '<span class="warnText">schedule out</span>' : '', i.needsProto ? '<span class="badText">new protocol</span>' : '', p && !p.coverage ? '<span class="warnText">MD/NP not set</span>' : '', i.inf.mg === 56 && !a.isStart ? '<span class="warnText">56 mg — verify</span>' : ''].filter(Boolean);
-  return `<div class="item st-${st}">
-    <div class="head">${SAFE(i.inf.pharm)}<span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · <b>${i.inf.mg ?? '?'} mg</b></span></div>
-    <div class="line">${med}</div>
-    ${a.active ? `<div class="line small muted">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}${p?.coverage ? ' · ' + esc(p.coverage) : ''}${flags.length ? ' · ' + flags.join(' · ') : ''}</div>` : ''}
-    <div class="acts noprint">${a.active && !i.adminKit ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+  return `<div class="item appt st-${st}">
+    <div class="al">
+      <div class="head">${SAFE(i.inf.pharm)}<span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span></div>
+      <div class="line meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · <b>${i.inf.mg ?? '?'} mg</b></div>
+      ${a.active ? `<div class="line small muted">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}${p?.coverage ? ' · ' + esc(p.coverage) : ''}${flags.length ? ' · ' + flags.join(' · ') : ''}</div>` : ''}
+    </div>
+    <div class="ar">
+      <div>${status}</div>${sn}${detail}
+      <div class="acts noprint">${a.active && !i.adminKit ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+    </div>
   </div>`;
 }
 
