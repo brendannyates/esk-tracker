@@ -62,6 +62,25 @@ table.rt td .row{gap:6px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33}:root:not([data-theme="light"]) .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}}
 :root[data-theme="dark"] .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33} :root[data-theme="dark"] .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}
 .warnText{color:var(--warn);font-weight:600} .badText{color:var(--bad);font-weight:600}
+.item.appt2{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;padding:12px 14px}
+.appt2 .al,.appt2 .ar{display:flex;flex-direction:column;gap:6px;min-width:0}
+.appt2 .ar{align-items:flex-end;text-align:right}
+.appt2 .r1,.appt2 .r2,.appt2 .r3,.appt2 .r4{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.appt2 .ar .r1,.appt2 .ar .r2,.appt2 .ar .r3,.appt2 .ar .r4{justify-content:flex-end}
+.appt2 .al .r1 .btn{margin-left:4px}
+.appt2 .time{font-weight:800;font-size:15px} .appt2 .name{font-weight:800;font-size:15px}
+.appt2 .sn{font-size:13px;font-weight:700;letter-spacing:.3px} .appt2 .dose{font-weight:800;font-size:15px}
+.appt2 .ar .r4{margin-top:auto}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:700;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink)}
+.pill.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent} .pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent} .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.flag{display:inline-flex;align-items:center;gap:2px;border-radius:8px;padding:2px 4px 2px 8px;font-weight:700;font-size:12px}
+.flag.warn{background:var(--warn-soft);color:var(--warn)} .flag.bad{background:var(--bad-soft);color:var(--bad)}
+.x{border:0;background:transparent;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:0 4px;border-radius:6px;opacity:.7} .x:hover{opacity:1;background:rgba(0,0,0,.08)}
+.note{display:inline-flex;align-items:center;gap:6px;background:var(--info-soft);color:var(--ink);border-radius:8px;padding:3px 4px 3px 9px;font-size:12.5px}
+.note .nby{color:var(--muted);font-size:11px}
+.addnote{border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:3px 9px;font-size:12px;cursor:pointer} .addnote:hover{border-color:var(--accent);color:var(--accent)}
+.noteIn{max-width:320px;min-height:32px;padding:5px 9px}
+@media(max-width:520px){.item.appt2{grid-template-columns:1fr}.appt2 .ar{align-items:flex-start;text-align:left}.appt2 .ar .r1,.appt2 .ar .r2,.appt2 .ar .r3,.appt2 .ar .r4{justify-content:flex-start}}
 .apptcount{display:inline-grid;place-items:center;min-width:38px;height:32px;padding:0 10px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:20px;font-weight:800}
 .item.appt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:stretch}
 .item.appt .ar{display:flex;flex-direction:column;align-items:flex-end;text-align:right;gap:2px}
@@ -988,31 +1007,45 @@ function auditStatus(k){
   if (k.received != null && k.received > la.date) return { cls: 'ok', text: `received ${fmtD(k.received)}, after last audit` };
   return { cls: 'warn', text: `not in last audit (${fmtD(la.date)}) — confirm` };
 }
-const SAFE = ph => `<span class="safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'Besse' : ph === 'GENOA' ? 'Genoa' : ph === 'OTHER' ? 'Other specialty' : 'Pharmacy ?'}</span>`;
+const SAFE = ph => `<span class="pill safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'Besse' : ph === 'GENOA' ? 'Genoa' : ph === 'OTHER' ? 'Other specialty' : 'Pharmacy ?'}</span>`;
 function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done';
   if (!i.suggest) return 'bad';
   return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
 }
+// Appointment notes / alerts (saved with the workbook, per patient)
+const notesFor = mrn => (S.notes || {})[mrn] || [];
+async function saveNotes(){ await S.store.setDoc('eskNotes', S.notes || {}); }
 function itemHTML(i){
-  const a = i.a; const st = itemState(i); const p = S.byMrn.get(a.mrn); const k = i.adminKit || i.suggest;
-  let status, detail = '';
-  if (!a.active) status = `<span class="chip">${esc(a.hold ? 'Hold' : a.status)}</span>`;
-  else if (i.adminKit){ status = '<span class="chip ok">Given ✓</span>'; }
-  else if (k){ const au = auditStatus(k); status = `<span class="chip ${au.cls === 'warn' ? 'warn' : 'ok'}">${au.cls === 'warn' ? 'Confirm on hand' : 'On hand'}</span>${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''}`; detail = `<div class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</div>`; }
-  else if (!i.inf.pharm) status = '<span class="chip warn">Not on the patient tracker</span>';
-  else status = `<span class="chip bad">No ${i.inf.mg ?? ''} mg kit on hand</span>`;
-  const sn = k ? `<div class="sn mono">SN ${esc(k.serial)}</div><div class="small muted">rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)}</div>` : '';
-  const flags = [i.needsSched ? '<span class="warnText">schedule out</span>' : '', i.needsProto ? '<span class="badText">new protocol</span>' : '', p && !p.coverage ? '<span class="warnText">MD/NP not set</span>' : '', i.inf.mg === 56 && !a.isStart ? '<span class="warnText">56 mg — verify</span>' : ''].filter(Boolean);
-  return `<div class="item appt st-${st}">
+  const a = i.a; const st = itemState(i); const p = S.byMrn.get(a.mrn); const k = i.adminKit || i.suggest; const au = k && !i.adminKit ? auditStatus(k) : null;
+  let status;
+  if (!a.active) status = `<span class="pill">${esc(a.hold ? 'Hold' : a.status)}</span>`;
+  else if (i.adminKit) status = '<span class="pill ok">Given ✓</span>';
+  else if (k) status = `<span class="pill ${au.cls === 'warn' ? 'warn' : 'ok'}">${au.cls === 'warn' ? 'Confirm on hand' : 'On hand'}</span>`;
+  else if (!i.inf.pharm) status = '<span class="pill warn">Not on tracker</span>';
+  else status = '<span class="pill bad">No kit on hand</span>';
+  const x = (act, m, title) => `<button class="x" data-act="${act}" data-m="${esc(m)}" title="${title}" aria-label="${title}">×</button>`;
+  const flags = !a.active ? [] : [
+    i.needsProto ? `<span class="flag bad">new protocol${x('protoRenew', a.mrn, 'Enter the renewed protocol date')}</span>` : '',
+    i.needsSched && !taskGet(a.mrn, 'sched') ? `<span class="flag warn">schedule out${x('taskDoX', a.mrn, 'Mark scheduled')}</span>` : '',
+    i.inf.mg === 56 && !a.isStart ? '<span class="flag warn">56 mg — verify</span>' : '',
+    S._re?.has(k?.id) ? '<span class="flag warn">re-assign kit</span>' : '',
+  ].filter(Boolean);
+  const notes = notesFor(a.mrn);
+  const adding = S.noteFor === a.key;
+  return `<div class="item appt2 st-${st}">
     <div class="al">
-      <div class="head">${SAFE(i.inf.pharm)}<span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span></div>
-      <div class="line meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · <b>${i.inf.mg ?? '?'} mg</b></div>
-      ${a.active ? `<div class="line small muted">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}${p?.coverage ? ' · ' + esc(p.coverage) : ''}${flags.length ? ' · ' + flags.join(' · ') : ''}</div>` : ''}
+      <div class="r1"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="muted">${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)}</span><button class="btn sm ghost" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+      <div class="r2 small"><span class="muted">MRN ${esc(a.mrn)}</span>${p ? (p.coverage ? `<span class="muted">${esc(p.coverage)}</span>` : '<span class="warnText">MD/NP not set</span>') : ''}</div>
+      <div class="r3">${notes.map((n, idx) => `<span class="note">${esc(n.t)}<span class="nby">${esc(n.by || '')} ${fmtD(fromIso(n.at))}</span><button class="x" data-act="noteDel" data-m="${esc(a.mrn)}" data-i="${idx}" aria-label="Remove note">×</button></span>`).join('')}
+        ${adding ? `<input id="noteIn" class="fld noteIn" data-note="${esc(a.mrn)}" placeholder="Note or alert — Enter to save" autocomplete="off">` : `<button class="addnote" data-act="noteAdd" data-k="${esc(a.key)}" title="Add a note or alert">+ ${notes.length ? '' : 'note / alert'}</button>`}</div>
+      ${a.active ? `<div class="r4 small">${flags.join('')}<span class="muted">${i.remaining} more booked</span>${i.thru ? `<span class="muted">thru ${fmtD(i.thru)}</span>` : ''}</div>` : ''}
     </div>
     <div class="ar">
-      <div>${status}</div>${sn}${detail}
-      <div class="acts noprint">${a.active && !i.adminKit ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+      <div class="r1">${SAFE(i.inf.pharm)}${status}</div>
+      ${k ? `<div class="r2"><span class="mono sn">SN ${esc(k.serial)}</span><span class="muted small">rec ${fmtD(k.received)}</span></div>` : '<div class="r2"></div>'}
+      <div class="r3">${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}<span class="dose">${i.inf.mg ?? '?'} mg</span></div>
+      <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}</div>
     </div>
   </div>`;
 }
@@ -1654,6 +1687,9 @@ const ACT = {
   gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
   genoaOrder,
   taskDo: el => taskSet(el.dataset.m, el.dataset.k, true),
+  taskDoX: el => taskSet(el.dataset.m, 'sched', true),
+  noteAdd: el => { S.noteFor = el.dataset.k; render(); setTimeout(() => $('#noteIn')?.focus(), 20); },
+  noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
   protoSave: el => protoSave(el.dataset.m),
   taskUndo: el => taskSet(el.dataset.m, el.dataset.k, false),
@@ -1712,6 +1748,7 @@ document.addEventListener('click', e => {
   const f = ACT[el.dataset.act]; if (f){ e.preventDefault(); f(el, e); }
 });
 document.addEventListener('keydown', e => {
+  if (e.target.dataset?.note != null){ if (e.key === 'Escape'){ S.noteFor = null; render(); return; } if (e.key === 'Enter'){ e.preventDefault(); const t = e.target.value.trim(); const m = e.target.dataset.note; S.noteFor = null; if (t){ S.notes = S.notes || {}; (S.notes[m] = S.notes[m] || []).push({ t, by: CFG.me || '', at: isoOf(todaySerial()) }); saveNotes(); } render(); return; } }
   if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') && $('#modal').hidden){ const el = document.querySelector('[data-scan]'); if (el){ e.preventDefault(); el.focus(); } return; }
   if (e.key === 'Escape' && !$('#modal').hidden){ closeModal(); return; }
   const el = e.target; if (e.key !== 'Enter' || !el.dataset?.scan) return;
@@ -1757,7 +1794,7 @@ async function reload(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); S.loadErr = e.message || String(e); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -1789,7 +1826,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
