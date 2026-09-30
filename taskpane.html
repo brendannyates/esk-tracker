@@ -57,6 +57,25 @@ table.rt td .row{gap:6px}
   table.rt td:empty{display:none}
   table.rt tr{border-bottom:1px solid var(--line)!important}
 }
+.subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.subnav button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;color:var(--muted);cursor:pointer;min-height:36px}
+.subnav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.subnav button[aria-pressed="true"] .badge{background:var(--accent-ink);color:var(--accent)}
+.badge.neutral{background:var(--muted)}
+.dayblock{background:var(--surface2);border-radius:14px;padding:10px 12px;margin:10px 0}
+.dayblock.today{background:var(--accent-soft)} .dayblock.due{background:var(--bad-soft)}
+.dayblock .bh{display:flex;align-items:baseline;gap:8px;cursor:default;list-style:none}
+details.dayblock>summary.bh{cursor:pointer} details.dayblock>summary::-webkit-details-marker{display:none}
+details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--muted)} details.dayblock[open]>summary.bh::after{content:"▾"}
+.dayblock .bh span{color:var(--muted);font-size:12px}
+.srow{background:var(--surface);border-radius:10px;padding:8px 10px;margin-top:8px}
+.srow .name{font-weight:700} .srow .meta{color:var(--muted);font-size:12px;margin-left:6px} .srow .line{margin-top:4px}
+.todaypill{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:3px 12px;font-weight:800;letter-spacing:.5px}
+.asec{border-radius:12px;padding:10px 12px;margin-top:10px}
+.asec.red{background:var(--bad-soft)} .asec.blue{background:var(--info-soft)} .asec.amber{background:var(--warn-soft)} .asec.gray{background:var(--surface2)}
+.asec h3{margin:0 0 6px;color:inherit;text-transform:none;letter-spacing:0;font-size:14px}
+.asec .srow{margin-top:6px}
+.emailprev{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;color:#222;max-height:55vh;overflow:auto}
 iframe.print{width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;margin-bottom:12px}
 .card h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
@@ -233,6 +252,7 @@ const SIG = {
   patients: ['mrn','patientname','status','txfrequency','pharmacy'],
   kits:     ['scanhere','mrn','receivedmg','mgremaining','administeredmg'],
   appts:    ['mrn','patient','date','time','event','status'],
+  audit:    ['scanhere','auditor2','date'],
 };
 const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
 const snapMatch = (vals, snap) => snap.every((s, c) => s === null || same(vals[c], s));
@@ -395,6 +415,9 @@ function DemoStore(){
   addKit({ mg:84, ph:'Genoa', mrn:900107, rec:T-2, exp:T+300, cmt:'GRAHAL' });
   addKit({ mg:84, ph:'Genoa', mrn:900110, rec:T-20, exp:T+300, cmt:'JONKAI' }); // Genoa use-by = received + 14 → expired
   addKit({ mg:56, ph:'Genoa', mrn:900113, rec:T-3, exp:T+300, cmt:'MOONED' });
+  addKit({ mg:84, ph:'Besse', mrn:900108, rec:T-60, exp:T+12, cmt:'HOLIVY' }); // labeled for a paused patient, expiring soon → re-assign
+  addKit({ mg:84, ph:'Besse', mrn:900101, rec:T-15, exp:T+100, cmt:'ALDBEN' });  // labeled for ALDBEN
+  addKit({ mg:84, ph:'Besse', ordered:T-3, scan:false, cmt:'Besse 84 mg order' }); // Besse stock in transit
   addKit({ mg:84, ph:'Genoa', mrn:900105, ordered:T-3, scan:false, cmt:'EVAFRA' });
   addKit({ mg:84, ph:'Genoa', mrn:900102, ordered:T-2, scan:false, cmt:'BROCAM' });
   for (let i = 0; i < 12; i++) inv.push(Array(26).fill(''));
@@ -408,17 +431,19 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
   const besse = [['BESSE WEEKLY ORDERING GUIDE','','','','','','','','','','',''],['Clinic','Date','Dose','Besse O/H','Appts Next Week','Appts 2 Week Out','Approved Overage','To Be Ordered','','DATE',56,84],['SRL',T-3,'56mg',1,0,0,1,'','',T-3,'',''],['','','84mg',13,12,6,-2,'','',T+4,'','']];
+  const AUD_H = ['Location','Date','Auditor Name (First and Last)','Auditor 2','Scan Here','Pharmacy/Drug Source','Serial Number ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
+  const AUD_F = new Set([0,5,6,7,8,9,10,11]); const audVals = Array.from({ length: 15 }, () => Array(12).fill(''));
   const docs = {};
-  const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null] };
+  const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null] };
   return {
     live: false,
     async load(){
-      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, k === 'kits' ? 'Table2' : k === 'patients' ? 'Table1' : 'Table47', k === 'kits' ? 'Inventory' : k === 'patients' ? 'Master Patient Tracker' : 'Appt List', h, v.map(r => r.slice()), F(v, fs));
+      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit' }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
         besse: parseBesse(besse, besse), besseSheet: 'Besse Order' };
     },
@@ -445,7 +470,7 @@ function DemoStore(){
 const S = {
   store:null, tables:{}, ref:{}, besse:null, besseSheet:null, P:[], A:[], K:[], byMrn:new Map(), loaded:false, loadErr:null,
   view:'today', day:todaySerial(), orderDate:todaySerial(), orderTab:'NEED', win:null, target:null, pull:{},
-  patQ:'', patAll:false, range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
+  patQ:'', patAll:false, invTab:'stock', openDays:new Set(), range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
 
@@ -455,7 +480,7 @@ function derive(){
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), rx: rxText(tp.get(r,'notes')) || rxText(tp.get(r,'pcnnotes')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -483,7 +508,7 @@ function derive(){
     k.administered = adminRaw != null && !k.markedDisp;
     k.disposed = yes(k.marked) || k.dispDate != null || k.markedDisp;
     k.isReceived = !!k.scanN;
-    k.openOrder = !k.isReceived && !!k.mrn && !k.administered && !k.disposed;
+    k.openOrder = !k.isReceived && (!!k.mrn || k.ordered != null) && !k.administered && !k.disposed;
     k.expDate = k.useBy ?? k.exp;
     k.expired = k.expDate != null ? k.expDate < T : yes(k.expFlag);
     k.full = k.isReceived && !k.administered && !k.disposed && k.recv > 0 && (k.remaining == null || k.remaining >= k.recv);
@@ -506,48 +531,76 @@ function apptInfo(a){
 function scheduledThru(mrn){ const T = todaySerial(); let m = null; for (const a of S.A) if (a.mrn === mrn && a.active && a.date >= T && (m == null || a.date > m)) m = a.date; return m; }
 
 // ---------- today ----------
+// Besse kits carry the patient's MRN once they're labeled (sharpie: MRN, name, received date).
+// A labeled kit is only ever suggested for that patient; unlabeled stock is used oldest-first.
+const besseOwner = k => k.pharm === 'BESSE' && k.mrn && !k.administered ? k.mrn : null;
+function pickBesse(pool, mrn, mg, date){
+  const ok = k => k.recv === mg && (k.expDate == null || date == null || k.expDate >= date);
+  let i = pool.findIndex(k => k.mrn === mrn && ok(k));
+  if (i < 0) i = pool.findIndex(k => !k.mrn && ok(k));
+  return i;
+}
 function todayModel(day){
   const T = todaySerial(); const pull = S.pull[isoOf(day)] || {};
   const list = S.A.filter(a => a.date === day).sort((x, y) => (x.time ?? 0) - (y.time ?? 0));
   const used = new Set(Object.values(pull));
   const items = list.map(a => {
-    const inf = apptInfo(a);
+    const inf = apptInfo(a); const p = S.byMrn.get(a.mrn);
     const adminKit = S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === day) || null;
     const pulledKit = pull[a.key] ? S.K.find(k => k.id === pull[a.key]) || null : null;
     const fut = S.A.filter(x => x.mrn === a.mrn && x.active && x.date > day);
     const thru = scheduledThru(a.mrn);
     if (adminKit) used.add(adminKit.id);
-    return { a, inf, adminKit, pulledKit, remaining: fut.length, thru, needsSched: thru == null || thru < T + CFG.schedDays };
+    return { a, inf, p, adminKit, pulledKit, remaining: fut.length, thru, needsSched: thru == null || thru < T + CFG.schedDays, needsProto: needsProto(p) };
   });
   const pool = S.K.filter(k => k.available && !used.has(k.id)).sort(fifo);
   for (const it of items){
     if (!it.a.active || it.adminKit || it.pulledKit || !it.inf.mg) continue;
-    const i = pool.findIndex(k => k.recv === it.inf.mg && (it.inf.pharm === 'BESSE' ? k.pharm === 'BESSE' : it.inf.pharm === 'GENOA' ? (k.pharm === 'GENOA' && k.mrn === it.a.mrn) : false));
+    let i = -1;
+    if (it.inf.pharm === 'BESSE'){ const bp = pool.filter(k => k.pharm === 'BESSE'); const j = pickBesse(bp, it.a.mrn, it.inf.mg, day); i = j >= 0 ? pool.indexOf(bp[j]) : -1; }
+    else if (PS(it.inf.pharm)) i = pool.findIndex(k => k.pharm !== 'BESSE' && k.mrn === it.a.mrn && k.recv === it.inf.mg);
     if (i >= 0){ it.suggest = pool[i]; pool.splice(i, 1); } else it.noKit = true;
   }
   return items;
 }
+function needsProto(p){ if (!p || !/^(active|pending)/i.test(p.status)) return false; return !p.protoExp || p.protoExp < todaySerial() + CFG.schedDays; }
+// Assigned Besse kits to flag: expire in < 21 days AND their patient has no visit in the next 7 days.
+function reassignModel(){
+  const T = todaySerial(); const out = []; const taken = new Set();
+  const cands = S.K.filter(k => besseOwner(k) && k.available && k.expDate != null && k.expDate < T + 21 && !S.A.some(a => a.mrn === k.mrn && a.active && a.date >= T && a.date <= T + 7)).sort((a, b) => a.expDate - b.expDate);
+  const upcoming = S.A.filter(a => a.active && a.date >= T && apptInfo(a).pharm === 'BESSE' && !S.K.some(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  for (const k of cands){
+    const tgt = upcoming.find(a => a.mrn !== k.mrn && a.date <= k.expDate && apptInfo(a).mg === k.recv && !taken.has(a.key) && !S.K.some(x => x.id !== k.id && besseOwner(x) === a.mrn && x.available && x.recv === k.recv));
+    if (tgt) taken.add(tgt.key);
+    out.push({ k, from: k.mrn, target: tgt || null });
+  }
+  return out;
+}
+const FREQ_DAYS = f => { const s = String(f || '').toLowerCase(); if (/2x/.test(s)) return 3.5; if (/4 weeks|monthly/.test(s)) return 28; if (/3 weeks/.test(s)) return 21; if (/2 weeks|eow/.test(s)) return 14; if (/week/.test(s)) return 7; return 7; };
+function lastKept(mrn){ let m = null; for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && (m == null || a.date > m)) m = a.date; for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && (m == null || k.adminDate > m)) m = k.adminDate; return m; }
 function schedGaps(){
   const T = todaySerial(), end = T + 6, lim = T + CFG.schedDays;
   const first = new Map();
   for (const a of S.A){ if (!a.active || a.date < T || a.date > end) continue; const f = first.get(a.mrn); if (!f || a.date < f.date || (a.date === f.date && (a.time ?? 0) < (f.time ?? 0))) first.set(a.mrn, a); }
   const groups = new Map();
-  for (const [mrn, a] of first){ const thru = scheduledThru(mrn); if (thru != null && thru >= lim) continue; if (!groups.has(a.date)) groups.set(a.date, []); groups.get(a.date).push({ mrn, a, thru, p: S.byMrn.get(mrn) }); }
+  for (const [mrn, a] of first){ const p = S.byMrn.get(mrn); const thru = scheduledThru(mrn); const ns = thru == null || thru < lim, np = needsProto(p); if (!ns && !np) continue; if (!groups.has(a.date)) groups.set(a.date, []); groups.get(a.date).push({ mrn, a, thru, p, ns, np }); }
   const days = [...groups.entries()].sort((x, y) => x[0] - y[0]).map(([d, list]) => ({ d, list: list.sort((x, y) => (x.a.time ?? 0) - (y.a.time ?? 0)) }));
-  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && scheduledThru(p.mrn) == null).map(p => ({ mrn: p.mrn, p, last: Math.max(0, ...S.A.filter(a => a.mrn === p.mrn && a.status === 'Kept').map(a => a.date)) || null }));
+  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && scheduledThru(p.mrn) == null).map(p => { const last = lastKept(p.mrn); const due = last != null ? Math.round(last + FREQ_DAYS(p.freq)) : null; return { mrn: p.mrn, p, last, due }; }).sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
   const count = days.reduce((n, g) => n + g.list.length, 0) + B.length;
   return { days, B, lim, count };
 }
-function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip">Protocol exp —</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">Protocol exp ${fmtD(p.protoExp, 'full')}</span>`; }
+function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip warn">No protocol date</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">${p.protoExp < T ? 'Protocol expired' : 'Protocol exp'} ${fmtD(p.protoExp, 'full')}</span>`; }
 function schedHTML(){
   const g = schedGaps(); const T = todaySerial();
-  const row = x => `<div class="item st-todo"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
-    <div class="line row"><span class="chip warn">${x.thru ? 'Booked thru ' + fmtD(x.thru) : 'Nothing booked after'}</span>${protoChip(x.p, g.lim)}</div>${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`;
+  const row = x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
+    <div class="line row">${x.ns ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${x.np ? `<span class="chip bad">New protocol needed</span>` : ''}${protoChip(x.p, g.lim)}</div>${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`;
+  const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
   return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
-    <div class="small muted">Patients seen in the next 7 days who aren’t booked through ${fmtD(g.lim, 'full')}, grouped by the day they’re in clinic — schedule them out at that visit.</div>
-    ${g.days.length ? g.days.map(d => `<div class="dayhead"><b>${d.d === T ? 'Today' : DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.length}</span></div><div class="list">${d.list.map(row).join('')}</div>`).join('') : '<div class="msg ok">Everyone seen this week is booked through the next ' + CFG.schedDays + ' days.</div>'}
-    <div class="dayhead"><b>No appointments</b><span>Active or Pending Start · ${g.B.length}</span></div>
-    ${g.B.length ? `<div class="list">${g.B.map(x => `<div class="item st-bad"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip bad">${x.last ? 'Last seen ' + fmtD(x.last) : 'Never seen'}</span>${protoChip(x.p, g.lim)}</div>${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('')}</div>` : '<div class="muted small">None.</div>'}
+    <div class="small muted">Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}.</div>
+    <div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
+      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="chip">Last seen ${fmtD(x.last)}</span>` : ''}${protoChip(x.p, g.lim)}</div>${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}</div>`).join('') : '<div class="small muted">None.</div>'}</div>
+    <div class="dayblock today"><div class="bh"><b>Today</b><span>${fmtD(T, 'full')} · ${today ? today.list.length : 0}</span></div>${today ? today.list.map(row).join('') : '<div class="small muted">Everyone in clinic today is booked out and has a current protocol.</div>'}</div>
+    ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.length}</span></summary>${d.list.map(row).join('')}</details>`).join('')}
   </div>`;
 }
 const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -565,7 +618,7 @@ function findByScan(raw){
 }
 function todayScan(raw){
   const day = S.day; const { p, list } = findByScan(raw);
-  if (!list.length) return setMsg('todayMsg', 'bad', p ? `Serial ${p.serial} isn't in the Inventory log yet. Receive it first on the Receive tab.` : `That scan isn't a Spravato code and doesn't match any serial in the log.`);
+  if (!list.length) return setMsg('todayMsg', 'bad', p ? `Serial ${p.serial} isn't in the Inventory log yet. Receive it first (Inventory → Receive).` : `That scan isn't a Spravato code and doesn't match any serial in the log.`);
   const k = list.find(x => !x.administered && !x.disposed) || list[0];
   if (k.administered) return setMsg('todayMsg', 'bad', `Serial ${k.serial} was already administered (${fmtD(k.adminDate,'full')}, ${esc(nm(k.mrn))}).`);
   if (k.disposed) return setMsg('todayMsg', 'bad', `Serial ${k.serial} is marked for disposal. Do not use.`);
@@ -576,17 +629,43 @@ function todayScan(raw){
   const open = i => i.a.active && !i.pulledKit && !i.adminKit;
   let it = S.target ? items.find(i => i.a.key === S.target) : null;
   if (!it){
-    if (k.pharm === 'GENOA') it = items.find(i => open(i) && i.a.mrn === k.mrn);
-    else it = items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv) || items.find(i => open(i) && i.inf.pharm === 'BESSE');
+    if (k.pharm !== 'BESSE' || k.mrn) it = items.find(i => open(i) && i.a.mrn === k.mrn);
+    else it = items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv && !S.K.some(x => besseOwner(x) === i.a.mrn && x.available && x.recv === k.recv)) || items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv);
   }
-  if (!it) return setMsg('todayMsg', 'bad', k.pharm === 'GENOA' ? `This Genoa kit belongs to <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}), who has no open appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)}.` : `No open Besse appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)} needs this kit.`);
-  if (k.pharm === 'GENOA' && k.mrn !== it.a.mrn) return setMsg('todayMsg', 'bad', `<b>Wrong patient.</b> This Genoa kit is for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}), not ${esc(nm(it.a.mrn))}.`);
+  if (!it) return setMsg('todayMsg', 'bad', k.mrn ? `This kit is labeled for <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}), who has no open appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)}.${k.pharm === 'BESSE' ? ' If it should go to someone else, use <b>Re-assign</b> (Dashboard → Action Needed) so the label and tracker are updated.' : ''}` : `No open Besse appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)} needs this kit.`);
+  if (k.mrn && k.mrn !== it.a.mrn) return setMsg('todayMsg', 'bad', `<b>Assigned to another patient.</b> This ${PH_LABEL[k.pharm]} kit is labeled for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}), not ${esc(nm(it.a.mrn))}.${k.pharm === 'BESSE' ? ' Kits are only moved through <b>Re-assign</b> after the PCT re-labels them.' : ''}`);
   if (k.pharm !== it.inf.pharm && it.inf.pharm) return setMsg('todayMsg', 'bad', `${esc(nm(it.a.mrn))} gets ${PH_LABEL[it.inf.pharm]} medication, but this kit is ${PH_LABEL[k.pharm]}.`);
   const notes = [];
   if (it.inf.mg && k.recv !== it.inf.mg) notes.push(`<b>Dose check:</b> kit is ${k.recv} mg, appointment is ${it.inf.mg} mg.`);
-  if (k.pharm === 'BESSE'){ const older = S.K.filter(x => x.pharm === 'BESSE' && x.available && x.recv === k.recv && x.id !== k.id && !Object.values(S.pull[d]).includes(x.id) && fifo(x, k) < 0); if (older.length) notes.push(`An older Besse ${k.recv} mg kit is available (received ${fmtD(older.sort(fifo)[0].received)}).`); }
+  if (k.pharm === 'BESSE' && !k.mrn){ const own = S.K.find(x => besseOwner(x) === it.a.mrn && x.available && x.recv === k.recv && !Object.values(S.pull[d]).includes(x.id)); if (own) notes.push(`${esc(nm(it.a.mrn))} already has a labeled kit (SN …${esc(own.serial.slice(-5))}, received ${fmtD(own.received)}) — use that one first.`); else { const older = S.K.filter(x => x.pharm === 'BESSE' && !x.mrn && x.available && x.recv === k.recv && x.id !== k.id && !Object.values(S.pull[d]).includes(x.id) && fifo(x, k) < 0); if (older.length) notes.push(`An older unlabeled Besse ${k.recv} mg kit is available (received ${fmtD(older.sort(fifo)[0].received)}).`); } }
   S.pull[d][it.a.key] = k.id; S.target = null; savePull();
   setMsg('todayMsg', notes.length ? 'warn' : 'ok', `Pulled serial ${esc(k.serial)} (${k.recv} mg ${PH_LABEL[k.pharm]}) for <b>${esc(nm(it.a.mrn))}</b> at ${fmtT(it.a.time)}.` + (notes.length ? '<br>' + notes.join('<br>') : ''));
+}
+// ---------- re-assign a labeled Besse kit ----------
+function openReassign(id){
+  const r = reassignModel().find(x => x.k.id === id); const k = S.K.find(x => x.id === id); if (!k) return;
+  const T = todaySerial();
+  const opts = S.A.filter(a => a.active && a.date >= T && a.date <= (k.expDate ?? T + 30) && a.mrn !== k.mrn && apptInfo(a).pharm === 'BESSE' && apptInfo(a).mg === k.recv).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  const seen = new Set(); const uniq = opts.filter(a => !seen.has(a.mrn) && seen.add(a.mrn));
+  S.re = { id, to: r?.target?.mrn || uniq[0]?.mrn || '', ok: false };
+  const toA = mrn => uniq.find(a => a.mrn === mrn);
+  const draw = () => {
+    const a = toA(S.re.to); const newName = S.re.to ? nm(S.re.to) : '';
+    const { out } = changesFor('kits', { mrn: S.re.to ? mrnVal(S.re.to) : '', comments: `${newName} | Re-assigned from ${nm(k.mrn)} ${fmtD(T)} by ${CFG.me || 'PCT'}` });
+    openModal(`<h2>Re-assign Besse kit</h2>
+      <div class="item" style="margin-top:6px"><div class="line">${kitLine(k)}</div><div class="line small">Labeled for <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}) · ${(() => { const n = S.A.filter(x => x.mrn === k.mrn && x.active && x.date >= T).sort((x, y) => x.date - y.date)[0]; return n ? 'next visit ' + fmtD(n.date, 'dow') : 'no visit booked'; })()}</div></div>
+      <label class="lbl" for="reTo">Re-assign to</label>
+      <select id="reTo" class="fld" data-re="to">${uniq.length ? uniq.map(x => `<option value="${esc(x.mrn)}" ${x.mrn === S.re.to ? 'selected' : ''}>${esc(nm(x.mrn))} · MRN ${esc(x.mrn)} · ${fmtD(x.date, 'dow')} ${fmtT(x.time)}${S.K.some(y => besseOwner(y) === x.mrn && y.available && y.recv === k.recv) ? ' (already has a labeled kit)' : ''}</option>`).join('') : '<option value="">No Besse appointment before this kit expires</option>'}</select>
+      <label class="row" style="margin-top:12px;align-items:flex-start;gap:10px"><input type="checkbox" id="reOk" ${S.re.ok ? 'checked' : ''} style="width:20px;height:20px;margin-top:2px"><span><b>I re-labeled this kit</b> for ${esc(newName || '—')} (MRN, name and received date ${fmtD(k.received, 'full')}) and crossed out the old label.</span></label>
+      <div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="reSave" ${S.re.ok && S.re.to ? '' : 'disabled'}>Confirm re-label &amp; re-assign</button></div>`);
+  };
+  S.re.draw = draw; draw();
+}
+async function reSave(){
+  const k = S.K.find(x => x.id === S.re.id); if (!k || !S.re.to || !S.re.ok) return; const T = todaySerial(); const from = k.mrn;
+  const { out } = changesFor('kits', { mrn: mrnVal(S.re.to), comments: `${nm(S.re.to)} | Re-assigned from ${nm(from)} ${fmtD(T)} by ${CFG.me || 'PCT'}` });
+  if (await write('Re-assigning…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Kit re-assigned to ${nm(S.re.to)}.`)){ closeModal(); render(); }
 }
 
 // ---------- ordering ----------
@@ -632,7 +711,10 @@ function genoaModel(from, to){
 }
 function followModel(){
   const T = todaySerial(); const out = [];
-  const byMrn = new Map(); for (const k of S.K) if (k.openOrder){ if (!byMrn.has(k.mrn)) byMrn.set(k.mrn, []); byMrn.get(k.mrn).push(k); }
+  const byMrn = new Map();
+  for (const k of S.K) if (k.openOrder){
+    if (!k.mrn){ const fus = String(k.comments ?? '').split('|').map(x => x.trim()).filter(x => /^F\/U/i.test(x)); const waited = k.ordered != null ? T - k.ordered : null; out.push({ k, next: null, need: null, waited, st: `${PH_LABEL[k.pharm] || ''} stock order`, cls: waited >= 7 ? 'warn' : 'info', fu: fus[fus.length - 1] || '', onhand: S.K.filter(x => x.pharm === k.pharm && x.available && !x.mrn).length, stale: null, stock: true }); continue; }
+    if (!byMrn.has(k.mrn)) byMrn.set(k.mrn, []); byMrn.get(k.mrn).push(k); }
   for (const [mrn, orders] of byMrn){
     orders.sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0) || a.r - b.r);
     const appts = S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
@@ -680,7 +762,8 @@ async function write(label, fn, okText){
 }
 
 // ---------- rendering ----------
-const VIEWS = [['today','Today'],['receive','Receive'],['order','Order'],['patients','Patients'],['inventory','Inventory']];
+const VIEWS = [['today','Dashboard'],['patients','Patients'],['inventory','Inventory']];
+const INV_TABS = [['stock','Stock'],['receive','Receive'],['order','To order'],['transit','In transit'],['besse','Besse order'],['audit','Daily audit']];
 function setMsg(k, kind, html){ S[k] = { kind, html }; render(); }
 function msgHTML(m){ return m ? `<div class="msg ${m.kind}" role="status">${m.html}</div>` : ''; }
 function render(){
@@ -697,19 +780,25 @@ function render(){
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
-    <main>${S.full ? `<div class="card"><h2>Working in full screen</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'receive' ? receiveHTML() : S.view === 'order' ? orderHTML() : S.view === 'patients' ? patientsHTML() : inventoryHTML()}</main>`;
+    <main>${S.full ? `<div class="card"><h2>Working in full screen</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : invShellHTML()}</main>`;
   if (!CFG.me && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
 function badges(){
   const d = {};
   const it = todayModel(todaySerial()).filter(i => i.a.active && !i.adminKit && !i.pulledKit); if (it.length) d.today = it.length;
-  const open = S.K.filter(k => k.openOrder).length; if (open) d.receive = open;
-  const need = genoaModel().rows.filter(r => r.cover === 'need').length + followModel().filter(f => f.cls === 'bad').length; if (need) d.order = need;
-  const disp = S.K.filter(k => k.needsDisposal).length; if (disp) d.inventory = disp;
+  const inv = { stock: S.K.filter(k => k.needsDisposal).length + reassignModel().length, order: genoaModel().rows.filter(r => r.cover === 'need').length, transit: followModel().filter(f => f.cls === 'bad').length };
+  S._ib = inv; const t = inv.stock + inv.order + inv.transit; if (t) d.inventory = t;
   return d;
 }
-function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+function invShellHTML(){
+  const ib = S._ib || {}; const open = S.K.filter(k => k.openOrder).length;
+  const sub = { stock: ib.stock, receive: open ? open : 0, order: ib.order, transit: ib.transit };
+  return `<div class="subnav" role="tablist">${INV_TABS.map(([k, l]) => `<button data-act="invTab" data-v="${k}" aria-pressed="${S.invTab === k}">${l}${sub[k] ? `<span class="badge ${k === 'receive' ? 'neutral' : ''}">${sub[k]}</span>` : ''}</button>`).join('')}</div>
+    ${S.invTab === 'stock' ? inventoryHTML() : S.invTab === 'receive' ? receiveHTML() : S.invTab === 'order' ? needHTML(genoaModel()) + windowHTML() : S.invTab === 'transit' ? followHTML(followModel()) : S.invTab === 'besse' ? besseHTML() : auditHTML()}`;
+}
+function windowHTML(){ return ''; }
+function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg${k.pharm === 'BESSE' && k.mrn && !k.administered ? ` <span class="chip acc">labeled ${esc(nm(k.mrn))}</span>` : ''} · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
 // look-ahead: allocate kits across a date range (Besse from shared stock oldest-first; Genoa per patient, then open orders)
 function rangeModel(from, to){
   const T = todaySerial();
@@ -728,7 +817,7 @@ function rangeModel(from, to){
     else if (r.adminKit) r.st = 'done';
     else if (r.pulledKit) r.st = 'pulled';
     else if (a.date < T) r.st = 'past';
-    else if (inf.pharm === 'BESSE'){ const i = pool.findIndex(k => k.recv === inf.mg && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
+    else if (inf.pharm === 'BESSE'){ const i = pickBesse(pool, a.mrn, inf.mg, a.date); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
     else if (PS(inf.pharm)){ const l = per.get(a.mrn) || []; const i = l.findIndex(k => (!inf.mg || k.recv === inf.mg) && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = l.splice(i, 1)[0]; r.st = 'avail'; } else { const o = open.get(a.mrn) || []; if (o.length){ r.kit = o.shift(); r.st = 'ordered'; } else r.st = 'need'; } }
     else r.st = 'unknown';
     return r;
@@ -778,6 +867,31 @@ function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done'; if (i.pulledKit) return 'pulled';
   if (i.suggest) return 'todo'; return 'bad';
 }
+function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
+function actionModel(){
+  const T = todaySerial(); const end = bizDaysAhead(T, 3);
+  const rows = rangeModel(T, end).filter(r => r.a.active);
+  const fm = followModel();
+  const transit = rows.filter(r => r.st === 'ordered').map(r => ({ r, f: fm.find(f => f.k.id === r.kit?.id) }));
+  const order = rows.filter(r => r.st === 'need');
+  const today = todayModel(T).filter(i => i.a.active && (i.needsSched || i.needsProto));
+  return { end, transit, order, today, reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
+}
+function actionHTML(){
+  const m = actionModel(); const T = todaySerial();
+  const when = a => `${a.date === T ? 'Today' : fmtD(a.date, 'dow')} ${fmtT(a.time)}`;
+  const total = m.transit.length + m.order.length + m.today.length;
+  return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
+    <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days), and today’s patients who need scheduling or a new protocol.</div>
+    <div class="asec red"><h3>Order now · ${m.order.length}</h3>${m.order.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : '<div class="small">Nothing to order for the next 3 business days.</div>'}</div>
+    <div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.length ? m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>` : '<div class="small">Nothing in transit is needed in the next 3 business days.</div>'}</div>
+    <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched ? '<span class="chip warn">Schedule out</span>' : ''}${i.needsProto ? '<span class="chip bad">New protocol</span>' : ''}${protoChip(i.p, todaySerial() + CFG.schedDays)}</div></div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
+    <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
+      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
+      ${m.expired.length ? `<div class="srow"><div class="line small">${m.expired.length} expired kit${m.expired.length > 1 ? 's' : ''} waiting for disposal.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Open Stock</button></div></div>` : ''}
+    </details>
+  </div>`;
+}
 function todayHTML(){
   if (S.range === 'week') return weekHTML();
   const T = todaySerial(); const day = S.day; const items = todayModel(day);
@@ -786,34 +900,25 @@ function todayHTML(){
   const toPull = act.filter(i => !i.adminKit && !i.pulledKit).length, noKit = act.filter(i => itemState(i) === 'bad').length;
   const tgt = S.target ? items.find(i => i.a.key === S.target) : null;
   const pullList = items.filter(i => i.pulledKit || i.adminKit);
-  let next;
-  if (!act.length) next = 'No appointments on this day.';
-  else if (toPull) next = `<span class="n">${toPull}</span> kit${toPull > 1 ? 's' : ''} left to pull${noKit ? ` · <span style="color:var(--bad)">${noKit} with no kit available</span>` : ''} — scan them below.`;
-  else if (pulled) next = `All kits pulled. <span class="n">${pulled}</span> left to administer.`;
-  else next = 'All done for this day ✓';
   return `
   <div class="card">
     <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
-      <div class="grow" style="text-align:center"><b>${day === T ? 'Today' : DAYNAME[dowOf(day)]}</b> <span class="muted">${fmtD(day, 'full')}</span></div>
-      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Today</button>' : ''}
+      <div class="grow" style="text-align:center">${day === T ? '<span class="todaypill">TODAY</span> ' : `<b>${DAYNAME[dowOf(day)]}</b> `}<span class="muted">${fmtD(day, 'full')}</span></div>
+      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}
       <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">patients</div></div><div class="stat"><div class="n">${pulled + done}/${act.length}</div><div class="l">kits pulled</div></div><div class="stat"><div class="n">${done}/${act.length}</div><div class="l">administered</div></div></div>
-    <div class="next" style="margin-top:10px">${next}</div>
-    <div class="row" style="margin-top:10px"><button class="btn" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy pull list</button><button class="btn" data-act="print" data-t="daylist" ${pullList.length ? '' : 'disabled'}>Print pull list</button></div>
+    <div class="row small" style="margin-top:10px;gap:10px"><span class="chip">${act.length} patients</span><span class="chip ${toPull ? 'warn' : 'ok'}">${pulled + done}/${act.length} kits pulled</span><span class="chip ${done === act.length && act.length ? 'ok' : ''}">${done}/${act.length} given</span>${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}
+      <span class="grow"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy pull list</button></div>
   </div>
-  <div class="card noprint" style="position:sticky;top:${S.mode === 'dialog' ? 96 : 92}px;z-index:3">
+  <div class="card noprint">
     <div class="scan"><span aria-hidden="true">▦</span><input id="scanToday" data-scan="today" placeholder="${tgt ? 'Scan kit for ' + esc(nm(tgt.a.mrn)) : 'Scan a kit to pull it (press / to jump here)'}" autocomplete="off" aria-label="Scan kit"></div>
     ${tgt ? `<div class="row small" style="margin-top:6px"><span class="chip acc">Pulling for ${esc(nm(tgt.a.mrn))} · ${fmtT(tgt.a.time)}</span><button class="linkbtn" data-act="untarget">Cancel</button></div>` : ''}
     ${msgHTML(S.todayMsg)}
   </div>
   <div class="cols"><div>
-    <div class="card"><h2>Schedule</h2>${toolbarHTML()}
+    <div class="card"><h2>Schedule &amp; med pull</h2>${toolbarHTML()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div></div><div>
-    <div class="card print-target" id="daylist"><h2>Med pull list · ${fmtD(day, 'full')}</h2>
-      ${pullList.length ? `<div class="tw"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th class="num">mg</th><th>Pharmacy</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Status</th></tr></thead><tbody>
-        ${pullList.map(i => { const k = i.adminKit || i.pulledKit; return `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b></td><td>${esc(i.a.mrn)}</td><td class="num">${k.recv ?? ''}</td><td>${PH_LABEL[k.pharm]}</td><td class="mono">${esc(k.serial)}</td><td class="mono">${esc(k.lot)}</td><td>${fmtD(k.expDate)}</td><td>${i.adminKit ? 'Given' : 'Pulled'}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="muted small">Kits you scan are listed here with patient, MRN, serial and lot. The list is saved with the workbook, so anyone who opens ESK Tracker today sees it.</div>'}
-    </div>
+    ${actionHTML()}
     ${schedHTML()}
   </div></div>`;
 }
@@ -841,12 +946,14 @@ function itemHTML(i){
 function vitalsDoc(day){
   const rows = todayModel(day).filter(i => i.a.active);
   const pages = []; for (let i = 0; i < Math.max(rows.length, 1); i += 6) pages.push(rows.slice(i, i + 6));
-  const todo = ['Esk tracker', 'Buy &amp; Bill', 'Med Logs', 'Tx Report', 'REMS monitoring'];
+  const todo = ['Esk tracker', 'Med Logs', 'Tx Report', 'REMS monitoring'];
   const vit = `<td class="v"><div>BP:</div><div class="ln"></div><div>BPM:</div><div>O2:</div></td>`;
   const block = it => {
     const k = it ? (it.adminKit || it.pulledKit || it.suggest) : null;
-    const pt = it ? `<div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>` : '';
-    const note = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
+    const pt = it ? `<div class="tm">${fmtT(it.a.time)}</div><div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>` : '';
+    const med = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
+    const acts = !it ? [] : [it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
+    const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
     return `<tr class="pt"><td class="pc">${pt}</td><td></td><td></td>${vit}${vit}${vit}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
   };
   const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
@@ -862,12 +969,12 @@ function vitalsDoc(day){
     .ti td{border-bottom:1px solid #000;height:0.32in;vertical-align:middle}
     .title{font-size:14pt;font-weight:700} .date{text-align:center;font-weight:700}
     .hd th{font-weight:400;height:0.22in;padding:1px}
-    tr.pt td{height:1.1in;border-top:2px solid #000}
-    .pc{text-align:center;vertical-align:middle!important;font-size:11.5pt} .pc .pn{font-weight:700;font-size:13.5pt;margin-bottom:3px}
+    tr.pt td{height:1.0in;border-top:2px solid #000}
+    .pc{text-align:center;vertical-align:middle!important;font-size:11.5pt} .pc .tm{font-size:9.5pt;color:#333;margin-bottom:2px} .ai{display:block;margin-top:2px} .pc .pn{font-weight:700;font-size:13.5pt;margin-bottom:3px}
     .v div{height:0.2in} .v .ln{border-bottom:1px solid #000;width:80%;height:0.12in;margin-bottom:0.08in}
     .todo div{display:flex;align-items:center;gap:6px;height:0.2in;font-size:9.5pt;white-space:nowrap}
     .box{display:inline-block;width:0.14in;height:0.14in;border:1.5px solid #000;border-radius:2px;flex:none}
-    tr.nt td{height:0.36in;font-size:9.5pt}
+    tr.nt td{height:0.46in;font-size:9pt;line-height:1.25}
     tr.an td{height:0.62in;border-top:2px solid #000}
   </style></head><body>${pages.map(page).join('')}</body></html>`;
 }
@@ -894,8 +1001,7 @@ function renderAdmin(){
     if (k.administered) probs.push(`Serial ${esc(k.serial)} is already administered.`);
     if (k.disposed) probs.push('This kit is marked for disposal.');
     if (k.expired) probs.push(`This kit is expired (use by ${fmtD(k.expDate, 'full')}).`);
-    if (k.pharm === 'GENOA' && k.mrn !== it.a.mrn) probs.push(`This Genoa kit belongs to ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}).`);
-    if (k.mrn && k.mrn !== it.a.mrn && k.pharm !== 'GENOA') probs.push(`This kit is already linked to MRN ${esc(k.mrn)}.`);
+    if (k.mrn && k.mrn !== it.a.mrn) probs.push(`This kit is labeled for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}).${k.pharm === 'BESSE' ? ' Re-assign it first if it should go to this patient.' : ''}`);
     if (k.recv && +S.adm.mg !== k.recv) warns.push(`Kit is ${k.recv} mg; you're recording ${S.adm.mg} mg. The Inventory will mark it Partial.`);
     if (it.inf.pharm && k.pharm !== it.inf.pharm) warns.push(`Patient is ${PH_LABEL[it.inf.pharm]}, kit is ${PH_LABEL[k.pharm]}.`);
   }
@@ -905,7 +1011,7 @@ function renderAdmin(){
   if (k && !k.mrn) obj.mrn = mrnVal(it.a.mrn);
   if (k && !k.comments) obj.comments = nm(it.a.mrn);
   const { out } = changesFor('kits', obj);
-  const cands = S.K.filter(x => x.available && (it.inf.pharm === 'GENOA' ? x.mrn === it.a.mrn : x.pharm === (it.inf.pharm || 'BESSE'))).sort(fifo).slice(0, 4);
+  const cands = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn)))).sort((a, b) => ((b.mrn === it.a.mrn) - (a.mrn === it.a.mrn)) || fifo(a, b)).slice(0, 4);
   openModal(`<h2>Administer — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
     <label class="lbl" for="admScan">Kit</label>
     <div class="scan"><input id="admScan" data-scan="admin" placeholder="Scan the kit to confirm" autocomplete="off"></div>
@@ -934,54 +1040,83 @@ async function adminSave(){
 }
 
 // ---------- receive ----------
+// Genoa tags carry the prescription (R) number; the tracker keeps it in the patient's Notes column.
+const rxBase = v => { const t = String(v ?? '').toUpperCase().replace(/\s+/g, ''); let m = t.match(/R(\d{5,})/); if (m) return m[1]; m = t.match(/^(\d{6,})(\/\d+)?$/); return m ? m[1] : null; };
+const rxText = v => { const m = String(v ?? '').toUpperCase().replace(/\s+/g, '').match(/R\d{5,}(\/\d+)?/); return m ? m[0] : null; };
+const patientByRx = raw => { const b = rxBase(raw); return b ? S.P.find(p => rxBase(p.rx) === b) || null : null; };
 function receiveHTML(){
-  const T = todaySerial(); const genoa = S.recvPharm === 'Genoa';
+  const T = todaySerial(); const genoa = S.recvPharm === 'Genoa'; const R = S.rcv || (S.rcv = {});
   const openLines = S.K.filter(k => k.openOrder && (genoa ? k.pharm !== 'BESSE' : k.pharm === 'BESSE')).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
-  const sel = S.recvLine ? S.K.find(k => k.id === S.recvLine) : null;
   const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
   const L = S.lastRecv ? S.K.find(k => k.id === S.lastRecv) : null;
+  const pt = R.mrn ? S.byMrn.get(R.mrn) : null;
+  const ptLines = pt ? S.K.filter(k => k.openOrder && k.mrn === pt.mrn) : [];
+  const check = L ? `<div class="item" style="margin-top:10px"><b>Check against the box:</b><dl class="kv" style="margin-top:6px"><dt>Patient</dt><dd>${esc(L.mrn ? nm(L.mrn) + ' · MRN ' + L.mrn : 'Besse stock')}</dd><dt>Dose</dt><dd>${L.recv ?? '—'} mg</dd><dt>Serial</dt><dd class="mono">${esc(L.serial)}</dd><dt>Lot</dt><dd class="mono">${esc(L.lot)}</dd><dt>Expiration</dt><dd>${fmtD(L.exp, 'full')}</dd><dt>Use by</dt><dd>${fmtD(L.useBy ?? L.expDate, 'full')}</dd><dt>Row</dt><dd>${L.r + 3}</dd></dl></div>` : '';
+  const genoaFlow = `
+    <div class="asec ${pt ? 'gray' : 'amber'}"><h3>1 · Scan the patient’s Genoa label</h3>
+      ${pt ? `<div class="row"><span class="name" style="font-weight:700">${esc(pt.name)}</span><span class="muted small">MRN ${esc(pt.mrn)} · ${esc(pt.rx || 'no R code on file')}</span><span class="grow"></span><button class="linkbtn" data-act="rcvReset">Change patient</button></div>`
+        : `<div class="scan"><input id="scanRx" data-scan="rx" placeholder="Scan the Genoa label (R number)" autocomplete="off" aria-label="Scan Genoa label"></div>
+           <div class="row small" style="margin-top:6px"><span class="muted">or pick:</span><input id="rcvPick" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm" data-act="rcvPick">Select</button></div>`}
+      ${R.link ? `<div class="msg warn">Label <b>${esc(R.link)}</b> isn’t linked to a patient yet. Choose the patient to link it to (saved to their Notes column on the Master Patient Tracker):<div class="row" style="margin-top:6px"><input id="rcvLinkPt" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm primary" data-act="rcvLink">Link label</button></div></div>` : ''}
+    </div>
+    <div class="asec ${pt ? 'amber' : 'gray'}" style="${pt ? '' : 'opacity:.55'}"><h3>2 · Scan the medication</h3>
+      <div class="scan"><input id="scanRecv" data-scan="recv" placeholder="${pt ? 'Scan the kit for ' + esc(pt.name) : 'Scan the patient label first'}" autocomplete="off" aria-label="Scan kit" ${pt ? '' : 'disabled'}></div>
+      ${pt ? `<div class="small" style="margin-top:6px">${ptLines.length ? `Awaiting receipt: <b>${ptLines.length}</b> (ordered ${ptLines.map(k => fmtD(k.ordered)).join(', ')})` : '<span style="color:var(--warn)">No order is awaiting receipt for this patient.</span>'}</div>` : ''}
+      ${R.confirm ? `<div class="msg warn"><div><b>Not awaiting receipt.</b> ${esc(pt?.name || '')} has no open order line. Add this ${R.confirm.mg ?? ''} mg kit (serial ${esc(R.confirm.serial)}) to Inventory for them anyway?<div class="row" style="margin-top:6px"><button class="btn sm primary" data-act="rcvAdd">Add to inventory</button><button class="btn sm ghost" data-act="rcvCancel">Cancel</button></div></div></div>` : ''}
+    </div>`;
   return `<div class="card">
-    <div class="row"><div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p}</button>`).join('')}</div><span class="grow"></span></div>
-    <div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="${genoa ? (sel ? 'Scan the kit for ' + esc(nm(sel.mrn)) : 'Pick the patient’s ordered line, then scan') : 'Scan each Besse kit as it’s unpacked'}" autocomplete="off" aria-label="Scan kit to receive"></div>
-    <div class="small muted" style="margin-top:6px">${genoa ? 'Receiving fills <b>Scan Here</b> and <b>Date Received</b> on the line that was opened when the order was placed.' : 'Each scan fills the oldest open Besse order line, or starts a new Inventory line.'} Expiration, serial, lot and mg are filled in by the workbook’s formulas.</div>
-    ${msgHTML(S.recvMsg)}
-    ${L ? `<div class="item" style="margin-top:8px"><b>Check against the box:</b><dl class="kv" style="margin-top:6px"><dt>Patient</dt><dd>${esc(L.mrn ? nm(L.mrn) + ' · MRN ' + L.mrn : '—')}</dd><dt>Dose</dt><dd>${L.recv ?? '—'} mg</dd><dt>Serial</dt><dd class="mono">${esc(L.serial)}</dd><dt>Lot</dt><dd class="mono">${esc(L.lot)}</dd><dt>Expiration</dt><dd>${fmtD(L.exp, 'full')}</dd><dt>Use by</dt><dd>${fmtD(L.useBy ?? L.expDate, 'full')}</dd><dt>Row</dt><dd>${L.r + 3}</dd></dl></div>` : ''}
+    <div class="row"><div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p}</button>`).join('')}</div><span class="small muted grow">Expiration, serial, lot and mg are filled in by the workbook’s formulas from the scan.</span></div>
+    ${genoa ? genoaFlow : `<div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="Scan each Besse kit as it’s unpacked" autocomplete="off" aria-label="Scan kit to receive"></div><div class="small muted" style="margin-top:6px">Each scan fills the oldest open Besse order line for that dose, or starts a new Inventory line. New Besse kits are unlabeled stock until assigned.</div>`}
+    ${msgHTML(S.recvMsg)}${check}
+    ${datalist('dlPts', S.P.filter(p => p.pharm !== 'BESSE').map(p => `${p.name} · ${p.mrn}`))}
   </div>
-  <div class="card"><h2>Open ${S.recvPharm} order lines <span class="chip">${openLines.length}</span></h2>
-    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>MRN</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map(k => { const n = next(k.mrn); return `<tr ${sel?.id === k.id ? 'style="background:var(--accent-soft)"' : ''}><td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b></td><td data-l="MRN">${esc(k.mrn || '—')}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">None booked</span>'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" style="text-align:right"><button class="btn sm ${sel?.id === k.id ? 'primary' : ''}" data-act="recvPick" data-id="${esc(k.id)}">${sel?.id === k.id ? 'Selected — scan now' : 'Receive this'}</button></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">No open ${S.recvPharm} lines. ${genoa ? 'Lines are opened from Order → To order (“Mark as ordered”).' : ''}</div>`}
-    ${genoa ? `<h3>Kit arrived without an order line?</h3><div class="row"><input id="recvNewPt" class="fld grow" list="dlPts" placeholder="Patient short name or MRN"><button class="btn" data-act="recvNew">Receive for this patient</button></div>${datalist('dlPts', S.P.filter(p => p.pharm !== 'BESSE').map(p => `${p.name} · ${p.mrn}`))}` : ''}
+  <div class="card"><h2>Awaiting receipt · ${S.recvPharm} <span class="chip">${openLines.length}</span></h2>
+    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>MRN</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map(k => { const n = k.mrn ? next(k.mrn) : null; return `<tr><td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b>${!k.mrn && k.comments ? ` <span class="small muted">${esc(k.comments)}</span>` : ''}</td><td data-l="MRN">${esc(k.mrn || '—')}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${k.mrn ? (n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">None booked</span>') : '—'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" style="text-align:right">${genoa && k.mrn ? `<button class="btn sm" data-act="rcvFor" data-m="${esc(k.mrn)}">Receive</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">Nothing awaiting receipt.</div>`}
   </div>`;
+}
+function selectRcvPatient(mrn){ S.rcv = { mrn }; S.recvMsg = null; S.lastRecv = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); }
+function rxScan(raw){
+  const p = patientByRx(raw);
+  if (p){ selectRcvPatient(p.mrn); return; }
+  const code = rxText(raw) || cleanScan(raw);
+  S.rcv = { link: code }; S.recvMsg = null; render(); setTimeout(() => $('#rcvLinkPt')?.focus(), 30);
+}
+async function rcvLink(){
+  const mrn = mrnFromInput($('#rcvLinkPt')?.value); const p = mrn && S.byMrn.get(mrn); if (!p) return setMsg('recvMsg', 'bad', 'Choose a patient from the list.');
+  const t = S.tables.patients; const c = t.cols.notes; if (c == null) return setMsg('recvMsg', 'bad', 'The Master Patient Tracker has no Notes column to store the label.');
+  const old = String(t.values[p.r][c] ?? ''); const code = S.rcv.link;
+  const val = rxText(old) ? old.replace(/R\s?\d{5,}(\/\d+)?/i, code) : (old.trim() ? `${code} ${old}` : code);
+  if (await write('Linking label…', () => S.store.update('patients', p.r, t.snap(p.r), [[c, val]]), `Label ${code} linked to ${p.name}.`)) selectRcvPatient(p.mrn);
 }
 async function recvScan(raw){
   const scan = cleanScan(raw); const p = parseScan(scan); const T = todaySerial();
-  if (!p) return setMsg('recvMsg', 'bad', 'That doesn’t read as a Spravato barcode. Scan the 2D code on the kit.');
+  if (!p) return setMsg('recvMsg', 'bad', S.recvPharm === 'Genoa' && rxBase(scan) ? 'That looks like a patient label — scan it in step 1.' : 'That doesn’t read as a Spravato barcode. Scan the 2D code on the kit.');
   if (!p.mg) return setMsg('recvMsg', 'warn', 'Scanned code isn’t a known 56 mg or 84 mg Spravato product. Check the kit.');
   const dup = S.K.find(k => k.serialN === normScan(p.serial));
   if (dup) return setMsg('recvMsg', 'bad', `Serial ${esc(p.serial)} is already in the log (row ${dup.r + 3}${dup.mrn ? ', ' + esc(nm(dup.mrn)) : ''}).`);
   const me = CFG.me; if (!me) { openSettings(); return setMsg('recvMsg', 'warn', 'Add your name in Settings first — it goes in Logging PCT.'); }
   if (S.recvPharm === 'Genoa'){
-    const line = S.recvLine ? S.K.find(k => k.id === S.recvLine) : null;
-    if (!line) return setMsg('recvMsg', 'warn', 'Pick the patient’s order line below first (or use “Receive for this patient”).');
-    const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText('GENOA');
+    const mrn = S.rcv?.mrn; if (!mrn) return setMsg('recvMsg', 'warn', 'Scan the patient’s Genoa label first.');
+    const line = S.K.filter(k => k.openOrder && k.mrn === mrn).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0))[0];
+    if (!line){ S.rcv.confirm = { scan, mg: p.mg, serial: p.serial }; S.recvMsg = null; render(); return; }
+    const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA');
     const { out } = changesFor('kits', obj);
-    const ok = await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out), `Received for ${nm(line.mrn)}.`);
-    if (ok){ S.recvLine = null; S.lastRecv = 'S:' + normScan(p.serial); S.recvMsg = { kind:'ok', html:`Received ${p.mg} mg for <b>${esc(nm(line.mrn))}</b> into row ${line.r + 3}.` }; render(); }
+    if (await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out), `Received for ${nm(mrn)}.`)){ S.lastRecv = 'S:' + normScan(p.serial); S.recvMsg = { kind:'ok', html:`Received ${p.mg} mg for <b>${esc(nm(mrn))}</b> into row ${line.r + 3}. Scan the next patient label.` }; S.rcv = {}; render(); setTimeout(() => $('#scanRx')?.focus(), 30); }
     return;
   }
-  const line = S.recvLine ? S.K.find(k => k.id === S.recvLine) : S.K.filter(k => k.openOrder && k.pharm === 'BESSE').sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0))[0];
+  const opens = S.K.filter(k => k.openOrder && k.pharm === 'BESSE' && !k.mrn).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
+  const line = opens.find(k => num(String(k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]) === p.mg) || opens.find(k => !/\d+\s*mg/i.test(String(k.comments ?? ''))) || null;
   let ok;
   if (line){ const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; const { out } = changesFor('kits', obj); ok = await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out)); }
   else { const { out } = changesFor('kits', { loggingpct: me, scanhere: scan, pharmacy: pharmText('BESSE'), datereceived: { date: T } }); ok = await write('Receiving…', () => S.store.add('kits', out)); }
-  if (ok){ S.recvLine = null; S.lastRecv = 'S:' + normScan(p.serial); const L = S.K.find(k => k.id === S.lastRecv); S.recvMsg = { kind:'ok', html:`Received Besse ${p.mg} mg · serial ${esc(p.serial)}${L ? ' into row ' + (L.r + 3) : ''}. Scan the next kit.` }; render(); }
+  if (ok){ S.lastRecv = 'S:' + normScan(p.serial); const L = S.K.find(k => k.id === S.lastRecv); S.recvMsg = { kind:'ok', html:`Received Besse ${p.mg} mg · serial ${esc(p.serial)}${L ? ' into row ' + (L.r + 3) : ''}${line ? ' (order line filled)' : ' (no open order line — added as new stock)'}. Scan the next kit.` }; render(); }
+}
+async function rcvAdd(){
+  const c = S.rcv?.confirm; const mrn = S.rcv?.mrn; if (!c || !mrn) return; const T = todaySerial();
+  const { out } = changesFor('kits', { loggingpct: CFG.me, scanhere: c.scan, mrn: mrnVal(mrn), pharmacy: pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA'), datereceived: { date: T }, comments: `${nm(mrn)} | Received without an open order ${fmtD(T)}` });
+  if (await write('Adding to inventory…', () => S.store.add('kits', out), `Added for ${nm(mrn)}.`)){ S.lastRecv = 'S:' + normScan(parseScan(c.scan).serial); S.recvMsg = { kind:'warn', html:`Added ${c.mg} mg for <b>${esc(nm(mrn))}</b> — flagged as received without an open order.` }; S.rcv = {}; render(); }
 }
 function mrnFromInput(v){ const m = String(v || '').match(/(\d{3,})\s*$/); if (m) return m[1]; const p = S.P.find(p => p.name.toUpperCase() === String(v || '').trim().toUpperCase()); return p?.mrn || null; }
-async function recvNew(){
-  const mrn = mrnFromInput($('#recvNewPt')?.value); if (!mrn || !S.byMrn.has(mrn)) return setMsg('recvMsg', 'bad', 'Choose a patient from the list.');
-  if (!CFG.me) return openSettings();
-  const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText('GENOA'), comments: nm(mrn) });
-  const ok = await write('Opening a line…', () => S.store.add('kits', out));
-  if (ok){ const line = S.K.filter(k => k.openOrder && k.mrn === mrn).sort((a, b) => b.r - a.r)[0]; S.recvLine = line?.id || null; S.recvMsg = { kind:'info', html:`Line opened for <b>${esc(nm(mrn))}</b>. Scan the kit now.` }; render(); }
-}
 
 // ---------- order ----------
 function orderHTML(){
@@ -998,7 +1133,8 @@ function needHTML(g){
   const T = todaySerial(); const need = g.rows.filter(r => r.cover === 'need'); const covered = g.rows.filter(r => r.cover !== 'need');
   const sel = need.filter(r => S.genoaSel.has(r.a.key)).length;
   const urg = r => r.a.date - T <= 2 ? '<span class="chip bad">Urgent</span>' : r.a.date - T <= 5 ? '<span class="chip warn">Soon</span>' : '';
-  return `<div class="card"><h2>Patient meds to order <span class="chip ${need.length ? 'bad' : 'ok'}">${need.length}</span><span class="sp"></span>
+  return `<div class="card"><div class="row small"><label class="muted" for="winFrom">Order window</label><input id="winFrom" type="date" class="fld" style="width:auto" data-win="from" value="${isoOf(S.win.from)}"><span class="muted">to</span><input id="winTo" type="date" class="fld" style="width:auto" data-win="to" value="${isoOf(S.win.to)}"><button class="linkbtn" data-act="winReset">Through next Friday</button></div></div>
+  <div class="card"><h2>Patient meds to order <span class="chip ${need.length ? 'bad' : 'ok'}">${need.length}</span><span class="sp"></span>
       <button class="btn sm" data-act="gselAll" ${need.length ? '' : 'disabled'}>Select all</button><button class="btn sm" data-act="copyNeed" ${need.length ? '' : 'disabled'}>Copy list</button></h2>
     <div class="small muted" style="margin-bottom:10px">Genoa and other specialty-pharmacy appointments from ${fmtD(g.from, 'dow')} through ${fmtD(g.to, 'dow')} with no kit on hand and nothing on order for that patient.</div>
     ${need.length ? `<div class="tw"><table class="t rt"><thead><tr><th style="width:36px"><input type="checkbox" data-gall ${sel === need.length ? 'checked' : ''} aria-label="Select all"></th><th>Needed by</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th></th></tr></thead><tbody>
@@ -1014,11 +1150,11 @@ function needHTML(g){
   </details></div>`;
 }
 function followHTML(fm){
-  return `<div class="card"><h2>On order <span class="chip">${fm.length}</span><span class="sp"></span><button class="btn sm" data-act="copyFollow" ${fm.length ? '' : 'disabled'}>Copy follow-up list</button></h2>
+  return `<div class="card"><h2>In transit <span class="chip">${fm.length}</span><span class="sp"></span><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(fm.map(f => f.k.id).join(','))}" ${fm.length ? '' : 'disabled'}>Follow-up email</button></h2>
     <div class="small muted" style="margin-bottom:10px">Every Inventory line with an MRN and no scan yet. Kits already on hand cover the earliest visits first; each order is matched to the first visit they don’t cover. Log calls to the pharmacy here — notes are added to the line’s Comments.</div>
     ${fm.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient</th><th>MRN</th><th>Pharmacy</th><th class="num">On hand</th><th>Ordered</th><th>Needed for</th><th>Last follow-up</th><th></th></tr></thead><tbody>
-      ${fm.map(f => `<tr><td data-l="Status"><span class="chip ${f.cls}">${esc(f.st)}</span>${f.waited >= 5 && f.need != null ? ' <span class="chip warn">Waiting ' + f.waited + ' days</span>' : ''}${f.stale ? `<div class="small" style="margin-top:4px;color:var(--warn);white-space:normal">A kit for this patient was received ${fmtD(f.stale.received)} (row ${f.stale.r + 3}), after this order. If that was this order, cancel this line.</div>` : ''}</td><td data-l="Patient"><b>${esc(nm(f.k.mrn))}</b></td><td data-l="MRN">${esc(f.k.mrn)}</td><td data-l="Pharmacy">${PH_LABEL[f.k.pharm] || '—'}</td><td data-l="On hand" class="num">${f.onhand}</td><td data-l="Ordered">${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` <span class="muted small">(${f.waited}d)</span>` : ''}</td><td data-l="Next appt">${f.next ? `${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : '—'}</td><td data-l="Follow-up" style="white-space:normal;max-width:260px" class="small">${esc(f.fu) || '<span class="muted">—</span>'}</td>
-        <td data-l="" style="text-align:right"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm primary" data-act="recvGo" data-id="${esc(f.k.id)}">Receive</button><button class="btn sm" data-act="fuLog" data-id="${esc(f.k.id)}">Log follow-up</button><button class="linkbtn" data-act="cancelLine" data-id="${esc(f.k.id)}">Cancel</button></div></td></tr>`).join('')}
+      ${fm.map(f => `<tr><td data-l="Status"><span class="chip ${f.cls}">${esc(f.st)}</span>${f.waited >= 5 && f.need != null ? ' <span class="chip warn">Waiting ' + f.waited + ' days</span>' : ''}${f.stale ? `<div class="small" style="margin-top:4px;color:var(--warn);white-space:normal">A kit for this patient was received ${fmtD(f.stale.received)} (row ${f.stale.r + 3}), after this order. If that was this order, cancel this line.</div>` : ''}</td><td data-l="Patient"><b>${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))}</b>${f.stock && f.k.comments ? ` <span class="small muted">${esc(String(f.k.comments).split('|')[0])}</span>` : ''}</td><td data-l="MRN">${esc(f.k.mrn || '—')}</td><td data-l="Pharmacy">${PH_LABEL[f.k.pharm] || '—'}</td><td data-l="On hand" class="num">${f.onhand}</td><td data-l="Ordered">${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` <span class="muted small">(${f.waited}d)</span>` : ''}</td><td data-l="Needed for">${f.next ? `${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : '—'}</td><td data-l="Follow-up" style="white-space:normal;max-width:260px" class="small">${esc(f.fu) || '<span class="muted">—</span>'}</td>
+        <td data-l="" style="text-align:right"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm primary" data-act="recvGo" data-id="${esc(f.k.id)}">Receive</button><button class="btn sm" data-act="fuEmail" data-ids="${esc(f.k.id)}">Follow up</button><button class="btn sm" data-act="fuLog" data-id="${esc(f.k.id)}">Log note</button><button class="linkbtn" data-act="cancelLine" data-id="${esc(f.k.id)}">Cancel</button></div></td></tr>`).join('')}
     </tbody></table></div>` : '<div class="msg ok">Nothing on order.</div>'}
   </div>`;
 }
@@ -1028,7 +1164,7 @@ function besseHTML(){
   const diff = rows.filter(r => r.expiredFull);
   const h = findHistRow();
   return `<div class="cols"><div>
-  <div class="card print-target" id="besseTbl"><h2>Besse weekly order<span class="sp"></span><button class="btn sm noprint" data-act="copyBesse">Copy table</button><button class="btn sm noprint" data-act="emailBesse">Email order</button></h2>
+  <div class="card print-target" id="besseTbl"><h2>Besse weekly order<span class="sp"></span><label class="small muted noprint" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld noprint" style="width:auto" data-act-change="orderDate" value="${isoOf(S.orderDate)}"><button class="btn sm primary noprint" data-act="orderEmail">Order email…</button></h2>
     <div class="small muted" style="margin-bottom:10px">Next week ${fmtD(w1[0], 'dow')}–${fmtD(w1[1], 'dow')} · 2 weeks out ${fmtD(w2[0], 'dow')}–${fmtD(w2[1], 'dow')}</div>
     <div class="tw"><table class="t rt"><thead><tr><th>Dose</th><th class="num">On hand</th><th class="num">Next week</th><th class="num">2 weeks out</th><th class="num">Overage</th><th class="num">To be ordered</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td data-l="Dose"><b>${r.mg} mg</b></td><td data-l="On hand" class="num">${r.oh}</td><td data-l="Next week" class="num">${r.w1}</td><td data-l="2 weeks out" class="num">${r.w2}</td><td data-l="Overage" class="num"><input class="ov" type="number" step="1" data-ov="${r.mg}" value="${r.ov}" aria-label="Overage ${r.mg} mg" style="font-size:14px;max-width:70px"></td><td data-l="To be ordered" class="num"><span class="big">${r.order}</span></td></tr>`).join('')}
@@ -1036,7 +1172,8 @@ function besseHTML(){
     <div class="small muted" style="margin-top:8px">To be ordered = next week + 2 weeks out + overage − on hand (never below 0). On hand counts full, unexpired Besse kits.</div>
     ${diff.length ? `<div class="msg warn">${diff.map(r => `${r.expiredFull} expired ${r.mg} mg kit${r.expiredFull > 1 ? 's are' : ' is'} left out of on hand (the Besse Order tab still counts ${r.expiredFull > 1 ? 'them' : 'it'}).`).join(' ')}</div>` : ''}
     ${rows.some(r => r.expSoon) ? `<div class="msg info">${rows.filter(r => r.expSoon).map(r => `${r.expSoon} on-hand ${r.mg} mg kit${r.expSoon > 1 ? 's expire' : ' expires'} before ${fmtD(w2[1])}.`).join(' ')}</div>` : ''}
-    ${S.besse ? `<div class="row noprint" style="margin-top:12px"><button class="btn primary" data-act="saveBesse">Save to Besse Order tab</button><span class="small muted grow">Writes the date, counts and overage${h ? `, and logs the quantities for the week of ${fmtD(h.d, 'dow')}` : ''}.</span></div>` : ''}
+    <div class="row noprint" style="margin-top:12px"><label class="row small" style="gap:6px"><input type="checkbox" id="logLines" ${S.logLines !== false ? 'checked' : ''} data-flag="logLines"> Add ${rows.reduce((n, r) => n + r.order, 0)} kit${rows.reduce((n, r) => n + r.order, 0) === 1 ? '' : 's'} to Inventory as “in transit”</label></div>
+    <div class="row noprint" style="margin-top:8px"><button class="btn primary" data-act="saveBesse">Record order</button><span class="small muted grow">${S.besse ? `Writes the date, counts and overage to the Besse Order tab${h ? ` and logs the quantities for the week of ${fmtD(h.d, 'dow')}` : ''}` : 'Besse Order tab not found'}${S.logLines !== false ? '; opens in-transit lines so the kits can be followed up and received' : ''}.</span></div>
   </div>
   ${m.review.length ? `<div class="card"><h2>Needs review <span class="chip bad">${m.review.length}</span></h2><div class="tw"><table class="t rt"><tbody>${m.review.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.a.mrn))}</b></td><td data-l="Date">${fmtD(x.a.date, 'dow')}</td><td data-l="Issue">${esc(x.why)} — not counted</td></tr>`).join('')}</tbody></table></div></div>` : ''}
   </div><div>
@@ -1088,23 +1225,152 @@ function besseTableText(){
   return { html, text, m };
 }
 async function saveBesse(){
-  const b = S.besse; if (!b || b.hdr == null) return toast('bad', 'Couldn’t find the summary table on the Besse Order tab.');
-  const m = besseModel(); const c = b.c; const cells = [];
-  const A = (r, col) => colLetter(col) + (r + 1);
-  if (c.date >= 0 && b.rows[56]) cells.push([A(b.rows[56].r, c.date), { date: S.orderDate }]);
-  for (const mg of [56, 84]){ const rr = b.rows[mg]; if (!rr) continue; const r = m.rows[mg];
-    if (c.w1 >= 0) cells.push([A(rr.r, c.w1), r.w1]); if (c.w2 >= 0) cells.push([A(rr.r, c.w2), r.w2]); if (c.ov >= 0) cells.push([A(rr.r, c.ov), r.ov]); }
-  let histNote = '';
-  if (b.hist){
-    const hr = findHistRow(); if (hr != null){ cells.push([colLetter(b.hist.c + 1) + (hr.r + 1), m.rows[56].order], [colLetter(b.hist.c + 2) + (hr.r + 1), m.rows[84].order]); histNote = ` and logged ${m.rows[56].order} × 56 / ${m.rows[84].order} × 84 for the week of ${fmtD(hr.d)}`; }
-    else histNote = ' (no history row matches this date, so the history wasn’t changed)';
+  const b = S.besse; const m = besseModel(); const cells = []; let histNote = '';
+  if (b && b.hdr != null){
+    const c = b.c; const A = (r, col) => colLetter(col) + (r + 1);
+    if (c.date >= 0 && b.rows[56]) cells.push([A(b.rows[56].r, c.date), { date: S.orderDate }]);
+    for (const mg of [56, 84]){ const rr = b.rows[mg]; if (!rr) continue; const r = m.rows[mg];
+      if (c.w1 >= 0) cells.push([A(rr.r, c.w1), r.w1]); if (c.w2 >= 0) cells.push([A(rr.r, c.w2), r.w2]); if (c.ov >= 0) cells.push([A(rr.r, c.ov), r.ov]); }
+    if (b.hist){ const hr = findHistRow(); if (hr != null){ cells.push([colLetter(b.hist.c + 1) + (hr.r + 1), m.rows[56].order], [colLetter(b.hist.c + 2) + (hr.r + 1), m.rows[84].order]); histNote = `, logged ${m.rows[56].order} × 56 / ${m.rows[84].order} × 84 for the week of ${fmtD(hr.d)}`; } }
   }
-  await write('Saving to Besse Order…', () => S.store.setCells(S.besseSheet, cells), `Saved to Besse Order${histNote}.`);
+  const lines = [];
+  if (S.logLines !== false) for (const mg of [56, 84]) for (let n = 0; n < m.rows[mg].order; n++) lines.push(changesFor('kits', { loggingpct: CFG.me, pharmacy: pharmText('BESSE'), dateordered: { date: S.orderDate }, comments: `Besse ${mg} mg order` }).out);
+  if (lines.length && !CFG.me) return openSettings();
+  if (!cells.length && !lines.length) return toast('info', 'Nothing to record.');
+  await write('Recording order…', async () => { if (cells.length) await S.store.setCells(S.besseSheet, cells); for (const l of lines) await S.store.add('kits', l); },
+    `Order recorded${cells.length ? ' on the Besse Order tab' : ''}${histNote}${lines.length ? `; ${lines.length} kit${lines.length > 1 ? 's' : ''} now in transit` : ''}.`);
+}
+// ---------- emails ----------
+const EM = { font: 'font-family:Calibri,Segoe UI,Arial,sans-serif;font-size:11pt;color:#222', th: 'text-align:left;padding:7px 10px;font-weight:600;border-bottom:1px solid #d9cfbd', td: 'padding:7px 10px;border-bottom:1px solid #ece4d6' };
+function emTable(head, rows, color){
+  return `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:760px;border:1px solid #e3d9c6;${EM.font}"><thead><tr style="background:${color}">${head.map(h => `<th style="${EM.th}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#faf7f0' : '#ffffff'}">${r.map(v => `<td style="${EM.td}">${v}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+const emSection = (title, color, inner) => `<div style="margin:18px 0 6px;padding:6px 10px;background:${color};border-radius:6px;font-weight:700;${EM.font}">${title}</div>${inner}`;
+function followRows(ids){
+  const fm = followModel(); const pick = ids ? fm.filter(f => ids.includes(f.k.id)) : fm;
+  return pick.map(f => { const p = f.k.mrn ? S.byMrn.get(f.k.mrn) : null; const mg = f.next ? apptInfo(f.next).mg : num(String(f.k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]);
+    return { f, cells: [f.stock ? `${PH_LABEL[f.k.pharm]} stock` : esc(nm(f.k.mrn)), esc(f.k.mrn || '—'), esc(p?.rx || '—'), PH_LABEL[f.k.pharm] || '—', mg ? mg + ' mg' : '—', fmtD(f.k.ordered, 'full'), f.next ? fmtD(f.next.date, 'full') : '—', f.next ? fmtT(f.next.time) : '—'] }; });
+}
+const FU_HEAD = ['Patient', 'MRN', 'Rx #', 'Pharmacy', 'Dose', 'Ordered', 'Needed by', 'Time'];
+function followEmail(ids){
+  const rows = followRows(ids);
+  const html = `<div style="${EM.font}"><p>Hello!</p><p>We are hoping to follow up on the below medications and their estimated arrival dates.</p>${emTable(FU_HEAD, rows.map(r => r.cells), '#dbe8f3')}<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`;
+  const text = `Hello!\n\nWe are hoping to follow up on the below medications and their estimated arrival dates.\n\n${[FU_HEAD, ...rows.map(r => r.cells.map(v => String(v).replace(/<[^>]+>/g, '')))].map(r => r.join('\t')).join('\n')}\n\nThank you,\n${CFG.me || ''}`;
+  return { html, text, n: rows.length };
+}
+function openFollowEmail(ids){
+  S.fuSel = new Set(ids); const all = followModel();
+  const draw = () => { const e = followEmail([...S.fuSel]);
+    openModal(`<h2>Follow-up email</h2><div class="small muted">Choose the items to include, then copy and paste into your email.</div>
+      <div class="row small" style="margin:8px 0;flex-wrap:wrap">${all.map(f => `<label class="chip ${S.fuSel.has(f.k.id) ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-fusel="${esc(f.k.id)}" ${S.fuSel.has(f.k.id) ? 'checked' : ''} style="margin-right:4px">${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))} · ${fmtD(f.k.ordered)}</label>`).join('')}</div>
+      <div class="emailprev">${e.html}</div>
+      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="fuCopy" ${e.n ? '' : 'disabled'}>Copy email</button></div>`, true); };
+  S.fuDraw = draw; draw();
+}
+function orderEmail(){
+  const T = todaySerial(); const inc = S.oInc || (S.oInc = { besse: true, follow: true, patient: true });
+  const m = besseModel(); const fu = followRows(); const need = genoaModel().rows.filter(r => r.cover === 'need');
+  let html = `<div style="${EM.font}"><p>Hello,</p><p>Please see ${CFG.clinic}’s medication order below${inc.follow && fu.length ? ', along with a follow-up on items we haven’t received yet' : ''}.</p>`;
+  let text = `Hello,\n\nPlease see ${CFG.clinic}'s medication order below.\n`;
+  if (inc.besse){ const rows = [56, 84].map(mg => { const r = m.rows[mg]; return [`${mg} mg`, r.oh, r.w1, r.w2, r.ov, `<b>${r.order}</b>`]; });
+    html += emSection(`1 · Besse order — week of ${fmtD(m.w[0][0], 'full')}`, '#f6e3da', emTable(['Dose', 'On hand', 'Appts next week', 'Appts 2 weeks out', 'Approved overage', 'To be ordered'], rows, '#efd3c6'));
+    text += `\nBESSE ORDER — week of ${fmtD(m.w[0][0], 'full')}\n` + rows.map(r => r.join('\t').replace(/<[^>]+>/g, '')).join('\n') + '\n'; }
+  if (inc.patient && need.length){ const rows = need.map(r => [esc(nm(r.a.mrn)), esc(r.a.mrn), esc(S.byMrn.get(r.a.mrn)?.rx || '—'), PH_LABEL[r.inf.pharm], `${r.inf.mg ?? '?'} mg`, fmtD(r.a.date, 'full'), fmtT(r.a.time)]);
+    html += emSection('2 · Patient medications to order', '#fbf0d6', emTable(['Patient', 'MRN', 'Rx #', 'Pharmacy', 'Dose', 'Needed by', 'Time'], rows, '#f4e2b5'));
+    text += '\nPATIENT MEDICATIONS TO ORDER\n' + rows.map(r => r.join('\t')).join('\n') + '\n'; }
+  if (inc.follow && fu.length){ html += emSection(`${inc.patient && need.length ? 3 : 2} · Follow-up — not yet received`, '#e2edf6', emTable(FU_HEAD, fu.map(r => r.cells), '#cddff0'));
+    text += '\nFOLLOW-UP — NOT YET RECEIVED\n' + fu.map(r => r.cells.join('\t')).join('\n') + '\n'; }
+  html += `<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`; text += `\nThank you,\n${CFG.me || ''}`;
+  return { html, text, subj: `Medication order — ${CFG.clinic} — ${fmtD(S.orderDate, 'full')}`, counts: { follow: fu.length, patient: need.length } };
+}
+function openOrderEmail(){
+  const draw = () => { const e = orderEmail(); const inc = S.oInc;
+    openModal(`<h2>Order email</h2><div class="small muted">To ${esc(CFG.email)} · choose what to include.</div>
+      <div class="row" style="margin:8px 0;gap:8px;flex-wrap:wrap">
+        <label class="chip ${inc.besse ? 'acc' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="besse" ${inc.besse ? 'checked' : ''} style="margin-right:4px">Besse order</label>
+        <label class="chip ${inc.patient ? 'warn' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="patient" ${inc.patient ? 'checked' : ''} style="margin-right:4px">Patient meds to order (${e.counts.patient})</label>
+        <label class="chip ${inc.follow ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-oinc="follow" ${inc.follow ? 'checked' : ''} style="margin-right:4px">Follow-up on unreceived (${e.counts.follow})</label></div>
+      <div class="emailprev">${e.html}</div>
+      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="oCopy">Copy email</button><button class="btn primary" data-act="oMail">Copy &amp; open email</button></div>`, true); };
+  S.oDraw = draw; draw();
 }
 function findHistRow(){ // the history's DATE column holds one row per order week: use this date, or the next one within 6 days
   const b = S.besse; if (!b?.hist) return null; const vals = b.vals || []; let best = null;
   for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null) continue; const diff = d - S.orderDate; if (diff >= 0 && diff <= 6 && (best == null || diff < best.diff)) best = { r, d, diff }; }
   return best;
+}
+
+// ---------- daily audit ----------
+function auditState(){ const d = isoOf(todaySerial()); if (!S.aud || S.aud.date !== d) S.aud = { date: d, a1: CFG.me || '', a2: '', scans: [], filled: false }; return S.aud; }
+async function saveAudit(){ await S.store.setDoc('eskAudit', S.aud); }
+function auditModel(){
+  const A = auditState(); const seen = new Set();
+  const rows = A.scans.map((sc, i) => {
+    const { p, list } = findByScan(sc.raw); const k = list.find(x => !x.disposed) || list[0] || null; const key = p?.serial || normScan(sc.raw);
+    const dup = seen.has(key); seen.add(key); let st, cls;
+    if (dup){ st = 'Duplicate scan'; cls = 'warn'; }
+    else if (!k){ st = p ? 'Not in inventory' : 'Not a Spravato code'; cls = 'bad'; }
+    else if (k.disposed){ st = 'Marked disposed'; cls = 'bad'; }
+    else if (k.administered && !k.partialOpen){ st = 'Already administered'; cls = 'bad'; }
+    else if (k.expired){ st = 'Expired — dispose'; cls = 'warn'; }
+    else if (k.partialOpen){ st = `Partial · ${k.remaining} mg left`; cls = 'warn'; }
+    else { st = 'OK'; cls = 'ok'; }
+    return { i, sc, p, k, st, cls, dup };
+  });
+  const scanned = new Set(rows.filter(r => r.k && !r.dup).map(r => r.k.id));
+  const expected = S.K.filter(k => k.isReceived && !k.disposed && (!k.administered || k.partialOpen));
+  const missing = expected.filter(k => !scanned.has(k.id)).sort((a, b) => (a.pharm || '').localeCompare(b.pharm || '') || fifo(a, b));
+  const gk = k => `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg`; const groups = {};
+  for (const k of expected){ const g = groups[gk(k)] || (groups[gk(k)] = { exp: 0, ok: 0 }); g.exp++; if (scanned.has(k.id)) g.ok++; }
+  const flags = rows.filter(r => r.cls !== 'ok').length + missing.length;
+  return { A, rows, missing, expected, groups, flags };
+}
+function auditHTML(){
+  const m = auditModel(); const A = m.A; const hasWeekly = !!S.tables.audit;
+  const pt = k => k?.mrn ? esc(nm(k.mrn)) : k ? `${PH_LABEL[k.pharm]} stock` : '—';
+  return `<div class="card"><h2>Daily audit · ${fmtD(todaySerial(), 'full')}<span class="sp"></span><button class="btn sm" data-act="audPrint" ${A.scans.length ? '' : 'disabled'}>🖨 Print audit sheet</button><button class="btn sm primary" data-act="audFill" ${A.scans.length && hasWeekly && !A.filled ? '' : 'disabled'}>${A.filled ? 'Filled to Weekly Audit ✓' : 'Fill to Weekly Audit'}</button></h2>
+    <div class="row"><div class="grow"><label class="lbl" for="aud1">Auditor 1</label><input id="aud1" class="fld" data-aud="a1" list="dlAud" value="${esc(A.a1)}"></div><div class="grow"><label class="lbl" for="aud2">Auditor 2</label><input id="aud2" class="fld" data-aud="a2" list="dlAud" value="${esc(A.a2)}"></div></div>
+    ${datalist('dlAud', [...distinct('kits', 'loggingpct'), ...(S.tables.audit ? distinct('audit', 'auditornamefirstandlast') : [])])}
+    <div class="scan" style="margin-top:10px"><input id="scanAudit" data-scan="audit" placeholder="Scan every kit in the med locker" autocomplete="off" aria-label="Scan kit for audit"></div>
+    <div class="small muted" style="margin-top:6px">Scans are saved with the workbook as you go. ${hasWeekly ? '“Fill to Weekly Audit” adds each scan to the SN Audit tab with today’s date and both auditors.' : 'The SN Audit table wasn’t found, so filling the weekly audit is off.'}</div>
+    <div class="stats" style="margin-top:10px">${Object.entries(m.groups).map(([g, v]) => `<div class="stat"><div class="n" style="color:${v.ok === v.exp ? 'var(--ok)' : 'var(--bad)'}">${v.ok}/${v.exp}</div><div class="l">${g}</div></div>`).join('')}<div class="stat"><div class="n" style="color:${m.flags ? 'var(--bad)' : 'var(--ok)'}">${m.flags}</div><div class="l">flags</div></div></div>
+  </div>
+  <div class="cols"><div>
+    <div class="card"><h2>Scanned <span class="chip">${m.rows.length}</span><span class="sp"></span>${m.rows.length ? '<button class="linkbtn" data-act="audClear">Clear audit</button>' : ''}</h2>
+      ${m.rows.length ? `<div class="tw"><table class="t rt"><thead><tr><th>#</th><th>Status</th><th>Serial</th><th class="num">mg</th><th>Pharmacy</th><th>Patient</th><th>Use by</th><th></th></tr></thead><tbody>${m.rows.slice().reverse().map(r => `<tr><td data-l="#">${r.i + 1}</td><td data-l="Status"><span class="chip ${r.cls}">${esc(r.st)}</span></td><td data-l="Serial" class="mono">${esc(r.p?.serial || r.k?.serial || cleanScan(r.sc.raw).slice(0, 18))}</td><td data-l="mg" class="num">${r.k?.recv ?? r.p?.mg ?? ''}</td><td data-l="Pharmacy">${r.k ? PH_LABEL[r.k.pharm] : '—'}</td><td data-l="Patient">${pt(r.k)}</td><td data-l="Use by">${r.k ? fmtD(r.k.expDate) : '—'}</td><td data-l="" style="text-align:right"><button class="linkbtn" data-act="audRemove" data-i="${r.i}">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing scanned yet.</div>'}
+    </div></div><div>
+    <div class="card"><h2>Not scanned yet <span class="chip ${m.missing.length ? 'bad' : 'ok'}">${m.missing.length}</span></h2>
+      <div class="small muted" style="margin-bottom:8px">Kits the Inventory says should be in the locker (received, not disposed, not fully used).</div>
+      ${m.missing.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Pharmacy</th><th class="num">mg</th><th>Serial</th><th>Patient</th><th>Received</th><th>Row</th></tr></thead><tbody>${m.missing.map(k => `<tr><td data-l="Pharmacy">${PH_LABEL[k.pharm]}</td><td data-l="mg" class="num">${k.recv ?? ''}</td><td data-l="Serial" class="mono">${esc(k.serial)}</td><td data-l="Patient">${pt(k)}</td><td data-l="Received">${fmtD(k.received)}</td><td data-l="Row">${k.r + 3}</td></tr>`).join('')}</tbody></table></div>` : '<div class="msg ok">Everything expected has been scanned.</div>'}
+    </div>
+  </div></div>`;
+}
+function auditDoc(){
+  const m = auditModel(); const A = m.A; const T = todaySerial();
+  const tbl = (head, rows) => `<table class="g"><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</table>`;
+  const pt = k => k?.mrn ? esc(nm(k.mrn)) + ' · ' + esc(k.mrn) : k ? 'Stock' : '—';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Daily Medication Audit ${fmtD(T, 'full')}</title><style>
+    @page{size:letter portrait;margin:0.45in} body{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:10pt;color:#000}
+    h1{font-size:15pt;margin:0 0 4px} h2{font-size:11.5pt;margin:14px 0 4px;padding:4px 8px;background:#eee;border-radius:4px}
+    table.g{width:100%;border-collapse:collapse;margin-top:4px} table.g th,table.g td{border:1px solid #999;padding:3px 6px;text-align:left} table.g th{background:#f3f3f3}
+    .sig{display:flex;gap:30px;margin-top:10px} .sig div{flex:1;border-bottom:1px solid #000;padding-top:22px;font-size:9pt}
+    .flag{color:#b3261e;font-weight:700}
+  </style></head><body>
+    <h1>Daily Medication Audit — ${esc(CFG.clinic)}</h1><div>Date: <b>${fmtD(T, 'full')}</b> · Auditor 1: <b>${esc(A.a1 || '________')}</b> · Auditor 2: <b>${esc(A.a2 || '________')}</b> · Kits scanned: <b>${m.rows.length}</b></div>
+    <h2>Summary</h2>${tbl(['Group', 'Expected', 'Scanned', 'Difference'], Object.entries(m.groups).map(([g, v]) => [g, v.exp, v.ok, v.ok === v.exp ? '0' : `<span class="flag">${v.ok - v.exp}</span>`]))}
+    <h2>Flags (${m.flags})</h2>${m.flags ? tbl(['Issue', 'Serial', 'mg', 'Pharmacy', 'Patient'], [...m.rows.filter(r => r.cls !== 'ok').map(r => [`<span class="flag">${esc(r.st)}</span>`, esc(r.p?.serial || r.k?.serial || ''), r.k?.recv ?? r.p?.mg ?? '', r.k ? PH_LABEL[r.k.pharm] : '', pt(r.k)]), ...m.missing.map(k => ['<span class="flag">Not scanned</span>', esc(k.serial), k.recv ?? '', PH_LABEL[k.pharm], pt(k)])]) : '<div>No flags.</div>'}
+    <h2>Scanned kits</h2>${tbl(['#', 'Serial', 'Lot', 'mg', 'Pharmacy', 'Patient', 'Use by', 'Status'], m.rows.map(r => [r.i + 1, esc(r.p?.serial || r.k?.serial || ''), esc(r.k?.lot || r.p?.lot || ''), r.k?.recv ?? r.p?.mg ?? '', r.k ? PH_LABEL[r.k.pharm] : '', pt(r.k), r.k ? fmtD(r.k.expDate, 'full') : '', esc(r.st)]))}
+    <div class="sig"><div>Auditor 1 signature</div><div>Auditor 2 signature</div><div>Date</div></div>
+  </body></html>`;
+}
+async function audFill(){
+  const m = auditModel(); const A = m.A; if (!S.tables.audit || A.filled) return;
+  if (!A.a1) return toast('warn', 'Enter Auditor 1 first.');
+  const scans = m.rows.filter(r => !r.dup); const T = todaySerial();
+  const ok = await write(`Adding ${scans.length} scans to the Weekly Audit…`, async () => {
+    for (const r of scans){ const { out } = changesFor('audit', { date: { date: T }, auditornamefirstandlast: A.a1, auditor2: A.a2, scanhere: cleanScan(r.sc.raw) }); await S.store.add('audit', out); }
+  }, `Added ${scans.length} scans to the SN Audit tab.`);
+  if (ok){ A.filled = true; await saveAudit(); render(); }
 }
 
 // ---------- patients ----------
@@ -1253,6 +1519,7 @@ async function copyText(text, html){
   const rg = document.createRange(); rg.selectNodeContents(d); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); let ok = false; try { ok = document.execCommand('copy'); } catch {} sel.removeAllRanges(); d.remove(); return ok;
 }
 
+function confirmClear(){ if (S._clr && Date.now() - S._clr < 4000){ S._clr = 0; return true; } S._clr = Date.now(); toast('warn', 'Tap “Clear audit” again to confirm.'); return false; }
 // ---------- events ----------
 const ACT = {
   view: el => { S.view = el.dataset.v; render(); },
@@ -1281,7 +1548,6 @@ const ACT = {
   print: el => { const t = el.dataset.t; document.querySelectorAll('.print-target').forEach(x => x.classList.toggle('print-target', x.id === t)); document.body.dataset.print = t; setTimeout(() => { window.print(); delete document.body.dataset.print; }, 30); },
   recvPh: el => { S.recvPharm = el.dataset.p; S.recvLine = null; S.recvMsg = null; render(); },
   recvPick: el => { S.recvLine = S.recvLine === el.dataset.id ? null : el.dataset.id; S.recvMsg = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 20); },
-  recvNew,
   orderTab: el => { S.orderTab = el.dataset.p; render(); },
   copyBesse: async () => { const { html, text } = besseTableText(); const ok = await copyText(text, html); toast(ok ? 'ok' : 'bad', ok ? 'Table copied — paste it into the email.' : 'Couldn’t copy.'); },
   emailBesse: async () => {
@@ -1293,19 +1559,38 @@ const ACT = {
   saveBesse,
   gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
   genoaOrder,
+  goInv: el => { S.view = 'inventory'; S.invTab = el.dataset.v; render(); },
+  fuEmail: el => openFollowEmail((el.dataset.ids || '').split(',').filter(Boolean)),
+  fuCopy: async () => { const e = followEmail([...S.fuSel]); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Email copied — paste it into Outlook.'); },
+  orderEmail: () => openOrderEmail(),
+  oCopy: async () => { const e = orderEmail(); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Order email copied.'); },
+  oMail: async () => { const e = orderEmail(); await copyText(e.text, e.html); const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(CFG.email)}?subject=${encodeURIComponent(e.subj)}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); toast('info', 'Email opened — paste (Ctrl+V) the formatted order into the body.'); },
+  reassign: el => openReassign(el.dataset.id),
+  reSave: () => reSave(),
+  rcvReset: () => { S.rcv = {}; S.recvMsg = null; render(); setTimeout(() => $('#scanRx')?.focus(), 30); },
+  rcvPick: () => { const m = mrnFromInput($('#rcvPick')?.value); if (m && S.byMrn.has(m)) selectRcvPatient(m); else setMsg('recvMsg', 'bad', 'Choose a patient from the list.'); },
+  rcvFor: el => { S.recvPharm = 'Genoa'; selectRcvPatient(el.dataset.m); },
+  rcvLink: () => rcvLink(),
+  rcvAdd: () => rcvAdd(),
+  rcvCancel: () => { if (S.rcv) S.rcv.confirm = null; render(); },
+  audPrint: () => openPrintable(auditDoc(), `Daily audit · ${fmtD(todaySerial(), 'full')}`),
+  audFill: () => audFill(),
+  audClear: async () => { if (!confirmClear()) return; S.aud = null; auditState(); await saveAudit(); render(); },
+  audRemove: async el => { const A = auditState(); A.scans.splice(+el.dataset.i, 1); await saveAudit(); render(); },
   range: el => { S.range = el.dataset.v; if (S.range === 'week' && S.fSt !== 'all' && !['attention','pulled','done','sched'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'day' && ['avail','ordered','need'].includes(S.fSt)) S.fSt = 'all'; render(); },
   gotoDay: el => { S.day = +el.dataset.d; S.range = 'day'; render(); },
   fClear: () => { S.fQ = ''; S.fPh = 'all'; S.fSt = 'all'; S.sortBy = 'time'; render(); },
   winReset: () => { S.win = defaultWindow(); render(); },
   copyNeed: async () => { const rows = genoaModel().rows.filter(r => r.cover === 'need'); const t = rows.map(r => `${nm(r.a.mrn)}\tMRN ${r.a.mrn}\t${r.inf.mg ?? '?'} mg\t${PH_LABEL[r.inf.pharm]}\tneeded ${fmtD(r.a.date, 'full')} ${fmtT(r.a.time)}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Order list copied.'); },
   copyFollow: async () => { const t = followModel().map(f => `${nm(f.k.mrn)}\tMRN ${f.k.mrn}\t${PH_LABEL[f.k.pharm]}\tordered ${fmtD(f.k.ordered, 'full')}\t${f.next ? 'needed ' + fmtD(f.next.date, 'full') + ' ' + fmtT(f.next.time) : 'no appt'}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Follow-up list copied.'); },
-  recvGo: el => { const k = S.K.find(x => x.id === el.dataset.id); if (!k) return; S.view = 'receive'; S.recvPharm = k.pharm === 'BESSE' ? 'Besse' : 'Genoa'; S.recvLine = k.id; S.recvMsg = { kind:'info', html:`Receiving for <b>${esc(nm(k.mrn))}</b> — scan the kit.` }; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); },
+  recvGo: el => { const k = S.K.find(x => x.id === el.dataset.id); if (!k) return; S.view = 'inventory'; S.invTab = 'receive'; if (k.mrn && k.pharm !== 'BESSE'){ S.recvPharm = 'Genoa'; selectRcvPatient(k.mrn); return; } S.recvPharm = k.pharm === 'BESSE' ? 'Besse' : 'Genoa'; S.recvLine = k.id; S.recvMsg = { kind:'info', html:`Receiving for <b>${esc(nm(k.mrn))}</b> — scan the kit.` }; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); },
   fuLog: el => openFollowUp(el.dataset.id),
   fuSave: el => fuSave(el.dataset.id),
   cancelLine: el => openCancel(el.dataset.id),
   cancelDo: el => cancelDo(el.dataset.id),
   patAll: el => { S.patAll = el.dataset.v === 'true'; render(); },
   invF: el => { S.invFilter = el.dataset.v; render(); },
+  invTab: el => { S.invTab = el.dataset.v; render(); },
   editKit: el => openKit(el.dataset.id),
   dispose: el => openDispose(el.dataset.id),
   dispSave,
@@ -1333,6 +1618,8 @@ document.addEventListener('keydown', e => {
   if (k === 'today') todayScan(v);
   else if (k === 'recv') recvScan(v);
   else if (k === 'inv') invScan(v);
+  else if (k === 'rx') rxScan(v);
+  else if (k === 'audit'){ const A = auditState(); A.scans.push({ raw: cleanScan(v), at: Date.now() }); A.filled = false; saveAudit(); render(); setTimeout(() => $('#scanAudit')?.focus(), 10); }
   else if (k === 'admin'){ const { p, list } = findByScan(v); if (!list.length){ S.adm.msg = { kind:'bad', html: p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.' }; } else { S.adm.kitId = (list.find(x => !x.administered) || list[0]).id; S.adm.msg = null; } renderAdmin(); }
 });
 document.addEventListener('input', e => {
@@ -1341,11 +1628,18 @@ document.addEventListener('input', e => {
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; clearTimeout(S._a); S._a = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderAdmin(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; clearTimeout(S._d); S._d = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderDispose(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
 });
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
   if (el.dataset.ov){ const v = Number(el.value); if (!isNaN(v)){ S.ov[el.dataset.ov] = v; render(); } }
   if (el.dataset.f){ S[el.dataset.f] = el.value; render(); }
+  if (el.dataset.re){ S.re[el.dataset.re] = el.value; S.re.draw(); }
+  if (el.id === 'reOk'){ S.re.ok = el.checked; S.re.draw(); }
+  if (el.dataset.fusel){ el.checked ? S.fuSel.add(el.dataset.fusel) : S.fuSel.delete(el.dataset.fusel); S.fuDraw(); }
+  if (el.dataset.oinc){ S.oInc[el.dataset.oinc] = el.checked; S.oDraw(); }
+  if (el.dataset.flag){ S[el.dataset.flag] = el.checked; render(); }
+  if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); }
   if (el.dataset.win){ const v = fromIso(el.value); if (v != null){ S.win[el.dataset.win] = v; if (S.win.to < S.win.from) S.win.to = S.win.from; render(); } }
   if ('gall' in el.dataset){ genoaModel().rows.filter(r => r.cover === 'need').forEach(r => el.checked ? S.genoaSel.add(r.a.key) : S.genoaSel.delete(r.a.key)); render(); }
   if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
@@ -1359,9 +1653,9 @@ async function reload(quiet){
   try {
     const d = await S.store.load();
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
-    const missing = Object.keys(SIG).filter(k => !S.tables[k]);
+    const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); S.loadErr = e.message || String(e); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -1482,7 +1776,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
