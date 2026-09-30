@@ -321,11 +321,34 @@ const colLetter = n => { let s = ''; n++; while (n){ const m = (n-1) % 26; s = S
 
 // ---------- store: live workbook (Office.js) ----------
 function OfficeStore(){
-  const names = {}; let besseSheet = null, besseUsedAddr = null;
-  async function tableBody(ctx, k){ const t = ctx.workbook.tables.getItem(names[k]); const b = t.getDataBodyRange(); b.load('values,formulas,rowCount'); await ctx.sync(); return { t, b }; }
-  async function writeCells(ctx, b, row, changes){
+  const names = {}; let besseSheet = null;
+  const CH = 250; // rows per request — Excel on the web rejects very large single reads ("An internal error has occurred")
+  const hasManual = (v, f) => v.some((x, c) => !isF(f[c]) && x !== '' && x != null);
+  async function retry(fn){
+    let err;
+    for (let i = 0; i < 3; i++){ try { return await fn(); } catch (e){ err = e; if (e && e.code === 'InvalidArgument') break; await new Promise(r => setTimeout(r, 700 * (i + 1))); } }
+    throw err;
+  }
+  // Read a table body in chunks; stops after 2 chunks with no hand-entered data (the prefilled blank rows at the bottom).
+  async function readBody(ctx, t, opts = {}){
+    const b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+    const n = b.rowCount, cols = b.columnCount, values = [], formulas = [];
+    let empty = 0;
+    for (let s = 0; s < n; s += CH){
+      const cnt = Math.min(CH, n - s);
+      const r = b.getCell(s, 0).getResizedRange(cnt - 1, cols - 1); r.load('values,formulas'); await ctx.sync();
+      let any = false;
+      for (let i = 0; i < cnt; i++){ values.push(r.values[i]); formulas.push(r.formulas[i]); if (hasManual(r.values[i], r.formulas[i])) any = true; }
+      if (opts.full) continue;
+      empty = any ? 0 : empty + 1;
+      if (empty >= 2) break;
+    }
+    return { b, values, formulas, rowCount:n, cols };
+  }
+  function rowRange(b, row, cols){ return b.getCell(row, 0).getResizedRange(0, cols - 1); }
+  async function writeCells(ctx, b, row, fRow, changes){
     const cells = [];
-    for (const [c, v] of changes){ if (isF(b.formulas[row][c])) throw new Error('Stopped: that column holds a formula in the workbook.'); const cell = b.getCell(row, c); cell.load('numberFormat'); cells.push([cell, v]); }
+    for (const [c, v] of changes){ if (isF(fRow[c])) throw new Error('Stopped: that column holds a formula in the workbook.'); const cell = b.getCell(row, c); cell.load('numberFormat'); cells.push([cell, v]); }
     await ctx.sync();
     for (const [cell, v] of cells){
       if (v && typeof v === 'object' && 'date' in v){ cell.values = [[v.date]]; if (/general/i.test(String(cell.numberFormat[0][0]))) cell.numberFormat = [['m/d/yyyy']]; }
@@ -336,17 +359,19 @@ function OfficeStore(){
   return {
     live: true,
     async load(){
-      return Excel.run(async ctx => {
+      return retry(() => Excel.run(async ctx => {
         const ts = ctx.workbook.tables; ts.load('items/name'); await ctx.sync();
         const hs = ts.items.map(t => { const h = t.getHeaderRowRange(); h.load('values'); const ws = t.worksheet; ws.load('name'); return { t, h, ws }; });
         await ctx.sync();
         const found = {};
         for (const x of hs){ const set = new Set(x.h.values[0].map(norm)); for (const [k, req] of Object.entries(SIG)) if (!found[k] && req.every(q => set.has(q))) found[k] = x; }
-        const bodies = {};
-        for (const [k, x] of Object.entries(found)){ names[k] = x.t.name; const b = x.t.getDataBodyRange(); b.load('values,formulas'); bodies[k] = { b, x }; }
-        const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const tables = {};
-        for (const [k, { b, x }] of Object.entries(bodies)) tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], b.values, b.formulas);
+        for (const [k, x] of Object.entries(found)){
+          names[k] = x.t.name;
+          const d = await readBody(ctx, x.t);
+          tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
+        }
+        const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
         let rr = null, br = null;
@@ -354,34 +379,40 @@ function OfficeStore(){
         if (bo){ br = bo.getRange('A1:Z200'); br.load('values,formulas'); besseSheet = bo.name; }
         await ctx.sync();
         return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values, br.formulas) : null, besseSheet };
-      });
+      }));
     },
     async update(k, r, snap, changes){
       return Excel.run(async ctx => {
-        const { b } = await tableBody(ctx, k);
-        let row = r;
-        if (!(row < b.values.length && snapMatch(b.values[row], snap))){
-          row = b.values.findIndex(v => snapMatch(v, snap));
+        const t = ctx.workbook.tables.getItem(names[k]);
+        const b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+        let row = -1, fRow = null;
+        if (r < b.rowCount){ const rg = rowRange(b, r, b.columnCount); rg.load('values,formulas'); await ctx.sync(); if (snapMatch(rg.values[0], snap)){ row = r; fRow = rg.formulas[0]; } }
+        if (row < 0){
+          const d = await readBody(ctx, t, { full:true });
+          row = d.values.findIndex(v => snapMatch(v, snap));
           if (row < 0) throw new Error('That row was changed in the workbook by someone else. The panel has refreshed — check it and try again.');
+          fRow = d.formulas[row];
         }
-        await writeCells(ctx, b, row, changes);
+        await writeCells(ctx, b, row, fRow, changes);
       });
     },
     async add(k, changes){
       return Excel.run(async ctx => {
-        let { t, b } = await tableBody(ctx, k);
+        const t = ctx.workbook.tables.getItem(names[k]);
+        let d = await readBody(ctx, t, { full:true });
         let last = -1;
-        b.values.forEach((v, i) => { if (v.some((x, c) => !isF(b.formulas[i][c]) && x !== '' && x != null)) last = i; });
-        let row = last + 1;
-        if (row >= b.values.length){
+        d.values.forEach((v, i) => { if (hasManual(v, d.formulas[i])) last = i; });
+        let row = last + 1, b = d.b, fRow;
+        if (row >= d.rowCount){
           t.rows.add(null); await ctx.sync();
-          b = t.getDataBodyRange(); b.load('values,formulas,rowCount'); await ctx.sync();
+          b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
           row = b.rowCount - 1;
-          const prev = b.getRow(row - 1); prev.load('formulasR1C1'); const cur = b.getRow(row); cur.load('formulasR1C1'); await ctx.sync();
+          const prev = rowRange(b, row - 1, b.columnCount); prev.load('formulasR1C1'); const cur = rowRange(b, row, b.columnCount); cur.load('formulasR1C1'); await ctx.sync();
           prev.formulasR1C1[0].forEach((f, c) => { const cf = cur.formulasR1C1[0][c]; if ((cf === '' || cf == null) && isF(f)) b.getCell(row, c).formulasR1C1 = [[f]]; });
-          await ctx.sync(); b.load('values,formulas'); await ctx.sync();
-        }
-        await writeCells(ctx, b, row, changes);
+          await ctx.sync();
+          const nr = rowRange(b, row, b.columnCount); nr.load('formulas'); await ctx.sync(); fRow = nr.formulas[0];
+        } else fRow = d.formulas[row];
+        await writeCells(ctx, b, row, fRow, changes);
       });
     },
     async setCells(sheet, cells){ // cells: [[a1, value, expectFormula=false]]
@@ -1790,7 +1821,13 @@ document.addEventListener('change', e => {
 });
 
 // ---------- load ----------
+let _loading = null, _again = false;
 async function reload(quiet){
+  if (_loading){ _again = true; return _loading; } // one read at a time; changes during a read queue one more
+  _loading = reload1(quiet);
+  try { await _loading; } finally { _loading = null; if (_again){ _again = false; setTimeout(() => reload(true), 400); } }
+}
+async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
     const d = await S.store.load();
@@ -1798,10 +1835,10 @@ async function reload(quiet){
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
-  } catch (e){ console.error(e); S.loadErr = e.message || String(e); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
+  } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
-function setupErrorHTML(){ return `<main><div class="card"><h2>Can’t read the workbook</h2><div class="msg bad">${esc(S.loadErr)}</div><button class="btn primary" data-act="refresh">Try again</button></div></main>`; }
+function setupErrorHTML(){ return `<main><div class="card"><h2>Can’t read the workbook</h2><div class="msg bad">${esc(S.loadErr)}</div><div class="small muted" style="margin:8px 0">If this keeps happening: close the ESK Tracker panel, reload the workbook tab, and reopen it. Make sure the file isn’t open in the desktop app with unsaved changes.</div><button class="btn primary" data-act="refresh">Try again</button></div></main>`; }
 function notInExcelHTML(){
   return `<main style="max-width:640px"><div class="card"><h2><span class="brand"><span class="dot">ESK</span></span> ESK Tracker</h2>
     <p>This page is an Excel add-in. It runs inside the Esketamine Master Tracker workbook in Excel.</p>
