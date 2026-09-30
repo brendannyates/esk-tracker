@@ -56,6 +56,13 @@ table.rt td .row{gap:6px}
   table.rt td:empty{display:none}
   table.rt tr{border-bottom:1px solid var(--line)!important}
 }
+.safe{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.6px;padding:3px 8px;border-radius:6px;border:1.5px solid}
+.safe.besse{color:#8a3a17;background:#f7e4d9;border-color:#d9a58a} .safe.genoa{color:#0d5d57;background:#dcf1ee;border-color:#8cc9c1} .safe.other{color:#5b4a8a;background:#ebe6f7;border-color:#b7aadb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33}:root:not([data-theme="light"]) .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}}
+:root[data-theme="dark"] .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33} :root[data-theme="dark"] .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}
+.warnText{color:var(--warn);font-weight:600} .badText{color:var(--bad);font-weight:600}
+.bignum{font-size:34px;font-weight:800;line-height:1} .midnum{font-size:22px;font-weight:700;line-height:1}
+.item.st-onhand{border-left-color:var(--line)} .item.st-check{border-left-color:var(--warn)}
 .subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .subnav button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;color:var(--muted);cursor:pointer;min-height:36px}
 .subnav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -437,6 +444,7 @@ function DemoStore(){
   const besse = [['BESSE WEEKLY ORDERING GUIDE','','','','','','','','','','',''],['Clinic','Date','Dose','Besse O/H','Appts Next Week','Appts 2 Week Out','Approved Overage','To Be Ordered','','DATE',56,84],['SRL',T-3,'56mg',1,0,0,1,'','',T-3,'',''],['','','84mg',13,12,6,-2,'','',T+4,'','']];
   const AUD_H = ['Location','Date','Auditor Name (First and Last)','Auditor 2','Scan Here','Pharmacy/Drug Source','Serial Number ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
   const AUD_F = new Set([0,5,6,7,8,9,10,11]); const audVals = Array.from({ length: 15 }, () => Array(12).fill(''));
+  { let n = 0, skip = 0; for (const r of inv){ if (!r[1] || r[11] !== '' || r[19] === 'Yes') continue; if (r[3] === 'Besse' && skip < 1 && r[2] === ''){ skip++; continue; } if (n >= audVals.length) audVals.push(Array(12).fill('')); const row = audVals[n++]; row[1] = T - 1; row[2] = 'Taylor R.'; row[3] = 'Sam K.'; row[4] = r[1]; } }
   const docs = {};
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null] };
   return {
@@ -598,8 +606,8 @@ function medOutlook(mrn){
 }
 function medChip(mrn){
   const o = medOutlook(mrn); if (!o) return '';
-  if (o.kind === 'ps') return o.need ? `<span class="chip bad">No meds on hand for new visits${o.oo ? ` (${o.oo} on order, ${o.booked} booked)` : ''}</span>` : `<span class="chip ok">${o.spare} kit${o.spare > 1 ? 's' : ''} for new visits</span>`;
-  return o.need ? `<span class="chip bad">No Besse ${o.mg} mg stock</span>` : `<span class="chip ok">${o.lab ? `${o.lab} labeled` : `Besse stock ${o.stock}`}</span>`;
+  if (o.kind === 'ps') return o.need ? `<span class="chip bad">No meds on hand for new visits${o.oo ? ` (${o.oo} on order, ${o.booked} booked)` : ''}</span>` : `<span class="small muted">meds: ${o.spare} spare kit${o.spare > 1 ? 's' : ''}</span>`;
+  return o.need ? `<span class="chip bad">No Besse ${o.mg} mg stock</span>` : `<span class="small muted">meds: ${o.lab ? `${o.lab} labeled kit${o.lab > 1 ? 's' : ''}` : `Besse stock ${o.stock}`}</span>`;
 }
 function taskGet(mrn, kind){ const t = (S.tasks || {})[`${mrn}|${kind}`]; if (!t) return null; const d = fromIso(t.at); return d != null && d >= todaySerial() - 14 ? t : null; }
 async function taskSet(mrn, kind, on){
@@ -628,20 +636,21 @@ function taskBtns(mrn, ns, np){
   return `<div class="line row" style="gap:6px">${ns ? (sd ? `<span class="chip ok">Scheduled ✓ ${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${esc(mrn)}" data-k="sched">Undo</button>` : `<button class="btn sm" data-act="taskDo" data-m="${esc(mrn)}" data-k="sched">Mark scheduled</button>`) : ''}${np ? `<button class="btn sm" data-act="protoRenew" data-m="${esc(mrn)}">Protocol renewed…</button>` : ''}</div>`;
 }
 const taskDone = (mrn, ns, np) => (!ns || taskGet(mrn, 'sched')) && !np;
-const covChip = p => !p ? '' : p.coverage ? `<span class="chip">${esc(p.coverage)}</span>` : '<span class="chip warn">MD/NP not set</span>';
+const covChip = p => !p ? '' : p.coverage ? `<span class="small muted">${esc(p.coverage)}</span>` : '<span class="chip warn">MD/NP not set</span>';
+const protoFlag = p => needsProto(p) ? `<span class="chip bad">New protocol · ${p.protoExp ? (p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span>` : '';
 const insChip = p => !p ? '' : p.insurance ? `<span class="chip">${esc(p.insurance)}</span>` : '<span class="chip warn">Insurance not set</span>';
 function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip warn">No protocol date</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">${p.protoExp < T ? 'Protocol expired' : 'Protocol exp'} ${fmtD(p.protoExp, 'full')}</span>`; }
 function schedHTML(){
   const g = schedGaps(); const T = todaySerial();
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
     return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
-    <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${x.np ? `<span class="chip bad">New protocol needed</span>` : ''}${covChip(x.p)}${protoChip(x.p, g.lim)}${medChip(x.mrn)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, x.np)}</div>`; };
+    <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, x.np)}</div>`; };
   const sortDone = l => l.slice().sort((a, b) => taskDone(a.mrn, a.ns, a.np) - taskDone(b.mrn, b.ns, b.np));
   const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
   return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
     <div class="small muted">Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}.</div>
     <div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
-      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="chip">Last seen ${fmtD(x.last)}</span>` : ''}${covChip(x.p)}${protoChip(x.p, g.lim)}${medChip(x.mrn)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : '<div class="small muted">None.</div>'}</div>
+      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : '<div class="small muted">None.</div>'}</div>
     <div class="dayblock today"><div class="bh"><b>Today</b><span>${fmtD(T, 'full')} · ${today ? today.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length + ' open' : 0}</span></div>${today ? sortDone(today.list).map(row).join('') : '<div class="small muted">Everyone in clinic today is booked out and has a current protocol.</div>'}</div>
     ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`).join('')}
   </div>`;
@@ -813,7 +822,7 @@ function render(){
   const act = document.activeElement; const keepId = act && act.id; const keepVal = act && act.value; const selS = act?.selectionStart;
   const app = $('#app');
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
-  S._b = badges();
+  S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id)); S._b = badges();
   app.innerHTML = `
     ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
     <header class="top">
@@ -841,7 +850,7 @@ function invShellHTML(){
     ${S.invTab === 'stock' ? inventoryHTML() : S.invTab === 'receive' ? receiveHTML() : S.invTab === 'order' ? needHTML(genoaModel()) + windowHTML() : S.invTab === 'transit' ? followHTML(followModel()) : S.invTab === 'besse' ? besseHTML() : auditHTML()}`;
 }
 function windowHTML(){ return ''; }
-function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg${k.pharm === 'BESSE' && k.mrn && !k.administered ? ` <span class="chip acc">labeled ${esc(nm(k.mrn))}</span>` : ''} · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''} · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
 // look-ahead: allocate kits across a date range (Besse from shared stock oldest-first; Genoa per patient, then open orders)
 function rangeModel(from, to){
   const T = todaySerial();
@@ -870,7 +879,7 @@ const ST_LABEL = { done:['ok','Given'], pulled:['info','Pulled'], avail:['ok','K
 function filterSort(list, stOf){
   const q = S.fQ.trim().toLowerCase();
   let out = list.filter(x => (S.fPh === 'all' || x.inf.pharm === S.fPh) && (!q || nm(x.a.mrn).toLowerCase().includes(q) || x.a.mrn.includes(q)));
-  if (S.fSt !== 'all') out = out.filter(x => { const st = stOf(x); return S.fSt === 'attention' ? ['need', 'bad', 'todo', 'past', 'unknown'].includes(st) : S.fSt === 'sched' ? x.needsSched && x.a.active : st === S.fSt; });
+  if (S.fSt !== 'all') out = out.filter(x => { const st = stOf(x); return S.fSt === 'attention' ? ['need', 'bad', 'check', 'past', 'unknown'].includes(st) : S.fSt === 'sched' ? x.needsSched && x.a.active : st === S.fSt; });
   const cmp = { time: (x, y) => x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0), patient: (x, y) => nm(x.a.mrn).localeCompare(nm(y.a.mrn)) || x.a.date - y.a.date, pharmacy: (x, y) => (x.inf.pharm || 'Z').localeCompare(y.inf.pharm || 'Z') || x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0), status: (x, y) => stOf(x).localeCompare(stOf(y)) || x.a.date - y.a.date || (x.a.time ?? 0) - (y.a.time ?? 0) }[S.sortBy];
   return out.sort(cmp);
 }
@@ -879,7 +888,7 @@ function toolbarHTML(){
   return `<div class="row" style="margin-top:10px">
     <input id="fQ" class="fld" style="flex:1;min-width:140px" data-input="fQ" placeholder="Find patient or MRN" value="${esc(S.fQ)}" aria-label="Find patient">
     ${sel('fPh', 'fPh', [['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']])}
-    ${sel('fSt', 'fSt', [['all', 'All statuses'], ['attention', 'Needs attention'], ...(S.range === 'week' ? [['avail', 'Kit on hand'], ['ordered', 'On order'], ['need', 'Needs med']] : [['todo', 'To pull'], ['bad', 'No kit']]), ['pulled', 'Pulled'], ['done', 'Given'], ['sched', 'Needs scheduling']])}
+    ${sel('fSt', 'fSt', [['all', 'All statuses'], ['attention', 'Needs attention'], ...(S.range === 'week' ? [['avail', 'Kit on hand'], ['ordered', 'On order'], ['need', 'Needs med'], ['pulled', 'Pulled']] : [['onhand', 'On hand'], ['check', 'Confirm (not in audit)'], ['bad', 'No kit']]), ['done', 'Given'], ['sched', 'Needs scheduling']])}
     ${sel('sortBy', 'sortBy', [['time', 'Sort: time'], ['patient', 'Sort: patient'], ['pharmacy', 'Sort: pharmacy'], ['status', 'Sort: status']])}
     ${S.fQ || S.fPh !== 'all' || S.fSt !== 'all' || S.sortBy !== 'time' ? '<button class="linkbtn" data-act="fClear">Clear</button>' : ''}</div>`;
 }
@@ -906,10 +915,6 @@ function weekHTML(){
     <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
   </div>`;
 }
-function itemState(i){
-  if (!i.a.active) return 'off'; if (i.adminKit) return 'done'; if (i.pulledKit) return 'pulled';
-  if (i.suggest) return 'todo'; return 'bad';
-}
 function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
 function actionModel(){
   const T = todaySerial(); const end = bizDaysAhead(T, 3);
@@ -928,7 +933,7 @@ function actionHTML(){
     <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days), and today’s patients who need scheduling or a new protocol.</div>
     <div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : '<div class="small">Nothing to order for the next 3 business days.</div>'}</div>
     <div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.length ? m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>` : '<div class="small">Nothing in transit is needed in the next 3 business days.</div>'}</div>
-    <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${i.needsProto ? '<span class="chip bad">New protocol</span>' : ''}${protoChip(i.p, todaySerial() + CFG.schedDays)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
+    <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${protoFlag(i.p)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
       ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${m.expired.length ? `<div class="srow"><div class="line small">${m.expired.length} expired kit${m.expired.length > 1 ? 's' : ''} waiting for disposal.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Open Stock</button></div></div>` : ''}
@@ -939,49 +944,65 @@ function todayHTML(){
   if (S.range === 'week') return weekHTML();
   const T = todaySerial(); const day = S.day; const items = todayModel(day);
   const act = items.filter(i => i.a.active);
-  const done = act.filter(i => i.adminKit).length, pulled = act.filter(i => i.pulledKit && !i.adminKit).length;
-  const toPull = act.filter(i => !i.adminKit && !i.pulledKit).length, noKit = act.filter(i => itemState(i) === 'bad').length;
-  const tgt = S.target ? items.find(i => i.a.key === S.target) : null;
-  const pullList = items.filter(i => i.pulledKit || i.adminKit);
+  const done = act.filter(i => i.adminKit).length, noKit = act.filter(i => itemState(i) === 'bad').length, check = act.filter(i => itemState(i) === 'check').length;
+  const am = act.filter(i => (i.a.time ?? 0) < 12 * 60).length, pm = act.length - am; const la = S._la || lastAudit();
   return `
   <div class="card">
     <div class="row"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
       <div class="grow" style="text-align:center">${day === T ? '<span class="todaypill">TODAY</span> ' : `<b>${DAYNAME[dowOf(day)]}</b> `}<span class="muted">${fmtD(day, 'full')}</span></div>
       <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}
       <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="row small" style="margin-top:10px;gap:10px"><span class="chip">${act.length} patients</span><span class="chip ${toPull ? 'warn' : 'ok'}">${pulled + done}/${act.length} kits pulled</span><span class="chip ${done === act.length && act.length ? 'ok' : ''}">${done}/${act.length} given</span>${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}
-      <span class="grow"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${pullList.length ? '' : 'disabled'}>Copy pull list</button></div>
-  </div>
-  <div class="card noprint">
-    <div class="scan"><span aria-hidden="true">▦</span><input id="scanToday" data-scan="today" placeholder="${tgt ? 'Scan kit for ' + esc(nm(tgt.a.mrn)) : 'Scan a kit to pull it (press / to jump here)'}" autocomplete="off" aria-label="Scan kit"></div>
-    ${tgt ? `<div class="row small" style="margin-top:6px"><span class="chip acc">Pulling for ${esc(nm(tgt.a.mrn))} · ${fmtT(tgt.a.time)}</span><button class="linkbtn" data-act="untarget">Cancel</button></div>` : ''}
-    ${msgHTML(S.todayMsg)}
+    <div class="row" style="margin-top:12px;align-items:flex-end;gap:18px">
+      <div><div class="bignum">${act.length}</div><div class="small muted">appointment${act.length === 1 ? '' : 's'} ${day === T ? 'today' : 'this day'}</div></div>
+      <div><div class="midnum">${am}</div><div class="small muted">AM</div></div><div><div class="midnum">${pm}</div><div class="small muted">PM</div></div>
+      <div><div class="midnum">${done}</div><div class="small muted">given</div></div>
+      <div class="grow small muted" style="text-align:right">Meds checked against the ${la.date != null ? `${esc(la.src)} of <b>${fmtD(la.date, 'full')}</b>` : 'daily audit (none on file yet)'}${check ? ` · <span class="warnText">${check} to confirm</span>` : ''}${noKit ? ` · <span class="badText">${noKit} with no kit</span>` : ''}</div></div>
+    <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></div>
   </div>
   <div class="cols"><div>
-    <div class="card"><h2>Schedule &amp; med pull</h2>${toolbarHTML()}
+    <div class="card"><h2>Appointments</h2>${toolbarHTML()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div></div><div>
     ${actionHTML()}
     ${schedHTML()}
   </div></div>`;
 }
+// Most recent audit: today's in-app daily audit, or the latest date on the SN Audit tab.
+function lastAudit(){
+  let best = { date: null, set: new Set(), src: '' };
+  const key = raw => { const p = parseScan(raw); return p ? normScan(p.serial) : normScan(raw); };
+  const at = S.tables.audit;
+  if (at){ const m = new Map(); at.values.forEach((_, r) => { const d = toSerial(at.get(r, 'date')); const sc = at.get(r, 'scanhere'); if (d == null || !sc) return; if (!m.has(d)) m.set(d, new Set()); m.get(d).add(key(sc)); }); if (m.size){ const d = Math.max(...m.keys()); best = { date: d, set: m.get(d), src: 'SN Audit' }; } }
+  const A = S.aud; if (A && A.scans?.length){ const d = fromIso(A.date); if (d != null && (best.date == null || d >= best.date)){ const set = new Set(A.scans.map(x => key(x.raw))); best = { date: d, set: d === best.date ? new Set([...best.set, ...set]) : set, src: 'Daily audit' }; } }
+  return best;
+}
+function auditStatus(k){
+  const la = S._la || lastAudit(); if (!k) return null;
+  if (la.date == null) return { cls: '', text: 'no audit on file' };
+  if (la.set.has(k.serialN)) return { cls: 'ok', text: `last audit ${fmtD(la.date)}` };
+  if (k.received != null && k.received > la.date) return { cls: 'ok', text: `received ${fmtD(k.received)}, after last audit` };
+  return { cls: 'warn', text: `not in last audit (${fmtD(la.date)}) — confirm` };
+}
+const SAFE = ph => `<span class="safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'BESSE' : ph === 'GENOA' ? 'GENOA' : ph === 'OTHER' ? 'OTHER' : '—'} SAFE</span>`;
+function itemState(i){
+  if (!i.a.active) return 'off'; if (i.adminKit) return 'done';
+  if (!i.suggest) return 'bad';
+  return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
+}
 function itemHTML(i){
-  const a = i.a; const st = itemState(i);
-  let line;
-  if (!a.active) line = `<span class="chip">${esc(a.hold ? 'Hold' : a.status)}</span>`;
-  else if (i.adminKit) line = `<span class="chip ok">Administered ✓</span> ${kitLine(i.adminKit)}`;
-  else if (i.pulledKit) line = `<span class="chip info">Pulled</span> ${kitLine(i.pulledKit)}`;
-  else if (i.suggest) line = `<span class="chip warn">Pull this kit</span> ${kitLine(i.suggest)}`;
-  else if (i.inf.pharm === 'GENOA') line = `<span class="chip bad">No Genoa kit on hand for this patient</span>`;
-  else if (!i.inf.pharm) line = `<span class="chip warn">Not on the patient tracker — pharmacy unknown</span>`;
-  else line = `<span class="chip bad">No ${PH_LABEL[i.inf.pharm]} ${i.inf.mg ?? ''} mg kit available</span>`;
-  const p = S.byMrn.get(a.mrn);
-  const primary = !a.active || i.adminKit ? '' : (i.pulledKit || st === 'bad') ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : `<button class="btn sm primary" data-act="target" data-k="${esc(a.key)}">${S.target === a.key ? 'Scanning…' : 'Scan to pull'}</button><button class="btn sm" data-act="admin" data-k="${esc(a.key)}">Administer</button>`;
-  return `<div class="item st-${st} ${S.target === a.key ? 'target' : ''}">
-    <div class="head"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · ${i.inf.mg ?? '?'} mg · ${PH_LABEL[i.inf.pharm]}</span></div>
-    <div class="line">${line}</div>
-    ${a.active ? `<div class="line row">${covChip(p)}<span class="chip ${i.needsSched ? 'warn' : ''}">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}</span>${p?.protoExp && p.protoExp < todaySerial() + CFG.schedDays ? protoChip(p, todaySerial() + CFG.schedDays) : ''}${i.inf.mg === 56 && !a.isStart ? '<span class="chip warn">56 mg on a non-Start visit — verify</span>' : ''}</div>` : ''}
-    <div class="acts noprint">${primary}${i.pulledKit && !i.adminKit ? `<button class="linkbtn" data-act="unpull" data-k="${esc(a.key)}">Undo pull</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
+  const a = i.a; const st = itemState(i); const p = S.byMrn.get(a.mrn); const k = i.adminKit || i.suggest;
+  let med;
+  if (!a.active) med = `<span class="muted">${esc(a.hold ? 'Hold' : a.status)}</span>`;
+  else if (i.adminKit) med = `<span class="chip ok">Given ✓</span> <span class="muted small">SN …${esc(k.serial.slice(-6))}</span>`;
+  else if (k){ const au = auditStatus(k); med = `<b>On hand</b> <span class="mono">SN …<b>${esc(k.serial.slice(-6))}</b></span> <span class="muted small">· rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)}</span> <span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">· ${esc(au.text)}</span>${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''}`; }
+  else if (!i.inf.pharm) med = `<span class="chip warn">Not on the patient tracker</span>`;
+  else med = `<span class="chip bad">No ${i.inf.mg ?? ''} mg kit on hand</span>`;
+  const flags = [i.needsSched ? '<span class="warnText">schedule out</span>' : '', i.needsProto ? '<span class="badText">new protocol</span>' : '', p && !p.coverage ? '<span class="warnText">MD/NP not set</span>' : '', i.inf.mg === 56 && !a.isStart ? '<span class="warnText">56 mg — verify</span>' : ''].filter(Boolean);
+  return `<div class="item st-${st}">
+    <div class="head">${SAFE(i.inf.pharm)}<span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span><span class="meta">MRN ${esc(a.mrn)} · ${a.isStart ? 'Start' : a.isEFU ? 'EFU' : esc(a.event)} · <b>${i.inf.mg ?? '?'} mg</b></span></div>
+    <div class="line">${med}</div>
+    ${a.active ? `<div class="line small muted">${i.remaining} more booked${i.thru ? ' · thru ' + fmtD(i.thru) : ''}${p?.coverage ? ' · ' + esc(p.coverage) : ''}${flags.length ? ' · ' + flags.join(' · ') : ''}</div>` : ''}
+    <div class="acts noprint">${a.active && !i.adminKit ? `<button class="btn sm primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Patient details</button></div>
   </div>`;
 }
 
@@ -1584,9 +1605,9 @@ const ACT = {
   admSave: adminSave,
   patient: el => openPatient(el.dataset.m),
   copyPull: async () => {
-    const items = todayModel(S.day).filter(i => i.pulledKit || i.adminKit);
+    const items = todayModel(S.day).filter(i => i.a.active && (i.adminKit || i.suggest));
     const H = ['Time', 'Patient', 'MRN', 'mg', 'Pharmacy', 'Serial', 'Lot', 'Use by', 'Status'];
-    const R = items.map(i => { const k = i.adminKit || i.pulledKit; return [fmtT(i.a.time), nm(i.a.mrn), i.a.mrn, k.recv, PH_LABEL[k.pharm], k.serial, k.lot, fmtD(k.expDate, 'full'), i.adminKit ? 'Administered' : 'Pulled']; });
+    const R = items.map(i => { const k = i.adminKit || i.suggest; return [fmtT(i.a.time), nm(i.a.mrn), i.a.mrn, k.recv, PH_LABEL[k.pharm] + ' safe', k.serial, k.lot, fmtD(k.expDate, 'full'), i.adminKit ? 'Given' : 'On hand']; });
     const ok = await copyText([H, ...R].map(r => r.join('\t')).join('\n'), `<table border="1">${[H, ...R].map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`);
     toast(ok ? 'ok' : 'bad', ok ? 'Copied.' : 'Couldn’t copy — use Print instead.');
   },
@@ -1627,7 +1648,7 @@ const ACT = {
   audFill: () => audFill(),
   audClear: async () => { if (!confirmClear()) return; S.aud = null; auditState(); await saveAudit(); render(); },
   audRemove: async el => { const A = auditState(); A.scans.splice(+el.dataset.i, 1); await saveAudit(); render(); },
-  range: el => { S.range = el.dataset.v; if (S.range === 'week' && S.fSt !== 'all' && !['attention','pulled','done','sched'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'day' && ['avail','ordered','need'].includes(S.fSt)) S.fSt = 'all'; render(); },
+  range: el => { S.range = el.dataset.v; if (S.range === 'week' && S.fSt !== 'all' && !['attention','pulled','done','sched'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'day' && ['avail','ordered','need','pulled'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'week' && ['onhand','check','bad'].includes(S.fSt)) S.fSt = 'all'; render(); },
   gotoDay: el => { S.day = +el.dataset.d; S.range = 'day'; render(); },
   fClear: () => { S.fQ = ''; S.fPh = 'all'; S.fSt = 'all'; S.sortBy = 'time'; render(); },
   winReset: () => { S.win = defaultWindow(); render(); },
