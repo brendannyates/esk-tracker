@@ -1266,14 +1266,15 @@ function openCheckout(key){
       ${radio('self', [['self', 'Pt self-answered'], ['staff', 'Staff assisted']])}
       <div class="q">Did you feel disconnected from yourself or the world?</div>${radio('disc', disLab.map((l, i) => [i, l]))}
       <div class="q">Did things seem unreal to you, as if you were in a dream?</div>${radio('unreal', unLab.map((l, i) => [i, l]))}
+      <div class="q">About how long did you feel disconnected or dream-like?</div><div class="row" style="gap:6px;margin-top:4px"><input class="fld" type="number" min="0" data-co="dissMin" value="${esc(S.co.dissMin)}" style="max-width:90px"><span class="small muted">minutes</span></div>
       <div class="q">How sedated did you feel? (1 = alert, 10 = fast asleep)</div>${radio('sed10', [1,2,3,4,5,6,7,8,9,10].map(n => [n, n]))}
+      <div class="q">About how long did you feel sedated?</div><div class="row" style="gap:6px;margin-top:4px"><input class="fld" type="number" min="0" data-co="sedMin" value="${esc(S.co.sedMin)}" style="max-width:90px"><span class="small muted">minutes</span></div>
       <div class="q">Side effects</div><div class="opts"><label class="opt"><input type="checkbox" data-co="nausea" ${S.co.nausea ? 'checked' : ''}> Nausea and/or upset stomach</label><label class="opt"><input type="checkbox" data-co="dizzy" ${S.co.dizzy ? 'checked' : ''}> Dizziness</label></div>
       <div class="q">Feel able and safe to walk out of the clinic today?</div>${radio('safe', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Confirm a ride home today?</div>${radio('ride', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Overall experience today</div>${radio('exp', [['positive', 'Positive'], ['negative', 'Negative'], ['neutral', 'Neutral']])}
       <div class="q">Notes from today’s experience (optional)</div><textarea class="fld" data-co="notes" rows="2">${esc(S.co.notes || '')}</textarea>
       <div class="small" style="font-weight:800;margin-top:12px">Staff</div>
-      <div class="form2"><div><label class="lbl">Sedation lasted (min)</label><input class="fld" type="number" min="0" data-co="sedMin" value="${esc(S.co.sedMin)}"></div><div><label class="lbl">Dissociation lasted (min)</label><input class="fld" type="number" min="0" data-co="dissMin" value="${esc(S.co.dissMin)}"></div></div>
       <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
       <label class="opt" style="margin-top:6px"><input type="checkbox" data-co="gait" ${S.co.gait ? 'checked' : ''}> Gait noted to be stable</label>
       <div class="small" style="font-weight:800;margin-top:12px">Rescue medication given?</div><div id="coRx">${rescueHTML()}</div>
