@@ -540,7 +540,7 @@ function DemoStore(){
 const S = {
   store:null, tables:{}, ref:{}, besse:null, besseSheet:null, P:[], A:[], K:[], byMrn:new Map(), loaded:false, loadErr:null,
   view:'today', day:todaySerial(), orderDate:todaySerial(), orderTab:'NEED', win:null, target:null, pull:{},
-  patQ:'', patAll:false, invTab:'stock', openDays:new Set(), range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', recvLine:null, recvMsg:null, lastRecv:null,
+  patQ:'', patAll:false, invTab:'stock', openDays:new Set(), range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', rcvFirst:null, recvMsg:null, rcvLog:[], rcvHold:[], scanQ:[], scanBusy:null,
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
 
@@ -550,7 +550,7 @@ function derive(){
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), rx: rxText(tp.get(r,'notes')) || rxText(tp.get(r,'pcnnotes')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -870,10 +870,10 @@ const colLetterFor = (k, c) => colLetter((TABLE_OFFSET[k] ?? 0) + c);
 const mrnVal = m => /^\d+$/.test(m) ? Number(m) : m;
 function pharmText(code){ const want = code === 'BESSE' ? 'Besse' : code === 'GENOA' ? 'Genoa' : code; const refv = (S.ref.pharmacy || []).find(v => pharmOf(v) === code); return refv || want; }
 async function write(label, fn, okText){
-  busy(label);
-  try { await fn(); await reload(true); toast('ok', okText || 'Saved to the workbook.'); return true; }
+  if (label) busy(label);
+  try { await fn(); await reload(true); if (label) toast('ok', okText || 'Saved to the workbook.'); return true; }
   catch (e){ console.error(e); try { await reload(true); } catch {} toast('bad', esc(e.message || String(e))); return false; }
-  finally { busy(false); }
+  finally { if (label) busy(false); }
 }
 
 // ---------- rendering ----------
@@ -1183,81 +1183,79 @@ async function adminSave(){
 }
 
 // ---------- receive ----------
-// Genoa tags carry the prescription (R) number; the tracker keeps it in the patient's Notes column.
-const rxBase = v => { const t = String(v ?? '').toUpperCase().replace(/\s+/g, ''); let m = t.match(/R(\d{5,})/); if (m) return m[1]; m = t.match(/^(\d{6,})(\/\d+)?$/); return m ? m[1] : null; };
-const rxText = v => { const m = String(v ?? '').toUpperCase().replace(/\s+/g, '').match(/R\d{5,}(\/\d+)?/); return m ? m[0] : null; };
-const patientByRx = raw => { const b = rxBase(raw); return b ? S.P.find(p => rxBase(p.rx) === b) || null : null; };
+// Genoa: no patient label step (the R number changes every fill). Scan kits in the order shown under
+// "Awaiting receipt" — each scan fills the next line in that list. Scans queue, so the scanner never waits.
+const lineMg = k => num(String(k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]) || (k.mrn ? S.byMrn.get(k.mrn)?.mg : null) || null;
+function recvQueue(){
+  const genoa = S.recvPharm === 'Genoa';
+  const L = S.K.filter(k => k.openOrder && (genoa ? k.pharm !== 'BESSE' : k.pharm === 'BESSE')).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0) || a.r - b.r);
+  const i = S.rcvFirst ? L.findIndex(k => k.id === S.rcvFirst) : -1;
+  return i > 0 ? [L[i], ...L.slice(0, i), ...L.slice(i + 1)] : L;
+}
 function receiveHTML(){
-  const T = todaySerial(); const genoa = S.recvPharm === 'Genoa'; const R = S.rcv || (S.rcv = {});
-  const openLines = S.K.filter(k => k.openOrder && (genoa ? k.pharm !== 'BESSE' : k.pharm === 'BESSE')).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
+  const T = todaySerial(); const genoa = S.recvPharm === 'Genoa';
+  const openLines = recvQueue();
   const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
-  const L = S.lastRecv ? S.K.find(k => k.id === S.lastRecv) : null;
-  const pt = R.mrn ? S.byMrn.get(R.mrn) : null;
-  const ptLines = pt ? S.K.filter(k => k.openOrder && k.mrn === pt.mrn) : [];
-  const check = L ? `<div class="item" style="margin-top:10px"><b>Check against the box:</b><dl class="kv" style="margin-top:6px"><dt>Patient</dt><dd>${esc(L.mrn ? nm(L.mrn) + ' · MRN ' + L.mrn : 'Besse stock')}</dd><dt>Dose</dt><dd>${L.recv ?? '—'} mg</dd><dt>Serial</dt><dd class="mono">${esc(L.serial)}</dd><dt>Lot</dt><dd class="mono">${esc(L.lot)}</dd><dt>Expiration</dt><dd>${fmtD(L.exp, 'full')}</dd><dt>Use by</dt><dd>${fmtD(L.useBy ?? L.expDate, 'full')}</dd><dt>Row</dt><dd>${L.r + 3}</dd></dl></div>` : '';
-  const genoaFlow = `
-    <div class="asec ${pt ? 'gray' : 'amber'}"><h3>1 · Scan the patient’s Genoa label</h3>
-      ${pt ? `<div class="row"><span class="name" style="font-weight:700">${esc(pt.name)}</span><span class="muted small">MRN ${esc(pt.mrn)} · ${esc(pt.rx || 'no R code on file')}</span><span class="grow"></span><button class="linkbtn" data-act="rcvReset">Change patient</button></div>`
-        : `<div class="scan"><input id="scanRx" data-scan="rx" placeholder="Scan the Genoa label (R number)" autocomplete="off" aria-label="Scan Genoa label"></div>
-           <div class="row small" style="margin-top:6px"><span class="muted">or pick:</span><input id="rcvPick" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm" data-act="rcvPick">Select</button></div>`}
-      ${R.link ? `<div class="msg warn">Label <b>${esc(R.link)}</b> isn’t linked to a patient yet. Choose the patient to link it to (saved to their Notes column on the Master Patient Tracker):<div class="row" style="margin-top:6px"><input id="rcvLinkPt" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm primary" data-act="rcvLink">Link label</button></div></div>` : ''}
-    </div>
-    <div class="asec ${pt ? 'amber' : 'gray'}" style="${pt ? '' : 'opacity:.55'}"><h3>2 · Scan the medication</h3>
-      <div class="scan"><input id="scanRecv" data-scan="recv" placeholder="${pt ? 'Scan the kit for ' + esc(pt.name) : 'Scan the patient label first'}" autocomplete="off" aria-label="Scan kit" ${pt ? '' : 'disabled'}></div>
-      ${pt ? `<div class="small" style="margin-top:6px">${ptLines.length ? `Awaiting receipt: <b>${ptLines.length}</b> (ordered ${ptLines.map(k => fmtD(k.ordered)).join(', ')})` : '<span style="color:var(--warn)">No order is awaiting receipt for this patient.</span>'}</div>` : ''}
-      ${R.confirm ? `<div class="msg warn"><div><b>Not awaiting receipt.</b> ${esc(pt?.name || '')} has no open order line. Add this ${R.confirm.mg ?? ''} mg kit (serial ${esc(R.confirm.serial)}) to Inventory for them anyway?<div class="row" style="margin-top:6px"><button class="btn sm primary" data-act="rcvAdd">Add to inventory</button><button class="btn sm ghost" data-act="rcvCancel">Cancel</button></div></div></div>` : ''}
-    </div>`;
+  const log = (S.rcvLog || []).filter(x => x.ph === S.recvPharm);
+  const holds = (S.rcvHold || []);
+  const q = (S.scanQ || []).filter(x => x.k === 'recv').length + (S.scanBusy === 'recv' ? 1 : 0);
+  const up = openLines[0];
   return `<div class="card">
     <div class="row"><div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p}</button>`).join('')}</div><span class="small muted grow">Expiration, serial, lot and mg are filled in by the workbook’s formulas from the scan.</span></div>
-    ${genoa ? genoaFlow : `<div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="Scan each Besse kit as it’s unpacked" autocomplete="off" aria-label="Scan kit to receive"></div><div class="small muted" style="margin-top:6px">Each scan fills the oldest open Besse order line for that dose, or starts a new Inventory line. New Besse kits are unlabeled stock until assigned.</div>`}
-    ${msgHTML(S.recvMsg)}${check}
+    <div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="${genoa ? 'Scan Genoa kits in the order listed below' : 'Scan each Besse kit as it’s unpacked'}" autocomplete="off" aria-label="Scan kit to receive"></div>
+    <div class="row small" style="margin-top:6px">${q ? `<span class="chip warn">Saving… ${q} scan${q > 1 ? 's' : ''} in line</span>` : '<span class="chip ok">Ready — keep scanning</span>'}
+      ${genoa ? (up ? `<span>Next up: <b>${esc(up.mrn ? nm(up.mrn) : 'Genoa stock')}</b>${lineMg(up) ? ` · ${lineMg(up)} mg` : ''}</span>` : '<span class="muted">Nothing awaiting receipt — any scan is set aside for you to assign a patient.</span>')
+        : '<span class="muted">Each scan fills the oldest open Besse order line for that dose, or starts a new Inventory line. New kits are unlabeled stock until assigned.</span>'}</div>
+    ${msgHTML(S.recvMsg)}
+    ${holds.length ? `<div class="msg warn" style="display:block"><b>Not awaiting receipt (${holds.length}).</b> These kits had no open order line. Choose the patient and add each to Inventory — it’s flagged as received without an order.
+      ${holds.map((h, i) => `<div class="row" style="margin-top:6px"><span class="mono small">${h.mg ?? '?'} mg · ${esc(h.serial)}</span><input id="hold${i}" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm primary" data-act="rcvAdd" data-i="${i}">Add to inventory</button><button class="btn sm ghost" data-act="rcvDrop" data-i="${i}">Set aside</button></div>`).join('')}</div>` : ''}
+    ${log.length ? `<div class="tw" style="margin-top:10px"><table class="t rt"><thead><tr><th>Received this session · check against the box</th><th>Dose</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Row</th></tr></thead><tbody>${log.slice().reverse().map(x => { const k = S.K.find(y => y.id === x.id); return `<tr${x.warn ? ' style="background:var(--warnbg,#fff6e0)"' : ''}><td data-l="Patient"><b>${esc(x.who)}</b>${x.warn ? ` <span class="chip warn">${esc(x.warn)}</span>` : ''}</td><td data-l="Dose">${x.mg} mg</td><td data-l="Serial" class="mono">${esc(x.serial)}</td><td data-l="Lot" class="mono">${esc(k?.lot ?? '')}</td><td data-l="Use by">${k ? fmtD(k.useBy ?? k.expDate) : ''}</td><td data-l="Row">${k ? k.r + 3 : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
     ${datalist('dlPts', S.P.filter(p => p.pharm !== 'BESSE').map(p => `${p.name} · ${p.mrn}`))}
   </div>
   <div class="card"><h2>Awaiting receipt · ${S.recvPharm} <span class="chip">${openLines.length}</span></h2>
-    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>MRN</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map(k => { const n = k.mrn ? next(k.mrn) : null; return `<tr><td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b>${!k.mrn && k.comments ? ` <span class="small muted">${esc(k.comments)}</span>` : ''}</td><td data-l="MRN">${esc(k.mrn || '—')}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${k.mrn ? (n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">None booked</span>') : '—'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" style="text-align:right">${genoa && k.mrn ? `<button class="btn sm" data-act="rcvFor" data-m="${esc(k.mrn)}">Receive</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">Nothing awaiting receipt.</div>`}
+    ${genoa && openLines.length ? '<div class="small muted" style="margin-bottom:6px">Pull the bags in this order and scan each kit. Use <b>Move to top</b> if a different bag is in your hand.</div>' : ''}
+    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr>${genoa ? '<th>#</th>' : ''}<th>Patient</th><th>MRN</th><th>Dose</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map((k, i) => { const n = k.mrn ? next(k.mrn) : null; return `<tr${genoa && i === 0 ? ' style="background:var(--accbg,#eef4ff)"' : ''}>${genoa ? `<td data-l="#">${i === 0 ? '<b>Next</b>' : i + 1}</td>` : ''}<td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b>${!k.mrn && k.comments ? ` <span class="small muted">${esc(k.comments)}</span>` : ''}</td><td data-l="MRN">${esc(k.mrn || '—')}</td><td data-l="Dose">${lineMg(k) ? lineMg(k) + ' mg' : '—'}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${k.mrn ? (n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">None booked</span>') : '—'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" style="text-align:right">${genoa && i > 0 ? `<button class="btn sm" data-act="rcvTop" data-id="${esc(k.id)}">Move to top</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">Nothing awaiting receipt.</div>`}
   </div>`;
 }
-function selectRcvPatient(mrn){ S.rcv = { mrn }; S.recvMsg = null; S.lastRecv = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); }
-function rxScan(raw){
-  const p = patientByRx(raw);
-  if (p){ selectRcvPatient(p.mrn); return; }
-  const code = rxText(raw) || cleanScan(raw);
-  S.rcv = { link: code }; S.recvMsg = null; render(); setTimeout(() => $('#rcvLinkPt')?.focus(), 30);
-}
-async function rcvLink(){
-  const mrn = mrnFromInput($('#rcvLinkPt')?.value); const p = mrn && S.byMrn.get(mrn); if (!p) return setMsg('recvMsg', 'bad', 'Choose a patient from the list.');
-  const t = S.tables.patients; const c = t.cols.notes; if (c == null) return setMsg('recvMsg', 'bad', 'The Master Patient Tracker has no Notes column to store the label.');
-  const old = String(t.values[p.r][c] ?? ''); const code = S.rcv.link;
-  const val = rxText(old) ? old.replace(/R\s?\d{5,}(\/\d+)?/i, code) : (old.trim() ? `${code} ${old}` : code);
-  if (await write('Linking label…', () => S.store.update('patients', p.r, t.snap(p.r), [[c, val]]), `Label ${code} linked to ${p.name}.`)) selectRcvPatient(p.mrn);
-}
+function rcvLogAdd(x){ (S.rcvLog = S.rcvLog || []).push({ ...x, ph: S.recvPharm }); if (S.rcvLog.length > 60) S.rcvLog.shift(); }
 async function recvScan(raw){
   const scan = cleanScan(raw); const p = parseScan(scan); const T = todaySerial();
-  if (!p) return setMsg('recvMsg', 'bad', S.recvPharm === 'Genoa' && rxBase(scan) ? 'That looks like a patient label — scan it in step 1.' : 'That doesn’t read as a Spravato barcode. Scan the 2D code on the kit.');
-  if (!p.mg) return setMsg('recvMsg', 'warn', 'Scanned code isn’t a known 56 mg or 84 mg Spravato product. Check the kit.');
-  const dup = S.K.find(k => k.serialN === normScan(p.serial));
-  if (dup) return setMsg('recvMsg', 'bad', `Serial ${esc(p.serial)} is already in the log (row ${dup.r + 3}${dup.mrn ? ', ' + esc(nm(dup.mrn)) : ''}).`);
+  if (!p) return setMsg('recvMsg', 'bad', 'That doesn’t read as a Spravato barcode. Scan the 2D code on the kit.');
+  if (!p.mg) return setMsg('recvMsg', 'warn', `Serial ${esc(p.serial)} isn’t a known 56 mg or 84 mg Spravato product. Check the kit.`);
+  const sn = normScan(p.serial);
+  const dup = S.K.find(k => k.serialN === sn) || (S.rcvHold || []).find(h => normScan(h.serial) === sn);
+  if (dup) return setMsg('recvMsg', 'bad', `Serial ${esc(p.serial)} was already scanned${dup.r != null ? ` (row ${dup.r + 3}${dup.mrn ? ', ' + esc(nm(dup.mrn)) : ''})` : ''}.`);
   const me = CFG.me; if (!me) { openSettings(); return setMsg('recvMsg', 'warn', 'Add your name in Settings first — it goes in Logging PCT.'); }
   if (S.recvPharm === 'Genoa'){
-    const mrn = S.rcv?.mrn; if (!mrn) return setMsg('recvMsg', 'warn', 'Scan the patient’s Genoa label first.');
-    const line = S.K.filter(k => k.openOrder && k.mrn === mrn).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0))[0];
-    if (!line){ S.rcv.confirm = { scan, mg: p.mg, serial: p.serial }; S.recvMsg = null; render(); return; }
-    const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA');
-    const { out } = changesFor('kits', obj);
-    if (await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out), `Received for ${nm(mrn)}.`)){ S.lastRecv = 'S:' + normScan(p.serial); S.recvMsg = { kind:'ok', html:`Received ${p.mg} mg for <b>${esc(nm(mrn))}</b> into row ${line.r + 3}. Scan the next patient label.` }; S.rcv = {}; render(); setTimeout(() => $('#scanRx')?.focus(), 30); }
+    const L = recvQueue();
+    const fits = k => { const m = lineMg(k); return !m || m === p.mg; };
+    const line = L.find(fits);
+    if (!line){ (S.rcvHold = S.rcvHold || []).push({ scan, mg: p.mg, serial: p.serial }); S.recvMsg = { kind:'warn', html:`${p.mg} mg · ${esc(p.serial)} isn’t awaiting receipt — set aside below. Keep scanning.` }; render(); return; }
+    const skipped = L.indexOf(line) > 0 ? L[0] : null;
+    const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText(line.mrn ? (S.byMrn.get(line.mrn)?.pharm || 'GENOA') : 'GENOA');
+    const { out } = changesFor('kits', obj); const who = line.mrn ? nm(line.mrn) : 'Genoa stock';
+    if (await write(null, () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out))){
+      if (S.rcvFirst === line.id) S.rcvFirst = null;
+      const warn = skipped ? `${p.mg} mg — skipped ${skipped.mrn ? nm(skipped.mrn) : 'stock'} (${lineMg(skipped)} mg)` : '';
+      rcvLogAdd({ id: 'S:' + sn, who, mg: p.mg, serial: p.serial, warn });
+      S.recvMsg = { kind: skipped ? 'warn' : 'ok', html: `Received ${p.mg} mg for <b>${esc(who)}</b>.${skipped ? ` The next line (${esc(skipped.mrn ? nm(skipped.mrn) : 'stock')}) expects ${lineMg(skipped)} mg, so this went to the next ${p.mg} mg line — check the bag.` : ''}` };
+      render();
+    }
     return;
   }
   const opens = S.K.filter(k => k.openOrder && k.pharm === 'BESSE' && !k.mrn).sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0));
   const line = opens.find(k => num(String(k.comments ?? '').match(/(\d+)\s*mg/i)?.[1]) === p.mg) || opens.find(k => !/\d+\s*mg/i.test(String(k.comments ?? ''))) || null;
   let ok;
-  if (line){ const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; const { out } = changesFor('kits', obj); ok = await write('Receiving…', () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out)); }
-  else { const { out } = changesFor('kits', { loggingpct: me, scanhere: scan, pharmacy: pharmText('BESSE'), datereceived: { date: T } }); ok = await write('Receiving…', () => S.store.add('kits', out)); }
-  if (ok){ S.lastRecv = 'S:' + normScan(p.serial); const L = S.K.find(k => k.id === S.lastRecv); S.recvMsg = { kind:'ok', html:`Received Besse ${p.mg} mg · serial ${esc(p.serial)}${L ? ' into row ' + (L.r + 3) : ''}${line ? ' (order line filled)' : ' (no open order line — added as new stock)'}. Scan the next kit.` }; render(); }
+  if (line){ const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; const { out } = changesFor('kits', obj); ok = await write(null, () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out)); }
+  else { const { out } = changesFor('kits', { loggingpct: me, scanhere: scan, pharmacy: pharmText('BESSE'), datereceived: { date: T } }); ok = await write(null, () => S.store.add('kits', out)); }
+  if (ok){ rcvLogAdd({ id: 'S:' + sn, who: 'Besse stock', mg: p.mg, serial: p.serial, warn: line ? '' : 'no open order line' }); S.recvMsg = { kind:'ok', html:`Received Besse ${p.mg} mg · ${esc(p.serial)}${line ? ' (order line filled)' : ' (no open order line — added as new stock)'}.` }; render(); }
 }
-async function rcvAdd(){
-  const c = S.rcv?.confirm; const mrn = S.rcv?.mrn; if (!c || !mrn) return; const T = todaySerial();
-  const { out } = changesFor('kits', { loggingpct: CFG.me, scanhere: c.scan, mrn: mrnVal(mrn), pharmacy: pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA'), datereceived: { date: T }, comments: `${nm(mrn)} | Received without an open order ${fmtD(T)}` });
-  if (await write('Adding to inventory…', () => S.store.add('kits', out), `Added for ${nm(mrn)}.`)){ S.lastRecv = 'S:' + normScan(parseScan(c.scan).serial); S.recvMsg = { kind:'warn', html:`Added ${c.mg} mg for <b>${esc(nm(mrn))}</b> — flagged as received without an open order.` }; S.rcv = {}; render(); }
+async function rcvAdd(i){
+  const h = (S.rcvHold || [])[i]; if (!h) return; const T = todaySerial();
+  const mrn = mrnFromInput($('#hold' + i)?.value); if (!mrn || !S.byMrn.has(mrn)) return setMsg('recvMsg', 'bad', 'Choose the patient from the list first.');
+  if (!CFG.me){ openSettings(); return; }
+  const { out } = changesFor('kits', { loggingpct: CFG.me, scanhere: h.scan, mrn: mrnVal(mrn), pharmacy: pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA'), datereceived: { date: T }, comments: `${nm(mrn)} | Received without an open order ${fmtD(T)}` });
+  if (await write('Adding to inventory…', () => S.store.add('kits', out), `Added for ${nm(mrn)}.`)){ S.rcvHold.splice(i, 1); rcvLogAdd({ id: 'S:' + normScan(h.serial), who: nm(mrn), mg: h.mg, serial: h.serial, warn: 'received without an open order' }); render(); }
 }
 function mrnFromInput(v){ const m = String(v || '').match(/(\d{3,})\s*$/); if (m) return m[1]; const p = S.P.find(p => p.name.toUpperCase() === String(v || '').trim().toUpperCase()); return p?.mrn || null; }
 
@@ -1463,7 +1461,14 @@ function findHistRow(){ // the history's DATE column holds one row per order wee
 
 // ---------- daily audit ----------
 function auditState(){ const d = isoOf(todaySerial()); if (!S.aud || S.aud.date !== d) S.aud = { date: d, a1: CFG.me || '', a2: '', scans: [], filled: false }; return S.aud; }
-async function saveAudit(){ await S.store.setDoc('eskAudit', S.aud); }
+async function saveAudit(){ clearTimeout(S._audT); await S.store.setDoc('eskAudit', S.aud); }
+function saveAuditSoon(){ clearTimeout(S._audT); S._audT = setTimeout(saveAudit, 1200); } // batch rapid scans into one save
+// Receiving scans wait their turn here so the scanner never has to pause for the workbook.
+async function runScanQ(){
+  if (S.scanBusy) return;
+  while (S.scanQ.length){ const x = S.scanQ.shift(); S.scanBusy = x.k; try { if (x.k === 'recv') await recvScan(x.v); } catch (e){ console.error(e); } }
+  S.scanBusy = null; render();
+}
 function auditModel(){
   const A = auditState(); const seen = new Set();
   const rows = A.scans.map((sc, i) => {
@@ -1550,7 +1555,7 @@ function openPatient(mrn){
   const p = S.byMrn.get(mrn); const T = todaySerial();
   const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
   const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
-  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${p.rx ? `<span class="chip">${esc(p.rx)}</span>` : ''}${medChip(mrn)}</div>` : ''}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
+  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${medChip(mrn)}</div>` : ''}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
     <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
@@ -1708,8 +1713,7 @@ const ACT = {
     toast(ok ? 'ok' : 'bad', ok ? 'Copied.' : 'Couldn’t copy — use Print instead.');
   },
   print: el => { const t = el.dataset.t; document.querySelectorAll('.print-target').forEach(x => x.classList.toggle('print-target', x.id === t)); document.body.dataset.print = t; setTimeout(() => { window.print(); delete document.body.dataset.print; }, 30); },
-  recvPh: el => { S.recvPharm = el.dataset.p; S.recvLine = null; S.recvMsg = null; render(); },
-  recvPick: el => { S.recvLine = S.recvLine === el.dataset.id ? null : el.dataset.id; S.recvMsg = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 20); },
+  recvPh: el => { S.recvPharm = el.dataset.p; S.rcvFirst = null; S.recvMsg = null; render(); $('#scanRecv')?.focus(); },
   orderTab: el => { S.orderTab = el.dataset.p; render(); },
   copyBesse: async () => { const { html, text } = besseTableText(); const ok = await copyText(text, html); toast(ok ? 'ok' : 'bad', ok ? 'Table copied — paste it into the email.' : 'Couldn’t copy.'); },
   emailBesse: async () => {
@@ -1740,12 +1744,9 @@ const ACT = {
   oMail: async () => { const e = orderEmail(); await copyText(e.text, e.html); const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(CFG.email)}?subject=${encodeURIComponent(e.subj)}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); toast('info', 'Email opened — paste (Ctrl+V) the formatted order into the body.'); },
   reassign: el => openReassign(el.dataset.id),
   reSave: () => reSave(),
-  rcvReset: () => { S.rcv = {}; S.recvMsg = null; render(); setTimeout(() => $('#scanRx')?.focus(), 30); },
-  rcvPick: () => { const m = mrnFromInput($('#rcvPick')?.value); if (m && S.byMrn.has(m)) selectRcvPatient(m); else setMsg('recvMsg', 'bad', 'Choose a patient from the list.'); },
-  rcvFor: el => { S.recvPharm = 'Genoa'; selectRcvPatient(el.dataset.m); },
-  rcvLink: () => rcvLink(),
-  rcvAdd: () => rcvAdd(),
-  rcvCancel: () => { if (S.rcv) S.rcv.confirm = null; render(); },
+  rcvAdd: el => rcvAdd(+el.dataset.i),
+  rcvDrop: el => { S.rcvHold.splice(+el.dataset.i, 1); render(); },
+  rcvTop: el => { S.rcvFirst = el.dataset.id; render(); $('#scanRecv')?.focus(); },
   audPrint: () => openPrintable(auditDoc(), `Daily audit · ${fmtD(todaySerial(), 'full')}`),
   audFill: () => audFill(),
   audClear: async () => { if (!confirmClear()) return; S.aud = null; auditState(); await saveAudit(); render(); },
@@ -1756,7 +1757,7 @@ const ACT = {
   winReset: () => { S.win = defaultWindow(); render(); },
   copyNeed: async () => { const rows = genoaModel().rows.filter(r => r.cover === 'need'); const t = rows.map(r => `${nm(r.a.mrn)}\tMRN ${r.a.mrn}\t${r.inf.mg ?? '?'} mg\t${PH_LABEL[r.inf.pharm]}\tneeded ${fmtD(r.a.date, 'full')} ${fmtT(r.a.time)}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Order list copied.'); },
   copyFollow: async () => { const t = followModel().map(f => `${nm(f.k.mrn)}\tMRN ${f.k.mrn}\t${PH_LABEL[f.k.pharm]}\tordered ${fmtD(f.k.ordered, 'full')}\t${f.next ? 'needed ' + fmtD(f.next.date, 'full') + ' ' + fmtT(f.next.time) : 'no appt'}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Follow-up list copied.'); },
-  recvGo: el => { const k = S.K.find(x => x.id === el.dataset.id); if (!k) return; S.view = 'inventory'; S.invTab = 'receive'; if (k.mrn && k.pharm !== 'BESSE'){ S.recvPharm = 'Genoa'; selectRcvPatient(k.mrn); return; } S.recvPharm = k.pharm === 'BESSE' ? 'Besse' : 'Genoa'; S.recvLine = k.id; S.recvMsg = { kind:'info', html:`Receiving for <b>${esc(nm(k.mrn))}</b> — scan the kit.` }; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); },
+  recvGo: el => { const k = S.K.find(x => x.id === el.dataset.id); if (!k) return; S.view = 'inventory'; S.invTab = 'receive'; S.recvPharm = k.pharm === 'BESSE' ? 'Besse' : 'Genoa'; S.rcvFirst = k.id; S.recvMsg = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); },
   fuLog: el => openFollowUp(el.dataset.id),
   fuSave: el => fuSave(el.dataset.id),
   cancelLine: el => openCancel(el.dataset.id),
@@ -1784,16 +1785,19 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.target.dataset?.note != null){ if (e.key === 'Escape'){ S.noteFor = null; render(); return; } if (e.key === 'Enter'){ e.preventDefault(); const t = e.target.value.trim(); const m = e.target.dataset.note; S.noteFor = null; if (t){ S.notes = S.notes || {}; (S.notes[m] = S.notes[m] || []).push({ t, by: CFG.me || '', at: isoOf(todaySerial()) }); saveNotes(); } render(); return; } }
-  if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') && $('#modal').hidden){ const el = document.querySelector('[data-scan]'); if (el){ e.preventDefault(); el.focus(); } return; }
+  // A scanner types like a keyboard. If focus wandered off (a click on a button), send the keystrokes to the page's scan box.
+  if (!/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') && $('#modal').hidden && !e.ctrlKey && !e.metaKey && !e.altKey){
+    const el = document.querySelector('[data-scan]:not([disabled])');
+    if (el && (e.key === '/' || (e.key.length === 1 && ['recv','audit'].includes(el.dataset.scan)))){ el.focus(); if (e.key === '/'){ e.preventDefault(); } return; }
+  }
   if (e.key === 'Escape' && !$('#modal').hidden){ closeModal(); return; }
   const el = e.target; if (e.key !== 'Enter' || !el.dataset?.scan) return;
   e.preventDefault(); const v = el.value; el.value = ''; if (!cleanScan(v)) return;
   const k = el.dataset.scan;
   if (k === 'today') todayScan(v);
-  else if (k === 'recv') recvScan(v);
+  else if (k === 'recv'){ S.scanQ.push({ k, v }); runScanQ(); render(); }
   else if (k === 'inv') invScan(v);
-  else if (k === 'rx') rxScan(v);
-  else if (k === 'audit'){ const A = auditState(); A.scans.push({ raw: cleanScan(v), at: Date.now() }); A.filled = false; saveAudit(); render(); setTimeout(() => $('#scanAudit')?.focus(), 10); }
+  else if (k === 'audit'){ const A = auditState(); A.scans.push({ raw: cleanScan(v), at: Date.now() }); A.filled = false; saveAuditSoon(); render(); }
   else if (k === 'admin'){ const { p, list } = findByScan(v); if (!list.length){ S.adm.msg = { kind:'bad', html: p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.' }; } else { S.adm.kitId = (list.find(x => !x.administered) || list[0]).id; S.adm.msg = null; } renderAdmin(); }
 });
 document.addEventListener('input', e => {
