@@ -74,6 +74,13 @@ table.rt td .row{gap:6px}
 :root[data-theme="dark"] .pill.start{background:#2f2645;color:#c7b3f5}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.start{background:#2f2645;color:#c7b3f5}}
 .appt2 .ar .r4{margin-top:auto}
+.appt2 .docrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
+.docrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+.docrow .lab{font-weight:700;margin-right:2px}
+.doc{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface);font-size:12px;line-height:1.5;color:var(--muted)}
+button.doc{cursor:pointer} button.doc:hover{border-color:var(--accent)}
+.doc.on{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-weight:700}
+.okText{color:var(--ok)}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:700;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink)}
 .pill.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent} .pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent} .pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .flag{display:inline-flex;align-items:center;gap:2px;border-radius:8px;padding:2px 4px 2px 8px;font-weight:700;font-size:12px}
@@ -1056,6 +1063,7 @@ function actionHTML(){
     <div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : '<div class="small">Nothing to order for the next 3 business days.</div>'}</div>
     <div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.length ? m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>` : '<div class="small">Nothing in transit is needed in the next 3 business days.</div>'}</div>
     <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${protoFlag(i.p)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
+    ${(() => { const L = docOpenModel(); return L.length ? `<div class="asec amber"><h3>Documentation to finish · ${L.length}</h3><div class="small muted">Given visits from the last 7 days missing the Tx report or REMS form.</div>${L.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${i.a.date === T ? 'Today' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)}</span></div>${docRowHTML(i).replace('docrow', 'docrow line')}</div>`).join('')}</div>` : ''; })()}
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
       ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
@@ -1075,7 +1083,7 @@ function todayHTML(){
     <div class="row" style="margin-top:10px"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
       <div class="grow" style="text-align:center;font-weight:700">${day === T ? 'Today · ' : ''}${DAYNAME[dowOf(day)]}, ${fmtD(day, 'full')}</div>
       <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}</div>
-    <div class="row small" style="margin-top:10px;gap:8px;justify-content:center"><span class="chip">${done}/${act.length} given</span>${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}</div>
+    <div class="row small" style="margin-top:10px;gap:8px;justify-content:center"><span class="chip">${done}/${act.length} given</span>${(() => { const dd = act.filter(i => docState(i).done).length; return act.length ? `<span class="chip ${dd === act.length ? 'ok' : ''}">${dd}/${act.length} documented</span>` : ''; })()}${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}</div>
   </div>
   <div class="cols swap"><div>
     ${actionHTML()}
@@ -1107,6 +1115,38 @@ function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done';
   if (!i.suggest) return 'bad';
   return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
+}
+// Visit documentation checklist. ESK Tracker + med logs are done by Administer in this add-in;
+// Tx report (NextGen) and the REMS monitoring form are ticked by hand (saved with the workbook).
+const REMS_URL = 'https://spravatorems.com/Home/#Public';
+const DOC_ITEMS = [['tracker', 'ESK Tracker'], ['logs', 'Med logs'], ['tx', 'Tx report'], ['rems', 'REMS form']];
+const docGet = (key, t) => (S.docs || {})[key]?.[t] || null;
+function docState(i){
+  const given = !!i.adminKit; const o = {};
+  for (const [t] of DOC_ITEMS) o[t] = t === 'tracker' || t === 'logs' ? given : !!docGet(i.a.key, t);
+  o.n = DOC_ITEMS.filter(([t]) => o[t]).length; o.done = o.n === DOC_ITEMS.length; return o;
+}
+async function docToggle(key, t){
+  S.docs = S.docs || {}; const cur = S.docs[key] || (S.docs[key] = {});
+  if (cur[t]) delete cur[t]; else cur[t] = { by: CFG.me || '', at: new Date().toISOString() };
+  if (!Object.keys(cur).length) delete S.docs[key];
+  const cut = todaySerial() - 45; for (const k of Object.keys(S.docs)){ const d = Number(k.split('|')[1]); if (d && d < cut) delete S.docs[k]; } // keep it small
+  render(); await S.store.setDoc('eskDocs', S.docs);
+}
+function docRowHTML(i){
+  const d = docState(i); const given = !!i.adminKit;
+  const chip = ([t, l]) => {
+    if (t === 'tracker' || t === 'logs') return `<span class="doc ${d[t] ? 'on' : ''}" title="${d[t] ? 'Done when the kit was marked administered' : 'Completes automatically when you Administer'}">${d[t] ? '✓' : '○'} ${l}</span>`;
+    const g = docGet(i.a.key, t);
+    return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? `Marked by ${esc(g.by || '—')} — click to undo` : t === 'tx' ? 'Completed in NextGen — click to mark done' : 'Uploaded to REMS — click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>${t === 'rems' ? `<a class="linkbtn small" href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site to upload the monitoring form">Upload ↗</a>` : ''}`;
+  };
+  return `<div class="docrow small"><span class="lab ${d.done ? 'okText' : given ? 'warnText' : 'muted'}">Documentation ${d.n}/${DOC_ITEMS.length}</span>${DOC_ITEMS.map(chip).join('')}</div>`;
+}
+// Given visits (last 7 days) whose documentation isn't finished.
+function docOpenModel(){
+  const T = todaySerial(); const out = [];
+  for (let d = T - 7; d <= T; d++) for (const i of todayModel(d)) if (i.a.active && i.adminKit && !docState(i).done) out.push(i);
+  return out;
 }
 // Appointment notes / alerts (saved with the workbook, per patient)
 const notesFor = mrn => (S.notes || {})[mrn] || [];
@@ -1142,6 +1182,7 @@ function itemHTML(i){
       <div class="r3">${k ? `<span class="muted small">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</div>
       <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}</div>
     </div>
+    ${a.active ? docRowHTML(i) : ''}
   </div>`;
 }
 
@@ -1794,6 +1835,7 @@ const ACT = {
   genoaOrder,
   taskDo: el => taskSet(el.dataset.m, el.dataset.k, true),
   taskDoX: el => taskSet(el.dataset.m, 'sched', true),
+  docTog: el => docToggle(el.dataset.k, el.dataset.t),
   noteAdd: el => { S.noteFor = el.dataset.k; render(); setTimeout(() => $('#noteIn')?.focus(), 20); },
   noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
@@ -1914,7 +1956,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2035,7 +2077,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
