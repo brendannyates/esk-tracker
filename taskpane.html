@@ -77,6 +77,15 @@ table.rt td .row{gap:6px}
 .appt2 .ar .r4{margin-top:auto}
 .appt2 .docrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
 .docrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+.appt2 .vrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px dashed var(--line);padding-top:8px}
+.floor{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--info-soft)}
+.floor .fl{display:inline-flex;gap:6px;align-items:center} .floor .name{font-weight:800}
+.cocols{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;margin-top:6px}
+@media (max-width:760px){.cocols{grid-template-columns:1fr}}
+.coform .q{font-weight:700;font-size:13px;margin-top:10px}
+.opts{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px} .opt{display:inline-flex;gap:6px;align-items:flex-start;font-size:13px;cursor:pointer}
+.coout{position:sticky;top:0;align-self:start}
+.ngbox{border:1px solid var(--line);border-left:5px solid var(--info);border-radius:10px;padding:10px 12px;background:var(--info-soft)}
 .docrow .lab{font-weight:700;margin-right:2px}
 .doc{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface);font-size:12px;line-height:1.5;color:var(--muted)}
 button.doc{cursor:pointer} button.doc:hover{border-color:var(--accent)}
@@ -275,7 +284,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'' };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, dischargeMin:120 };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
@@ -1064,7 +1073,7 @@ function actionHTML(){
     <div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : '<div class="small">Nothing to order for the next 3 business days.</div>'}</div>
     <div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.length ? m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>` : '<div class="small">Nothing in transit is needed in the next 3 business days.</div>'}</div>
     <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${protoFlag(i.p)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
-    ${(() => { const L = docOpenModel(); return L.length ? `<div class="asec amber"><h3>Documentation to finish · ${L.length}</h3><div class="small muted">Given visits from the last 7 days missing the Tx report or REMS form.</div>${L.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${i.a.date === T ? 'Today' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)}</span></div>${docRowHTML(i).replace('docrow', 'docrow line')}</div>`).join('')}</div>` : ''; })()}
+    ${(() => { const L = docOpenModel(); return L.length ? `<div class="asec amber"><h3>Documentation to finish · ${L.length}</h3><div class="small muted">Given visits from the last 7 days missing the Tx report, REMS form or rescue-med log.</div>${L.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${i.a.date === T ? 'Today' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)}</span></div>${docRowHTML(i).replace('docrow', 'docrow line')}</div>`).join('')}</div>` : ''; })()}
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
       ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
@@ -1091,6 +1100,8 @@ function todayHTML(){
     ${schedHTML()}
   </div><div>
     <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
+      ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
+        return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}<span class="chip ${dueCls(x.due, true)}" data-due="${x.due.at}" data-what="${esc(x.due.what)}" data-today="1">${esc(dueText(x.due, true))}</span></span>`).join('')}</div>` : ''; })()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div>
   </div></div>`;
@@ -1117,15 +1128,150 @@ function itemState(i){
   if (!i.suggest) return 'bad';
   return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
 }
+// ---------- in-clinic visit: start time, vitals/discharge timers, check-out, Tx report draft, rescue meds ----------
+// Saved with the workbook (document setting "eskVisit"), keyed by appointment.
+const RESCUE = ['Zofran', 'Nifedipine', 'Captopril'];
+const LVL = ['Not at all', 'Mild', 'Moderate', 'Severe', 'Extreme'];
+const SED_NG = [[6, 'Agitated'], [5, 'Responds readily to name spoken in normal tone (alert)'], [4, 'Lethargic response to name spoken in normal tone'], [3, 'Responds only after name is called loudly and/or repeatedly'], [2, 'Responds only after mild prodding or shaking'], [1, 'Does not respond to mild prodding or shaking'], [0, 'Does not respond to deep stimulus']];
+const NG_BOX = 'Patient denies dizziness. Patient endorses having a ride home. Gait noted to be stable.';
+const visitGet = key => (S.visit || {})[key] || null;
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+const hhmm = m => m == null ? '' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const fromHHMM = v => { const m = String(v || '').match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
+async function saveVisit(){
+  const cut = todaySerial() - 45; for (const k of Object.keys(S.visit || {})){ const d = Number(k.split('|')[1]); if (d && d < cut) delete S.visit[k]; }
+  await S.store.setDoc('eskVisit', S.visit || {});
+}
+function visitSet(key, patch){ S.visit = S.visit || {}; S.visit[key] = Object.assign(S.visit[key] || {}, patch); return saveVisit(); }
+// What's due next for a started visit: 40-min vitals, then discharge.
+function visitDue(v){
+  if (!v || v.start == null || v.out) return null;
+  if (!v.v40) return { what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40' };
+  return { what: 'Discharge', at: v.start + (+CFG.dischargeMin || 120), kind: 'dis' };
+}
+function dueText(due, isToday){
+  if (!due) return '';
+  if (!isToday) return `${due.what} ${fmtT(due.at)}`;
+  const d = due.at - nowMin();
+  return `${due.what} ${d > 0 ? `in ${d} min` : d === 0 ? 'now' : `overdue ${-d} min`} · ${fmtT(due.at)}`;
+}
+const dueCls = (due, isToday) => !due || !isToday ? '' : due.at - nowMin() <= 0 ? 'bad' : due.at - nowMin() <= 5 ? 'warn' : 'info';
+function visitRowHTML(i){
+  const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
+  if (!v || v.start == null) return `<div class="vrow small"><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><span class="muted">enter start time &amp; bay to run the vitals and discharge timers</span>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`;
+  const due = visitDue(v);
+  return `<div class="vrow small"><span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
+    ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : `<span class="chip ${dueCls(due, isToday)}" data-due="${due.at}" data-what="${esc(due.what)}" data-today="${isToday ? 1 : 0}">${esc(dueText(due, isToday))}</span>`}
+    ${v.v40 ? `<span class="muted">${esc(CFG.vitalsMin)}-min vitals ✓ ${fmtT(v.v40)}</span>` : ''}
+    ${(v.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}
+    <span class="grow"></span>
+    ${!v.out && !v.v40 ? `<button class="btn sm" data-act="vV40" data-k="${esc(a.key)}">${esc(CFG.vitalsMin)}-min vitals done</button>` : ''}
+    <button class="btn sm ${v.out ? '' : 'primary'}" data-act="vOut" data-k="${esc(a.key)}">${v.out ? 'Tx report draft' : 'Check out'}</button>
+    <button class="linkbtn" data-act="vStart" data-k="${esc(a.key)}" title="Edit start time / bay">edit</button></div>`;
+}
+function openStart(key){
+  const v = visitGet(key) || {}; const it = S.A.find(a => a.key === key);
+  openModal(`<h2>Start treatment</h2><div class="small muted">${esc(nm(it?.mrn))} · ${fmtT(it?.time)} appointment</div>
+    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="vsT">Treatment start time</label><input id="vsT" class="fld" type="time" value="${hhmm(v.start ?? nowMin())}"></div>
+    <div><label class="lbl" for="vsB">Bay #</label><input id="vsB" class="fld" value="${esc(v.bay || '')}" placeholder="optional"></div></div>
+    <div class="small muted" style="margin-top:8px">Timers: ${esc(CFG.vitalsMin)}-min vitals, then discharge at ${esc(CFG.dischargeMin)} min (change in Settings).</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">${v.start != null ? '<button class="btn ghost" data-act="vClear" data-k="' + esc(key) + '">Clear start</button><span class="grow"></span>' : ''}<button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
+  setTimeout(() => $('#vsT')?.focus(), 30);
+}
+// ----- check-out form (same order as the paper post-treatment form) -----
+function coDefaults(key){
+  const v = visitGet(key) || {}; const o = v.form || {};
+  return Object.assign({ self: 'self', disc: null, unreal: null, sed10: null, nausea: false, dizzy: false, safe: null, ride: null, exp: null, notes: '', sedMin: '', dissMin: '', ngSed: null, gait: false, rescue: JSON.parse(JSON.stringify(v.rescue || [])) }, JSON.parse(JSON.stringify(o)), { rescue: JSON.parse(JSON.stringify(v.rescue || [])) });
+}
+function coNote(c){
+  const miss = []; const L = n => n == null ? (miss.push('x'), '[___]') : LVL[n].toLowerCase();
+  const out = [];
+  out.push(c.self === 'staff' ? 'Pt answered dissociation scale questions with staff assistance.' : 'Pt self-answered dissociation scale questions.');
+  out.push(`Pt rated sedation ${c.sed10 ?? (miss.push('sed'), '[___]')}/10.`);
+  out.push(c.disc === 0 ? 'Pt says they did not feel disconnected from the world.' : `Pt says they felt - ${L(c.disc)} - disconnected from the world.`);
+  out.push(c.unreal === 0 ? 'Pt says things did not seem dream like.' : `Pt says things were - ${L(c.unreal)} - dream like.`);
+  out.push(`Sedation lasted ${String(c.sedMin).trim() || (miss.push('sm'), '[___]')}min.`);
+  out.push(`Dissociation lasted ${String(c.dissMin).trim() || (miss.push('dm'), '[___]')}min.`);
+  out.push(`Pt rated today's experience as ${c.exp || (miss.push('exp'), '[___]')}.`);
+  if (!c.nausea && !c.dizzy) out.push('Pt did not experience nausea/upset stomach or dizziness.');
+  else if (c.nausea && c.dizzy) out.push('Pt experienced nausea/upset stomach and dizziness.');
+  else if (c.nausea) out.push('Pt experienced nausea/upset stomach. Pt did not experience dizziness.');
+  else out.push('Pt experienced dizziness. Pt did not experience nausea/upset stomach.');
+  for (const r of c.rescue || []) if (r.med) out.push(`${r.med} ${r.dose || '[dose]'} administered${r.time ? ' at ' + fmtT(fromHHMM(r.time)) : ''}${r.reason ? ' for ' + r.reason : ''}.`);
+  if (c.safe === 'yes' && c.ride === 'yes') out.push('Pt confirmed feeling safe/able to leave clinic and having a ride home.');
+  else {
+    if (c.safe === 'yes') out.push('Pt confirmed feeling safe/able to leave clinic.'); else if (c.safe === 'no') out.push('Pt did not feel safe/able to leave clinic.'); else { miss.push('safe'); out.push('Pt [___] feeling safe/able to leave clinic.'); }
+    if (c.ride === 'yes') out.push('Pt confirmed having a ride home.'); else if (c.ride === 'no') out.push('Pt did not confirm having a ride home.'); else { miss.push('ride'); out.push('Pt [___] having a ride home.'); }
+  }
+  if (String(c.notes || '').trim()) out.push(`Pt notes: "${String(c.notes).trim()}"`);
+  return { text: out.join('\n'), missing: miss.length };
+}
+function coOutHTML(){
+  const c = S.co; const n = coNote(c); const box = !c.dizzy && c.ride === 'yes' && c.gait;
+  const ngLvl = v => v == null ? '<span class="warnText">not answered</span>' : `<b>${v}</b> = ${esc(LVL[v])}`;
+  const stop = c.safe === 'no' || c.ride === 'no';
+  return `${stop ? '<div class="msg bad"><b>Not ready to discharge.</b> The patient did not confirm feeling safe to leave and/or a ride home — follow the clinic’s discharge protocol and notify the provider.</div>' : ''}
+    <div class="ngbox"><div class="small" style="font-weight:800;margin-bottom:6px">NextGen · Treatment report — enter in this order</div>
+      <ol class="small" style="margin:0;padding-left:18px;display:grid;gap:4px">
+        <li>Disconnected from yourself or the world: ${ngLvl(c.disc)}</li>
+        <li>Things seem unreal / dream: ${ngLvl(c.unreal)}</li>
+        <li>Sedation Scale: ${c.ngSed == null ? '<span class="warnText">choose below (staff-rated, 0–6)</span>' : `<b>${c.ngSed}</b> = ${esc(SED_NG.find(x => x[0] === +c.ngSed)[1])}`}</li>
+        <li>☐ “${esc(NG_BOX)}” → ${box ? '<b class="okText">check it</b>' : '<b class="warnText">leave unchecked</b> <span class="muted">(' + [c.dizzy ? 'dizziness reported' : '', c.ride !== 'yes' ? 'no ride confirmed' : '', !c.gait ? 'gait not confirmed stable' : ''].filter(Boolean).join(', ') + ')</span>'}</li>
+        <li>Note text ↓ ${n.missing ? `<span class="warnText">${n.missing} blank${n.missing > 1 ? 's' : ''} marked [___]</span>` : ''}</li>
+      </ol></div>
+    <textarea id="coText" class="fld mono" rows="15" style="margin-top:8px;font-size:12.5px" aria-label="Treatment report note">${esc(S.coEdit ?? n.text)}</textarea>
+    ${S.coEdit != null ? '<div class="small muted">Edited by hand — <button class="linkbtn" data-act="coReset">rebuild from the form</button></div>' : ''}`;
+}
+function openCheckout(key){
+  S.co = coDefaults(key); S.coKey = key; S.coEdit = null;
+  const it = S.A.find(a => a.key === key); const v = visitGet(key) || {};
+  const radio = (k, opts) => `<div class="opts">${opts.map(([val, lab]) => `<label class="opt"><input type="radio" name="co_${k}" data-co="${k}" value="${val}" ${String(S.co[k]) === String(val) ? 'checked' : ''}> ${lab}</label>`).join('')}</div>`;
+  const disLab = ['Not at all.', 'Mild, a little disconnected, but basically all here.', 'Moderate, somewhat detached, but basically all together.', 'Severe, detached but not far removed.', 'Extreme, completely out of body / removed from the room.'];
+  const unLab = ['Not at all.', 'Mild, a little unreal, but aware and mostly present.', 'Moderate, dream-like, although knew I was awake.', 'Severe, very dream-like, felt like I might have been asleep.', 'Extreme, nothing was real.'];
+  const medInv = (S.shared || {}).medInvUrl;
+  const rescueHTML = () => `${(S.co.rescue || []).map((r, idx) => `<div class="row small" style="margin-top:6px;flex-wrap:wrap"><select class="fld" data-rx="${idx}" data-rf="med" style="max-width:150px">${RESCUE.map(m => `<option ${r.med === m ? 'selected' : ''}>${m}</option>`).join('')}</select><input class="fld" data-rx="${idx}" data-rf="dose" value="${esc(r.dose || '')}" placeholder="Dose / route" style="max-width:140px"><input class="fld" type="time" data-rx="${idx}" data-rf="time" value="${esc(r.time || '')}" style="max-width:120px"><input class="fld grow" data-rx="${idx}" data-rf="reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)"><button class="linkbtn" data-act="rxDel" data-i="${idx}">Remove</button></div>`).join('')}
+    <div class="row small" style="margin-top:6px">${RESCUE.map(m => `<button class="btn sm" data-act="rxAdd" data-m="${m}">+ ${m}</button>`).join('')}</div>
+    ${(S.co.rescue || []).length ? `<div class="msg warn small" style="margin-top:6px">Log ${S.co.rescue.length > 1 ? 'these' : 'this'} on the Medication Inventory Tracker. ${medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener">Open Medication Inventory Tracker ↗</a>` : 'Add its link in Settings to open it from here.'}</div>` : ''}`;
+  S.coRescueHTML = rescueHTML;
+  openModal(`<h2>Check out · Tx report draft</h2><div class="small muted">${esc(nm(it?.mrn))} · MRN ${esc(it?.mrn)} · ${fmtT(it?.time)}${v.start != null ? ` · started ${fmtT(v.start)} · discharge due ${fmtT(v.start + (+CFG.dischargeMin || 120))}` : ''}</div>
+    <div class="cocols"><div class="coform">
+      <div class="small" style="font-weight:800;margin-top:6px">Patient form <span class="muted" style="font-weight:500">(same order as the paper form)</span></div>
+      ${radio('self', [['self', 'Pt self-answered'], ['staff', 'Staff assisted']])}
+      <div class="q">Did you feel disconnected from yourself or the world?</div>${radio('disc', disLab.map((l, i) => [i, l]))}
+      <div class="q">Did things seem unreal to you, as if you were in a dream?</div>${radio('unreal', unLab.map((l, i) => [i, l]))}
+      <div class="q">How sedated did you feel? (1 = alert, 10 = fast asleep)</div>${radio('sed10', [1,2,3,4,5,6,7,8,9,10].map(n => [n, n]))}
+      <div class="q">Side effects</div><div class="opts"><label class="opt"><input type="checkbox" data-co="nausea" ${S.co.nausea ? 'checked' : ''}> Nausea and/or upset stomach</label><label class="opt"><input type="checkbox" data-co="dizzy" ${S.co.dizzy ? 'checked' : ''}> Dizziness</label></div>
+      <div class="q">Feel able and safe to walk out of the clinic today?</div>${radio('safe', [['yes', 'Yes'], ['no', 'No']])}
+      <div class="q">Confirm a ride home today?</div>${radio('ride', [['yes', 'Yes'], ['no', 'No']])}
+      <div class="q">Overall experience today</div>${radio('exp', [['positive', 'Positive'], ['negative', 'Negative'], ['neutral', 'Neutral']])}
+      <div class="q">Notes from today’s experience (optional)</div><textarea class="fld" data-co="notes" rows="2">${esc(S.co.notes || '')}</textarea>
+      <div class="small" style="font-weight:800;margin-top:12px">Staff</div>
+      <div class="form2"><div><label class="lbl">Sedation lasted (min)</label><input class="fld" type="number" min="0" data-co="sedMin" value="${esc(S.co.sedMin)}"></div><div><label class="lbl">Dissociation lasted (min)</label><input class="fld" type="number" min="0" data-co="dissMin" value="${esc(S.co.dissMin)}"></div></div>
+      <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
+      <label class="opt" style="margin-top:6px"><input type="checkbox" data-co="gait" ${S.co.gait ? 'checked' : ''}> Gait noted to be stable</label>
+      <div class="small" style="font-weight:800;margin-top:12px">Rescue medication given?</div><div id="coRx">${rescueHTML()}</div>
+    </div><div class="coout"><div id="coOut">${coOutHTML()}</div></div></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="coSave">Save</button><button class="btn" data-act="coCopy">Copy note</button><button class="btn primary" data-act="coDone">${v.out ? 'Save &amp; copy note' : 'Check out &amp; copy note'}</button></div>`, true);
+}
+function coRefresh(){ const o = $('#coOut'); if (o){ const ta = $('#coText'); const keep = ta && document.activeElement === ta; o.innerHTML = coOutHTML(); if (keep) $('#coText')?.focus(); } }
+async function coPersist(checkout){
+  const key = S.coKey; const { rescue, ...form } = S.co;
+  const cleanRx = (rescue || []).filter(r => r.med);
+  const prev = visitGet(key) || {};
+  const patch = { form, rescue: cleanRx, note: $('#coText')?.value ?? coNote(S.co).text };
+  if (checkout && !prev.out) patch.out = { at: nowMin(), by: CFG.me || '' };
+  await visitSet(key, patch); render();
+}
 // Visit documentation checklist. ESK Tracker + med logs are done by Administer in this add-in;
 // Tx report (NextGen) and the REMS monitoring form are ticked by hand (saved with the workbook).
 const REMS_URL = 'https://spravatorems.com/Home/#Public';
 const DOC_ITEMS = [['tracker', 'ESK Tracker'], ['logs', 'Med logs'], ['tx', 'Tx report'], ['rems', 'REMS form']];
 const docGet = (key, t) => (S.docs || {})[key]?.[t] || null;
+const docItems = i => (visitGet(i.a.key)?.rescue || []).length ? [...DOC_ITEMS, ['medinv', 'Rescue med logged']] : DOC_ITEMS;
 function docState(i){
-  const given = !!i.adminKit; const o = {};
-  for (const [t] of DOC_ITEMS) o[t] = t === 'tracker' || t === 'logs' ? given : !!docGet(i.a.key, t);
-  o.n = DOC_ITEMS.filter(([t]) => o[t]).length; o.done = o.n === DOC_ITEMS.length; return o;
+  const given = !!i.adminKit; const o = {}; const L = docItems(i);
+  for (const [t] of L) o[t] = t === 'tracker' || t === 'logs' ? given : !!docGet(i.a.key, t);
+  o.n = L.filter(([t]) => o[t]).length; o.total = L.length; o.done = o.n === L.length; return o;
 }
 async function docToggle(key, t){
   S.docs = S.docs || {}; const cur = S.docs[key] || (S.docs[key] = {});
@@ -1139,9 +1285,10 @@ function docRowHTML(i){
   const chip = ([t, l]) => {
     if (t === 'tracker' || t === 'logs') return `<span class="doc ${d[t] ? 'on' : ''}" title="${d[t] ? 'Done when the kit was marked administered' : 'Completes automatically when you Administer'}">${d[t] ? '✓' : '○'} ${l}</span>`;
     const g = docGet(i.a.key, t);
-    return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? `Marked by ${esc(g.by || '—')} — click to undo` : t === 'tx' ? 'Completed in NextGen — click to mark done' : 'Uploaded to REMS — click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>${t === 'rems' ? `<a class="linkbtn small" href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site to upload the monitoring form">Upload ↗</a>` : ''}`;
+    const medInv = (S.shared || {}).medInvUrl;
+    return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? `Marked by ${esc(g.by || '—')} — click to undo` : t === 'tx' ? 'Completed in NextGen — click to mark done' : t === 'medinv' ? 'Logged on the Medication Inventory Tracker — click to mark done' : 'Uploaded to REMS — click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>${t === 'rems' ? `<a class="linkbtn small" href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site to upload the monitoring form">Upload ↗</a>` : ''}${t === 'medinv' && medInv ? `<a class="linkbtn small" href="${esc(medInv)}" target="_blank" rel="noopener">Med Inventory ↗</a>` : ''}`;
   };
-  return `<div class="docrow small"><span class="lab ${d.done ? 'okText' : given ? 'warnText' : 'muted'}">Documentation ${d.n}/${DOC_ITEMS.length}</span>${DOC_ITEMS.map(chip).join('')}</div>`;
+  return `<div class="docrow small"><span class="lab ${d.done ? 'okText' : given ? 'warnText' : 'muted'}">Documentation ${d.n}/${d.total}</span>${docItems(i).map(chip).join('')}</div>`;
 }
 // Given visits (last 7 days) whose documentation isn't finished.
 function docOpenModel(){
@@ -1183,6 +1330,7 @@ function itemHTML(i){
       <div class="r3">${k ? `<span class="muted small">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</div>
       <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}</div>
     </div>
+    ${a.active && a.date === todaySerial() ? visitRowHTML(i) : ''}
     ${a.active ? docRowHTML(i) : ''}
   </div>`;
 }
@@ -1199,7 +1347,8 @@ function vitalsDoc(day){
     const med = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
     const acts = !it ? [] : [it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
     const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
-    return `<tr class="pt"><td class="pc">${pt}</td><td></td><td></td>${vit}${vit}${vit}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
+    const vv = it ? visitGet(it.a.key) : null;
+    return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit}${vit}${vit}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
   };
   const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
     <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>40 min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
@@ -1780,6 +1929,9 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
+      <div><label class="lbl" for="sV40">Vitals due after start (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
+      <div><label class="lbl" for="sDis">Discharge due after start (min)</label><input id="sDis" class="fld" type="number" data-cfg="dischargeMin" value="${CFG.dischargeMin}"></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sMedInv">Medication Inventory Tracker link (saved in this workbook for everyone)</label><input id="sMedInv" class="fld" value="${esc((S.shared || {}).medInvUrl || '')}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"></div>
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
@@ -1837,6 +1989,17 @@ const ACT = {
   taskDo: el => taskSet(el.dataset.m, el.dataset.k, true),
   taskDoX: el => taskSet(el.dataset.m, 'sched', true),
   docTog: el => docToggle(el.dataset.k, el.dataset.t),
+  vStart: el => openStart(el.dataset.k),
+  vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the start time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim(); closeModal(); await visitSet(key, { start: m, bay }); render(); },
+  vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; delete v.v40; delete v.bay; } closeModal(); await saveVisit(); render(); },
+  vV40: async el => { await visitSet(el.dataset.k, { v40: nowMin() }); render(); },
+  vOut: el => openCheckout(el.dataset.k),
+  rxAdd: el => { S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
+  rxDel: el => { S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
+  coReset: () => { S.coEdit = null; coRefresh(); },
+  coSave: async () => { await coPersist(false); toast('ok', 'Saved.'); },
+  coCopy: async () => { const t = $('#coText')?.value || ''; toast((await copyText(t)) ? 'ok' : 'bad', 'Note copied — paste it into the NextGen treatment report.'); },
+  coDone: async () => { const t = $('#coText')?.value || ''; const ok = await copyText(t); await coPersist(true); closeModal(); toast(ok ? 'ok' : 'bad', ok ? 'Checked out. Note copied — paste it into NextGen, then tick “Tx report”.' : 'Checked out, but copying was blocked — reopen and copy the note.'); },
   noteAdd: el => { S.noteFor = el.dataset.k; render(); setTimeout(() => $('#noteIn')?.focus(), 20); },
   noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
@@ -1888,6 +2051,7 @@ const ACT = {
   saveRow: el => saveRow(el.dataset.t, +el.dataset.r),
   cfgSave: async () => {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
+    const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
@@ -1919,6 +2083,9 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.id === 'coText'){ S.coEdit = el.value; }
+  if (el.dataset.co && S.co && (el.tagName === 'TEXTAREA' || el.type === 'number')){ S.co[el.dataset.co] = el.value; if (S.coEdit == null) coRefresh(); }
+  if (el.dataset.rx != null && S.co && el.tagName === 'INPUT' && el.type !== 'time'){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; if (S.coEdit == null) coRefresh(); }
   if (el.dataset.input){ S[el.dataset.input] = el.value; clearTimeout(S._t); S._t = setTimeout(render, 180); }
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; clearTimeout(S._a); S._a = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderAdmin(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; clearTimeout(S._d); S._d = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderDispose(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
@@ -1926,6 +2093,8 @@ document.addEventListener('input', e => {
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
+  if (el.dataset.rx != null && S.co && (el.tagName === 'SELECT' || el.type === 'time')){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); }
   if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
   if (el.dataset.ov){ const v = Number(el.value); if (!isNaN(v)){ S.ov[el.dataset.ov] = v; render(); } }
   if (el.dataset.f){ S[el.dataset.f] = el.value; render(); }
@@ -1943,6 +2112,14 @@ document.addEventListener('change', e => {
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; renderDispose(); }
 });
 
+// ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
+setInterval(() => {
+  const now = nowMin();
+  document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
+  if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
+  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; const d = visitDue(v); if (!d || d.at > now) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); }
+}, 20000);
+
 // ---------- load ----------
 let _loading = null, _again = false;
 async function reload(quiet){
@@ -1957,7 +2134,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2078,7 +2255,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
