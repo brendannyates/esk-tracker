@@ -1101,7 +1101,7 @@ function todayHTML(){
   </div><div>
     <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
       ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
-        return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}<span class="chip ${dueCls(x.due, true)}" data-due="${x.due.at}" data-what="${esc(x.due.what)}" data-today="1">${esc(dueText(x.due, true))}</span></span>`).join('')}</div>` : ''; })()}
+        return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
     </div>
   </div></div>`;
@@ -1143,29 +1143,34 @@ async function saveVisit(){
   await S.store.setDoc('eskVisit', S.visit || {});
 }
 function visitSet(key, patch){ S.visit = S.visit || {}; S.visit[key] = Object.assign(S.visit[key] || {}, patch); return saveVisit(); }
-// What's due next for a started visit: 40-min vitals, then discharge.
-function visitDue(v){
-  if (!v || v.start == null || v.out) return null;
-  if (!v.v40) return { what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40' };
-  return { what: 'Discharge', at: v.start + (+CFG.dischargeMin || 120), kind: 'dis' };
+// Timers run off the start time only (vitals themselves stay on paper / in NextGen).
+const GRACE = 10; // minutes the vitals reminder stays red before the countdown moves on to discharge
+function visitMarks(v){
+  if (!v || v.start == null || v.out) return [];
+  return [{ what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40' }, { what: 'Discharge', at: v.start + (+CFG.dischargeMin || 120), kind: 'dis' }];
 }
+function visitDue(v){ const m = visitMarks(v); if (!m.length) return null; return m[0].at + GRACE > nowMin() ? m[0] : m[1]; }
 function dueText(due, isToday){
   if (!due) return '';
   if (!isToday) return `${due.what} ${fmtT(due.at)}`;
   const d = due.at - nowMin();
+  if (due.kind === 'v40' && d < -GRACE) return `${due.what} were due ${fmtT(due.at)}`;
+  if (due.kind === 'dis' && d <= 0) return `Discharge due · ${fmtT(due.at)}`;
   return `${due.what} ${d > 0 ? `in ${d} min` : d === 0 ? 'now' : `overdue ${-d} min`} · ${fmtT(due.at)}`;
 }
-const dueCls = (due, isToday) => !due || !isToday ? '' : due.at - nowMin() <= 0 ? 'bad' : due.at - nowMin() <= 5 ? 'warn' : 'info';
+function dueCls(due, isToday){
+  if (!due || !isToday) return ''; const d = due.at - nowMin();
+  if (due.kind === 'v40') return d < -GRACE ? '' : d <= 0 ? 'bad' : d <= 5 ? 'warn' : 'info';
+  return d <= 0 ? 'ok' : d <= 10 ? 'warn' : 'info';
+}
+const dueChip = (due, isToday) => `<span class="chip ${dueCls(due, isToday)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="${isToday ? 1 : 0}">${esc(dueText(due, isToday))}</span>`;
 function visitRowHTML(i){
   const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
-  if (!v || v.start == null) return `<div class="vrow small"><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><span class="muted">enter start time &amp; bay to run the vitals and discharge timers</span>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`;
-  const due = visitDue(v);
+  if (!v || v.start == null) return `<div class="vrow small"><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><span class="muted">enter the start time to run the vitals and discharge timers</span>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`;
   return `<div class="vrow small"><span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
-    ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : `<span class="chip ${dueCls(due, isToday)}" data-due="${due.at}" data-what="${esc(due.what)}" data-today="${isToday ? 1 : 0}">${esc(dueText(due, isToday))}</span>`}
-    ${v.v40 ? `<span class="muted">${esc(CFG.vitalsMin)}-min vitals ✓ ${fmtT(v.v40)}</span>` : ''}
+    ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : visitMarks(v).map(m => dueChip(m, isToday)).join('')}
     ${(v.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}
     <span class="grow"></span>
-    ${!v.out && !v.v40 ? `<button class="btn sm" data-act="vV40" data-k="${esc(a.key)}">${esc(CFG.vitalsMin)}-min vitals done</button>` : ''}
     <button class="btn sm ${v.out ? '' : 'primary'}" data-act="vOut" data-k="${esc(a.key)}">${v.out ? 'Tx report draft' : 'Check out'}</button>
     <button class="linkbtn" data-act="vStart" data-k="${esc(a.key)}" title="Edit start time / bay">edit</button></div>`;
 }
@@ -1991,8 +1996,7 @@ const ACT = {
   docTog: el => docToggle(el.dataset.k, el.dataset.t),
   vStart: el => openStart(el.dataset.k),
   vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the start time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim(); closeModal(); await visitSet(key, { start: m, bay }); render(); },
-  vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; delete v.v40; delete v.bay; } closeModal(); await saveVisit(); render(); },
-  vV40: async el => { await visitSet(el.dataset.k, { v40: nowMin() }); render(); },
+  vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; delete v.bay; } closeModal(); await saveVisit(); render(); },
   vOut: el => openCheckout(el.dataset.k),
   rxAdd: el => { S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
@@ -2115,9 +2119,9 @@ document.addEventListener('change', e => {
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
-  document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
+  document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
-  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; const d = visitDue(v); if (!d || d.at > now) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); }
+  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); } }
 }, 20000);
 
 // ---------- load ----------
