@@ -284,7 +284,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, dischargeMin:120 };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60 };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
@@ -1099,7 +1099,7 @@ function todayHTML(){
     ${actionHTML()}
     ${schedHTML()}
   </div><div>
-    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="vitals" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
+    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="bays" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker &amp; bays</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
       ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
         return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
       ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
@@ -1144,10 +1144,11 @@ async function saveVisit(){
 }
 function visitSet(key, patch){ S.visit = S.visit || {}; S.visit[key] = Object.assign(S.visit[key] || {}, patch); return saveVisit(); }
 // Timers run off the start time only (vitals themselves stay on paper / in NextGen).
+const disAt = start => start + (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); // discharge vitals: one hour after the 40-min vitals
 const GRACE = 10; // minutes the vitals reminder stays red before the countdown moves on to discharge
 function visitMarks(v){
   if (!v || v.start == null || v.out) return [];
-  return [{ what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40' }, { what: 'Discharge', at: v.start + (+CFG.dischargeMin || 120), kind: 'dis' }];
+  return [{ what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40' }, { what: 'Discharge vitals', at: disAt(v.start), kind: 'dis' }];
 }
 function visitDue(v){ const m = visitMarks(v); if (!m.length) return null; return m[0].at + GRACE > nowMin() ? m[0] : m[1]; }
 function dueText(due, isToday){
@@ -1155,7 +1156,7 @@ function dueText(due, isToday){
   if (!isToday) return `${due.what} ${fmtT(due.at)}`;
   const d = due.at - nowMin();
   if (due.kind === 'v40' && d < -GRACE) return `${due.what} were due ${fmtT(due.at)}`;
-  if (due.kind === 'dis' && d <= 0) return `Discharge due · ${fmtT(due.at)}`;
+  if (due.kind === 'dis' && d <= 0) return `Discharge vitals due · ${fmtT(due.at)}`;
   return `${due.what} ${d > 0 ? `in ${d} min` : d === 0 ? 'now' : `overdue ${-d} min`} · ${fmtT(due.at)}`;
 }
 function dueCls(due, isToday){
@@ -1166,7 +1167,8 @@ function dueCls(due, isToday){
 const dueChip = (due, isToday) => `<span class="chip ${dueCls(due, isToday)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="${isToday ? 1 : 0}">${esc(dueText(due, isToday))}</span>`;
 function visitRowHTML(i){
   const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
-  if (!v || v.start == null) return `<div class="vrow small"><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><span class="muted">enter the start time to run the vitals and discharge timers</span>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`;
+  if (!v || v.start == null){ const iv = { what: 'Initial vitals', at: a.time, kind: 'v40' };
+    return `<div class="vrow small">${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}<span class="grow"></span><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`; }
   return `<div class="vrow small"><span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
     ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : visitMarks(v).map(m => dueChip(m, isToday)).join('')}
     ${(v.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}
@@ -1177,11 +1179,33 @@ function visitRowHTML(i){
 function openStart(key){
   const v = visitGet(key) || {}; const it = S.A.find(a => a.key === key);
   openModal(`<h2>Start treatment</h2><div class="small muted">${esc(nm(it?.mrn))} · ${fmtT(it?.time)} appointment</div>
-    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="vsT">Treatment start time</label><input id="vsT" class="fld" type="time" value="${hhmm(v.start ?? nowMin())}"></div>
+    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="vsT">Treatment start time (provider administers)</label><input id="vsT" class="fld" type="time" value="${hhmm(v.start ?? nowMin())}"></div>
     <div><label class="lbl" for="vsB">Bay #</label><input id="vsB" class="fld" value="${esc(v.bay || '')}" placeholder="optional"></div></div>
-    <div class="small muted" style="margin-top:8px">Timers: ${esc(CFG.vitalsMin)}-min vitals, then discharge at ${esc(CFG.dischargeMin)} min (change in Settings).</div>
+    <div class="small muted" style="margin-top:8px">Timers: ${esc(CFG.vitalsMin)}-min vitals after start, discharge vitals ${esc(CFG.disAfter)} min after that (change in Settings).</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">${v.start != null ? '<button class="btn ghost" data-act="vClear" data-k="' + esc(key) + '">Clear start</button><span class="grow"></span>' : ''}<button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
   setTimeout(() => $('#vsT')?.focus(), 30);
+}
+// ----- plan bays ahead (prints on the Vitals Tracker) -----
+function bayClashes(day){
+  const L = todayModel(day).filter(i => i.a.active && i.a.time != null).map(i => ({ key: i.a.key, t: i.a.time, bay: String(visitGet(i.a.key)?.bay || '').trim() })).filter(x => x.bay);
+  const span = (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); const bad = new Set();
+  for (const x of L) for (const y of L) if (x !== y && x.bay.toLowerCase() === y.bay.toLowerCase() && Math.abs(x.t - y.t) < span) bad.add(x.key);
+  return bad;
+}
+function openBays(){
+  const day = S.day; const rows = todayModel(day).filter(i => i.a.active);
+  const draw = () => { const bad = bayClashes(day);
+    openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after treatment start; discharge vitals ${esc(CFG.disAfter)} min after that.</div>
+      <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
+      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b> <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
+      </tbody></table></div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" data-act="baysSave">Save</button><button class="btn primary" data-act="baysPrint">Save &amp; print Vitals Tracker</button></div>`, true); };
+  S.baysDraw = draw; draw();
+}
+async function baysSave(){
+  const ins = [...document.querySelectorAll('[data-bay]')]; S.visit = S.visit || {};
+  for (const el of ins){ const key = el.dataset.bay; const v = el.value.trim(); const cur = S.visit[key]; if (v) (S.visit[key] = cur || {}).bay = v; else if (cur){ delete cur.bay; if (!Object.keys(cur).length) delete S.visit[key]; } }
+  await saveVisit();
 }
 // ----- check-out form (same order as the paper post-treatment form) -----
 function coDefaults(key){
@@ -1208,7 +1232,6 @@ function coNote(c){
     if (c.safe === 'yes') out.push('Pt confirmed feeling safe/able to leave clinic.'); else if (c.safe === 'no') out.push('Pt did not feel safe/able to leave clinic.'); else { miss.push('safe'); out.push('Pt [___] feeling safe/able to leave clinic.'); }
     if (c.ride === 'yes') out.push('Pt confirmed having a ride home.'); else if (c.ride === 'no') out.push('Pt did not confirm having a ride home.'); else { miss.push('ride'); out.push('Pt [___] having a ride home.'); }
   }
-  if (String(c.notes || '').trim()) out.push(`Pt notes: "${String(c.notes).trim()}"`);
   return { text: out.join('\n'), missing: miss.length };
 }
 function coOutHTML(){
@@ -1238,7 +1261,7 @@ function openCheckout(key){
     <div class="row small" style="margin-top:6px">${RESCUE.map(m => `<button class="btn sm" data-act="rxAdd" data-m="${m}">+ ${m}</button>`).join('')}</div>
     ${(S.co.rescue || []).length ? `<div class="msg warn small" style="margin-top:6px">Log ${S.co.rescue.length > 1 ? 'these' : 'this'} on the Medication Inventory Tracker. ${medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener">Open Medication Inventory Tracker ↗</a>` : 'Add its link in Settings to open it from here.'}</div>` : ''}`;
   S.coRescueHTML = rescueHTML;
-  openModal(`<h2>Check out · Tx report draft</h2><div class="small muted">${esc(nm(it?.mrn))} · MRN ${esc(it?.mrn)} · ${fmtT(it?.time)}${v.start != null ? ` · started ${fmtT(v.start)} · discharge due ${fmtT(v.start + (+CFG.dischargeMin || 120))}` : ''}</div>
+  openModal(`<h2>Check out · Tx report draft</h2><div class="small muted">${esc(nm(it?.mrn))} · MRN ${esc(it?.mrn)} · ${fmtT(it?.time)}${v.start != null ? ` · started ${fmtT(v.start)} · discharge vitals ${fmtT(disAt(v.start))}` : ''}</div>
     <div class="cocols"><div class="coform">
       <div class="small" style="font-weight:800;margin-top:6px">Patient form <span class="muted" style="font-weight:500">(same order as the paper form)</span></div>
       ${radio('self', [['self', 'Pt self-answered'], ['staff', 'Staff assisted']])}
@@ -1249,7 +1272,6 @@ function openCheckout(key){
       <div class="q">Feel able and safe to walk out of the clinic today?</div>${radio('safe', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Confirm a ride home today?</div>${radio('ride', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Overall experience today</div>${radio('exp', [['positive', 'Positive'], ['negative', 'Negative'], ['neutral', 'Neutral']])}
-      <div class="q">Notes from today’s experience (optional)</div><textarea class="fld" data-co="notes" rows="2">${esc(S.co.notes || '')}</textarea>
       <div class="small" style="font-weight:800;margin-top:12px">Staff</div>
       <div class="form2"><div><label class="lbl">Sedation lasted (min)</label><input class="fld" type="number" min="0" data-co="sedMin" value="${esc(S.co.sedMin)}"></div><div><label class="lbl">Dissociation lasted (min)</label><input class="fld" type="number" min="0" data-co="dissMin" value="${esc(S.co.dissMin)}"></div></div>
       <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
@@ -1345,7 +1367,7 @@ function vitalsDoc(day){
   const rows = todayModel(day).filter(i => i.a.active);
   const pages = []; for (let i = 0; i < Math.max(rows.length, 1); i += 6) pages.push(rows.slice(i, i + 6));
   const todo = ['Esk tracker', 'Med Logs', 'Tx Report', 'REMS monitoring'];
-  const vit = `<td class="v"><div>BP:</div><div class="ln"></div><div>BPM:</div><div>O2:</div></td>`;
+  const vit = due => `<td class="v"><div class="due">${due ? 'due ' + due : '&nbsp;'}</div><div>BP:</div><div class="ln"></div><div>BPM:</div><div>O2:</div></td>`;
   const block = it => {
     const k = it ? (it.adminKit || it.pulledKit || it.suggest) : null;
     const pt = it ? `<div class="tm">${fmtT(it.a.time)}</div><div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>` : '';
@@ -1353,10 +1375,10 @@ function vitalsDoc(day){
     const acts = !it ? [] : [it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
     const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
     const vv = it ? visitGet(it.a.key) : null;
-    return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit}${vit}${vit}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
+    return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center;font-size:13pt;font-weight:700">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit(it ? fmtT(it.a.time) : '')}${vit(vv?.start != null ? fmtT(vv.start + (+CFG.vitalsMin || 40)) : '')}${vit(vv?.start != null ? fmtT(disAt(vv.start)) : '')}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
   };
   const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
-    <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>40 min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
+    <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>${esc(CFG.vitalsMin)} min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
     ${[0,1,2,3,4,5].map(i => block(list[i])).join('')}
     <tr class="an"><td colspan="7"><b>Additional Notes</b></td></tr></table>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Esketamine Daily Patient Tracker ${fmtD(day, 'full')}</title><style>
@@ -1370,7 +1392,7 @@ function vitalsDoc(day){
     .hd th{font-weight:400;height:0.22in;padding:1px}
     tr.pt td{height:1.0in;border-top:2px solid #000}
     .pc{text-align:center;vertical-align:middle!important;font-size:11.5pt} .pc .tm{font-size:9.5pt;color:#333;margin-bottom:2px} .ai{display:block;margin-top:2px} .pc .pn{font-weight:700;font-size:13.5pt;margin-bottom:3px}
-    .v div{height:0.2in} .v .ln{border-bottom:1px solid #000;width:80%;height:0.12in;margin-bottom:0.08in}
+    .v div{height:0.2in} .v .due{height:auto;font-size:8pt;font-weight:700;color:#444;margin-bottom:1px} .v .ln{border-bottom:1px solid #000;width:80%;height:0.12in;margin-bottom:0.08in}
     .todo div{display:flex;align-items:center;gap:6px;height:0.2in;font-size:9.5pt;white-space:nowrap}
     .box{display:inline-block;width:0.14in;height:0.14in;border:1.5px solid #000;border-radius:2px;flex:none}
     tr.nt td{height:0.46in;font-size:9pt;line-height:1.25}
@@ -1934,8 +1956,8 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
-      <div><label class="lbl" for="sV40">Vitals due after start (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
-      <div><label class="lbl" for="sDis">Discharge due after start (min)</label><input id="sDis" class="fld" type="number" data-cfg="dischargeMin" value="${CFG.dischargeMin}"></div>
+      <div><label class="lbl" for="sV40">2nd vitals after treatment start (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
+      <div><label class="lbl" for="sDis">Discharge vitals after 2nd vitals (min)</label><input id="sDis" class="fld" type="number" data-cfg="disAfter" value="${CFG.disAfter}"></div>
       <div style="grid-column:1/-1"><label class="lbl" for="sMedInv">Medication Inventory Tracker link (saved in this workbook for everyone)</label><input id="sMedInv" class="fld" value="${esc((S.shared || {}).medInvUrl || '')}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"></div>
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
@@ -1971,6 +1993,9 @@ const ACT = {
   unpull: el => { const d = isoOf(S.day); if (S.pull[d]) delete S.pull[d][el.dataset.k]; savePull(); S.todayMsg = { kind:'info', html:'Pull undone.' }; render(); },
   admin: el => openAdmin(el.dataset.k),
   vitals: () => openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`),
+  bays: () => openBays(),
+  baysSave: async () => { await baysSave(); closeModal(); render(); toast('ok', 'Bays saved.'); },
+  baysPrint: async () => { await baysSave(); closeModal(); render(); openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`); },
   printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'Use “Open in new tab” and print from there.'); } },
   full: () => openFull(),
   exitFull: () => { if (S.store.close) S.store.close(); },
@@ -1996,7 +2021,7 @@ const ACT = {
   docTog: el => docToggle(el.dataset.k, el.dataset.t),
   vStart: el => openStart(el.dataset.k),
   vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the start time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim(); closeModal(); await visitSet(key, { start: m, bay }); render(); },
-  vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; delete v.bay; } closeModal(); await saveVisit(); render(); },
+  vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; } closeModal(); await saveVisit(); render(); },
   vOut: el => openCheckout(el.dataset.k),
   rxAdd: el => { S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
@@ -2097,6 +2122,7 @@ document.addEventListener('input', e => {
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset.bay != null && S.baysDraw){ const key = el.dataset.bay; S.visit = S.visit || {}; const v = el.value.trim(); if (v) (S.visit[key] = S.visit[key] || {}).bay = v; else if (S.visit[key]) delete S.visit[key].bay; saveVisit(); const bad = bayClashes(S.day); const span = (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); document.querySelectorAll('[data-clash]').forEach(td => { td.innerHTML = bad.has(td.dataset.clash) ? `<span class="chip warn">Same bay within ${span} min</span>` : ''; }); }
   if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
   if (el.dataset.rx != null && S.co && (el.tagName === 'SELECT' || el.type === 'time')){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); }
   if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
