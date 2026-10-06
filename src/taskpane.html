@@ -1232,6 +1232,7 @@ function coNote(c){
     if (c.safe === 'yes') out.push('Pt confirmed feeling safe/able to leave clinic.'); else if (c.safe === 'no') out.push('Pt did not feel safe/able to leave clinic.'); else { miss.push('safe'); out.push('Pt [___] feeling safe/able to leave clinic.'); }
     if (c.ride === 'yes') out.push('Pt confirmed having a ride home.'); else if (c.ride === 'no') out.push('Pt did not confirm having a ride home.'); else { miss.push('ride'); out.push('Pt [___] having a ride home.'); }
   }
+  if (String(c.notes || '').trim()) out.push(`Pt notes: "${String(c.notes).trim()}"`);
   return { text: out.join('\n'), missing: miss.length };
 }
 function coOutHTML(){
@@ -1272,6 +1273,7 @@ function openCheckout(key){
       <div class="q">Feel able and safe to walk out of the clinic today?</div>${radio('safe', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Confirm a ride home today?</div>${radio('ride', [['yes', 'Yes'], ['no', 'No']])}
       <div class="q">Overall experience today</div>${radio('exp', [['positive', 'Positive'], ['negative', 'Negative'], ['neutral', 'Neutral']])}
+      <div class="q">Notes from today’s experience (optional)</div><textarea class="fld" data-co="notes" rows="2">${esc(S.co.notes || '')}</textarea>
       <div class="small" style="font-weight:800;margin-top:12px">Staff</div>
       <div class="form2"><div><label class="lbl">Sedation lasted (min)</label><input class="fld" type="number" min="0" data-co="sedMin" value="${esc(S.co.sedMin)}"></div><div><label class="lbl">Dissociation lasted (min)</label><input class="fld" type="number" min="0" data-co="dissMin" value="${esc(S.co.dissMin)}"></div></div>
       <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
