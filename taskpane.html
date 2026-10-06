@@ -268,7 +268,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'' };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'' };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
@@ -1458,11 +1458,21 @@ function followRows(ids){
 }
 const FU_HEAD = ['Patient', 'MRN', 'Pharmacy', 'Dose', 'Ordered', 'Needed by', 'Time'];
 const FU_C = { band: '#e8f1f9', bar: '#2d6fa8', head: '#cddff0' }, PT_C = { band: '#fdf5e2', bar: '#b8860b', head: '#f4e2b5' }, BE_C = { band: '#f9ebe4', bar: '#b5532f', head: '#efd3c6' };
+// Sign-off and cc from Settings (per computer). Signature blank → your name + clinic.
+const splitEmails = v => String(v || '').split(/[;,\s]+/).map(x => x.trim()).filter(x => /@/.test(x));
+const sigLines = () => { const t = String(CFG.sig || '').split(/\r?\n/).map(x => x.trimEnd()); while (t.length && !t[t.length - 1]) t.pop(); return t.some(Boolean) ? t : [CFG.me || '', CFG.clinic || ''].filter(Boolean); };
+const sigHTML = () => `<p style="margin-top:16px">Thank you,<br>${sigLines().map(esc).join('<br>')}</p>`;
+const sigText = () => `\n\nThank you,\n${sigLines().join('\n')}`;
+const ccFor = to => { const t = splitEmails(to).map(x => x.toLowerCase()); return [...new Set(splitEmails(CFG.cc))].filter(x => !t.includes(x.toLowerCase())); };
+const hdrsHTML = (to, subj) => { const cc = ccFor(to); return `<div class="emhdrs small" style="display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 4px"><b>To</b><span>${esc(to) || '<span class="muted">set in Settings</span>'}</span><b>Cc</b><span>${cc.length ? esc(cc.join('; ')) : '<span class="muted">none — add one in Settings</span>'}</span><b>Subject</b><span>${esc(subj)}</span></div>`; };
+function openMail(to, subj){ const cc = ccFor(to); const a = document.createElement('a'); a.href = `mailto:${splitEmails(to).map(encodeURIComponent).join(';')}?${cc.length ? 'cc=' + cc.map(encodeURIComponent).join(';') + '&' : ''}subject=${encodeURIComponent(subj)}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+async function copyAddr(to, subj){ const cc = ccFor(to); try { await navigator.clipboard.writeText(`To: ${to}\nCc: ${cc.join('; ')}\nSubject: ${subj}`); toast('ok', 'To / Cc / Subject copied.'); } catch { toast('bad', 'Copy was blocked by the browser.'); } }
 function followEmail(ids){
   const rows = followRows(ids);
-  const html = `<div style="${EM.font}"><p>Hello!</p><p>We are hoping to follow up on the below medications and their estimated arrival dates.</p>${emSection('Follow-up — updated ETA needed', `${rows.length} item${rows.length === 1 ? '' : 's'} not yet received`, FU_C.band, FU_C.bar, emTable(FU_HEAD, rows.map(r => r.cells), FU_C.head))}<p style="margin-top:14px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`;
-  const text = `Hello!\n\nWe are hoping to follow up on the below medications and their estimated arrival dates.\n\n${[FU_HEAD, ...rows.map(r => r.cells.map(v => String(v).replace(/<[^>]+>/g, '')))].map(r => r.join('\t')).join('\n')}\n\nThank you,\n${CFG.me || ''}`;
-  return { html, text, n: rows.length };
+  const html = `<div style="${EM.font}"><p>Hello!</p><p>We are hoping to follow up on the below medications and their estimated arrival dates.</p>${emSection('Follow-up — updated ETA needed', `${rows.length} item${rows.length === 1 ? '' : 's'} not yet received`, FU_C.band, FU_C.bar, emTable(FU_HEAD, rows.map(r => r.cells), FU_C.head))}${sigHTML()}</div>`;
+  const text = `Hello!\n\nWe are hoping to follow up on the below medications and their estimated arrival dates.\n\n${[FU_HEAD, ...rows.map(r => r.cells.map(v => String(v).replace(/<[^>]+>/g, '')))].map(r => r.join('\t')).join('\n')}${sigText()}`;
+  const to = S.fuPh === 'BESSE' ? CFG.email : (CFG.genoaEmail || '');
+  return { html, text, n: rows.length, to, subj: `Medication follow-up — updated ETA needed — ${CFG.clinic} — ${fmtD(todaySerial(), 'full')}` };
 }
 const pickList = (kind, items, sel) => `<div class="pick"><div class="row small" style="gap:10px;margin-bottom:4px"><button class="linkbtn" data-act="selAll" data-k="${kind}">Select all</button><button class="linkbtn" data-act="selNone" data-k="${kind}">Deselect all</button><span class="muted">${items.filter(x => sel.has(x.id)).length} of ${items.length} selected</span></div><div class="row small" style="flex-wrap:wrap;gap:6px">${items.map(x => `<label class="chip ${sel.has(x.id) ? 'info' : ''}" style="cursor:pointer"><input type="checkbox" data-pick="${kind}" data-id="${esc(x.id)}" ${sel.has(x.id) ? 'checked' : ''} style="margin-right:4px">${x.label}</label>`).join('')}</div></div>`;
 const isBesseLine = f => f.k.pharm === 'BESSE';
@@ -1472,10 +1482,10 @@ function openFollowEmail(ids){
   S.fuPh = pre.length && pre.every(isBesseLine) ? 'BESSE' : 'GENOA';
   S.fuSel = new Set(pre.filter(f => (S.fuPh === 'BESSE') === isBesseLine(f)).map(f => f.k.id));
   const draw = () => { const items = followItems(S.fuPh); const sel = new Set([...S.fuSel].filter(id => items.some(x => x.id === id))); const e = followEmail([...sel]);
-    openModal(`<h2>Follow-up email</h2><div class="row small" style="margin:6px 0"><div class="seg">${[['GENOA', 'Genoa / specialty'], ['BESSE', 'Besse']].map(([v, l]) => `<button data-act="fuPh" data-v="${v}" aria-pressed="${S.fuPh === v}">${l}</button>`).join('')}</div><span class="muted">Send to ${esc(S.fuPh === 'BESSE' ? CFG.email : (CFG.genoaEmail || 'your Genoa contact'))}</span></div>
+    openModal(`<h2>Follow-up email</h2><div class="row small" style="margin:6px 0"><div class="seg">${[['GENOA', 'Genoa / specialty'], ['BESSE', 'Besse']].map(([v, l]) => `<button data-act="fuPh" data-v="${v}" aria-pressed="${S.fuPh === v}">${l}</button>`).join('')}</div></div>${hdrsHTML(e.to, e.subj)}
       ${items.length ? pickList('fu', items, sel) : '<div class="muted small">Nothing in transit for this pharmacy.</div>'}
       <div class="emailprev" style="margin-top:10px">${e.html}</div>
-      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="fuCopy" ${e.n ? '' : 'disabled'}>Copy email</button></div>`, true); };
+      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="fuCopy" ${e.n ? '' : 'disabled'}>Copy email</button><button class="btn" data-act="fuAddr">Copy To / Cc</button><button class="btn primary" data-act="fuMail" ${e.n && e.to ? '' : 'disabled'}>Copy &amp; open in Outlook</button></div>`, true); };
   S.fuDraw = draw; draw();
 }
 function patientOrderItems(){
@@ -1500,19 +1510,19 @@ function orderEmail(){
   else { const pts = patientOrderItems().filter(x => (S.oPt || new Set()).has(x.id)); const rows = pts.map(x => [esc(nm(x.mrn)), esc(x.mrn), PH_LABEL[x.pharm], `${x.mg ?? '?'} mg`, x.date != null ? fmtD(x.date, 'full') : 'Newly scheduled', x.time != null ? fmtT(x.time) : '—']);
     if (rows.length){ html += emSection('Medications to order', `${rows.length} patient${rows.length === 1 ? '' : 's'}`, PT_C.band, PT_C.bar, emTable(['Patient', 'MRN', 'Pharmacy', 'Dose', 'Needed by', 'Time'], rows, PT_C.head)); text += 'MEDICATIONS TO ORDER\n' + rows.map(r => r.join('\t')).join('\n') + '\n'; } }
   if (fu.length){ html += emSection('Follow-up — updated ETA needed', `${fu.length} item${fu.length === 1 ? '' : 's'} ordered but not yet received`, FU_C.band, FU_C.bar, emTable(FU_HEAD, fu.map(r => r.cells), FU_C.head)); text += '\nFOLLOW-UP — UPDATED ETA NEEDED\n' + fu.map(r => r.cells.join('\t')).join('\n') + '\n'; }
-  html += `<p style="margin-top:16px">Thank you,<br>${esc(CFG.me || '')}<br>${esc(CFG.clinic)}</p></div>`; text += `\nThank you,\n${CFG.me || ''}`;
+  html += sigHTML() + '</div>'; text += sigText();
   const to = ph === 'BESSE' ? CFG.email : (CFG.genoaEmail || '');
   return { html, text, to, subj: ph === 'BESSE' ? `Besse Order — ${CFG.clinic} — ${fmtD(besseGrid().date, 'full')}` : `Genoa medication order — ${CFG.clinic} — ${fmtD(todaySerial(), 'full')}` };
 }
 function openOrderEmail(ph){
   S.oPh = ph; S.oFu = new Set(followItems(ph).map(x => x.id)); S.oPt = new Set(patientOrderItems().map(x => x.id)); S.oInc = S.oInc || { follow: true, patient: true };
   const draw = () => { const e = orderEmail(); const inc = S.oInc; const fi = followItems(ph); const pi = patientOrderItems().map(x => ({ id: x.id, label: `${esc(nm(x.mrn))} · ${x.date != null ? fmtD(x.date) : 'new'}` }));
-    openModal(`<h2>${ph === 'BESSE' ? 'Besse order email' : 'Genoa order email'}</h2><div class="small muted">To ${esc(e.to || 'set the Genoa order email in Settings')}</div>
+    openModal(`<h2>${ph === 'BESSE' ? 'Besse order email' : 'Genoa order email'}</h2>${hdrsHTML(e.to, e.subj)}
       ${ph === 'BESSE' ? `<div class="osec" style="border-left-color:${BE_C.bar};background:${BE_C.band}"><b>Besse order grid</b><div class="small muted">Date is the order week from the Besse Order tab (column J); To Be Ordered is logged there when you record the order.</div></div>`
         : `<div class="osec" style="border-left-color:${PT_C.bar};background:${PT_C.band}"><b>Medications to order (${pi.length})</b>${pi.length ? pickList('pt', pi, S.oPt) : '<div class="small muted">Nothing to order.</div>'}</div>`}
       <div class="osec" style="border-left-color:${FU_C.bar};background:${FU_C.band}"><label class="row" style="gap:6px;font-weight:700"><input type="checkbox" data-oinc="follow" ${inc.follow ? 'checked' : ''}>Include follow-up — updated ETA needed (${fi.length})</label>${inc.follow && fi.length ? pickList('fu2', fi, S.oFu) : ''}</div>
       <div class="emailprev" style="margin-top:10px">${e.html}</div>
-      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="oCopy">Copy email</button><button class="btn primary" data-act="oMail">Copy &amp; open email</button></div>`, true); };
+      <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="oCopy">Copy email</button><button class="btn" data-act="oAddr">Copy To / Cc</button><button class="btn primary" data-act="oMail" ${e.to ? '' : 'disabled'}>Copy &amp; open in Outlook</button></div>`, true); };
   S.oDraw = draw; draw();
 }
 function findHistRow(){ // the history's DATE column holds one row per order week: use this date, or the next one within 6 days
@@ -1725,6 +1735,8 @@ function openSettings(){
       <div><label class="lbl" for="sClinic">Clinic code</label><input id="sClinic" class="fld" data-cfg="clinic" value="${esc(CFG.clinic)}"></div>
       <div><label class="lbl" for="sEmail">Besse order email</label><input id="sEmail" class="fld" data-cfg="email" value="${esc(CFG.email)}"></div>
       <div><label class="lbl" for="sGEmail">Genoa order email</label><input id="sGEmail" class="fld" data-cfg="genoaEmail" value="${esc(CFG.genoaEmail || '')}" placeholder="pharmacy or team address"></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sCc">Always cc on order &amp; follow-up emails</label><input id="sCc" class="fld" data-cfg="cc" value="${esc(CFG.cc || '')}" placeholder="name@mymhs.com; name2@mymhs.com"></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -1778,12 +1790,6 @@ const ACT = {
   recvPh: el => { S.recvPharm = el.dataset.p; S.rcvFirst = null; S.recvMsg = null; render(); $('#scanRecv')?.focus(); },
   orderTab: el => { S.orderTab = el.dataset.p; render(); },
   copyBesse: async () => { const { html, text } = besseTableText(); const ok = await copyText(text, html); toast(ok ? 'ok' : 'bad', ok ? 'Table copied — paste it into the email.' : 'Couldn’t copy.'); },
-  emailBesse: async () => {
-    const { html, text } = besseTableText(); await copyText(text, html);
-    const subj = `Besse Order — ${CFG.clinic} — ${fmtD(S.orderDate, 'full')}`;
-    const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(e.to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent('Hello,\n\nPlease see this week’s Besse order below.\n\n' + text + '\n\nThank you,\n' + (CFG.me || ''))}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
-    toast('info', 'Email opened. The formatted table is also on your clipboard — paste it over the plain one if you prefer.');
-  },
   saveBesse,
   gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
   genoaOrder,
@@ -1803,7 +1809,10 @@ const ACT = {
   orderEmail: el => openOrderEmail(el.dataset.p || 'BESSE'),
   fuPh: el => { S.fuPh = el.dataset.v; S.fuSel = new Set(followItems(S.fuPh).map(x => x.id)); S.fuDraw(); },
   oCopy: async () => { const e = orderEmail(); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Order email copied.'); },
-  oMail: async () => { const e = orderEmail(); await copyText(e.text, e.html); const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(CFG.email)}?subject=${encodeURIComponent(e.subj)}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); toast('info', 'Email opened — paste (Ctrl+V) the formatted order into the body.'); },
+  oMail: async () => { const e = orderEmail(); await copyText(e.text, e.html); openMail(e.to, e.subj); toast('info', 'Email opened with To, Cc and Subject — paste (Ctrl+V) the formatted order into the body.'); },
+  oAddr: () => { const e = orderEmail(); copyAddr(e.to, e.subj); },
+  fuAddr: () => { const e = followEmail(followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id))); copyAddr(e.to, e.subj); },
+  fuMail: async () => { const e = followEmail(followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id))); await copyText(e.text, e.html); openMail(e.to, e.subj); toast('info', 'Email opened with To, Cc and Subject — paste (Ctrl+V) the follow-up into the body.'); },
   reassign: el => openReassign(el.dataset.id),
   asgOpen: () => openAssign(),
   asgAll: () => { S.asg.rows.forEach((_, i) => S.asg.ok.add(i)); S.asg.draw(); },
