@@ -77,6 +77,15 @@ table.rt td .row{gap:6px}
 .appt2 .ar .r4{margin-top:auto}
 .appt2 .docrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
 .docrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+:root{--s1:#2a78d6;--s2:#eb6834}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])){--s1:#3987e5;--s2:#d95926}}
+:root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926}
+.vleg{display:flex;gap:14px;margin-bottom:8px;color:var(--muted)} .vleg .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.sw.s1,.vbar.s1{background:var(--s1)} .sw.s2,.vbar.s2{background:var(--s2)}
+.vbars{display:grid;gap:12px} .vrow2{display:grid;gap:2px} .vlab{font-size:13px}
+.vtrack{display:flex;align-items:center;gap:6px;height:12px} .vbar{height:10px;border-radius:0 4px 4px 0;min-width:2px}
+.vval{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums} .vgap{font-size:11.5px}
+.vrow2:hover .vlab b{text-decoration:underline}
 .appt2 .vrow{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px dashed var(--line);padding-top:8px}
 .floor{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--info-soft)}
 .floor .fl{display:inline-flex;gap:6px;align-items:center} .floor .name{font-weight:800}
@@ -529,7 +538,7 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]='Aujla'; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
@@ -877,6 +886,95 @@ async function asgSave(){
   finally { busy(false); render(); }
 }
 
+// ---------- patient list export (filter by pharmacy, dose, frequency) ----------
+const isCurrent = p => /^(active|pending)/i.test(p.status);
+const freqLabel = p => String(p.freq || '').trim() || 'Not set';
+const doseLabel = p => p.mg ? `${p.mg} mg` : 'Not set';
+const credLabel = p => p.coverage || 'Not set';
+function expRows(){
+  const F = S.exp; const T = todaySerial();
+  const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
+  let L = S.P.filter(p => (F.status === 'all' ? true : F.status === 'active' ? /^active/i.test(p.status) : isCurrent(p)));
+  L = L.filter(p => F.ph.has(PH_LABEL[p.pharm] || '—') && F.dose.has(doseLabel(p)) && F.freq.has(freqLabel(p)));
+  const key = { pharmacy: p => PH_LABEL[p.pharm] || '—', dose: doseLabel, frequency: freqLabel, none: () => '' }[F.group];
+  L.sort((a, b) => key(a).localeCompare(key(b)) || a.name.localeCompare(b.name));
+  return L.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return { p, g: key(p), cells: [p.name, p.mrn, p.status, PH_LABEL[p.pharm] || '—', p.mg ? p.mg : '', freqLabel(p), p.provider || '', credLabel(p), n ? fmtD(n.date, 'full') : '', th ? fmtD(th, 'full') : ''] }; });
+}
+const EXP_HEAD = ['Short name', 'MRN', 'Status', 'Pharmacy', 'Protocol mg', 'Tx frequency', 'Rendering provider', 'Coverage', 'Next appt', 'Scheduled thru'];
+function openExport(){
+  const vals = f => [...new Set(S.P.map(f))].sort();
+  if (!S.exp) S.exp = { status: 'current', group: 'pharmacy', ph: new Set(vals(p => PH_LABEL[p.pharm] || '—')), dose: new Set(vals(doseLabel)), freq: new Set(vals(freqLabel)) };
+  const draw = () => { const F = S.exp; const rows = expRows();
+    const chk = (k, list) => `<div class="row small" style="flex-wrap:wrap;gap:4px 12px">${list.map(v => `<label class="opt"><input type="checkbox" data-exp="${k}" value="${esc(v)}" ${F[k].has(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
+    const groups = {}; rows.forEach(r => { groups[r.g] = (groups[r.g] || 0) + 1; });
+    openModal(`<h2>Export patient list</h2>
+      <div class="form2"><div><label class="lbl">Status</label><select class="fld" data-expv="status">${[['current', 'Active + Pending Start'], ['active', 'Active only'], ['all', 'Everyone on the tracker']].map(([v, l]) => `<option value="${v}" ${F.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div><label class="lbl">Group &amp; sort by</label><select class="fld" data-expv="group">${[['pharmacy', 'Pharmacy'], ['dose', 'Dose'], ['frequency', 'Frequency'], ['none', 'Name only']].map(([v, l]) => `<option value="${v}" ${F.group === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <div class="q">Pharmacy</div>${chk('ph', vals(p => PH_LABEL[p.pharm] || '—'))}
+      <div class="q">Dose</div>${chk('dose', vals(doseLabel))}
+      <div class="q">Frequency</div>${chk('freq', vals(freqLabel))}
+      <div class="row small" style="margin-top:10px;flex-wrap:wrap"><b>${rows.length} patient${rows.length === 1 ? '' : 's'}</b>${F.group !== 'none' ? Object.entries(groups).map(([g, n]) => `<span class="chip">${esc(g)} · ${n}</span>`).join('') : ''}</div>
+      <div class="tw" style="margin-top:8px;max-height:260px;overflow:auto"><table class="t small"><thead><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="small muted" style="margin-top:6px">Contains patient identifiers — share only through approved channels.</div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="expPrint" ${rows.length ? '' : 'disabled'}>🖨 Print</button><button class="btn" data-act="expCsv" ${rows.length ? '' : 'disabled'}>Download CSV</button><button class="btn primary" data-act="expCopy" ${rows.length ? '' : 'disabled'}>Copy for Excel</button></div>`, true); };
+  S.expDraw = draw; draw();
+}
+const csvCell = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function expTitle(){ const F = S.exp; return `ESK patient list · ${{ current: 'Active + Pending', active: 'Active', all: 'All' }[F.status]} · ${fmtD(todaySerial(), 'full')}`; }
+function expDoc(){ const rows = expRows(); let g = null;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(expTitle())}</title><style>@page{size:letter landscape;margin:0.4in} body{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:10pt} h1{font-size:14pt;margin:0 0 4px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #999;padding:3px 6px;text-align:left} th{background:#eee} tr.g td{background:#f6f1e7;font-weight:700}</style></head><body>
+  <h1>${esc(expTitle())}</h1><div style="margin-bottom:6px">${rows.length} patients · contains patient identifiers — shred after use.</div>
+  <table><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => { let x = ''; if (S.exp.group !== 'none' && r.g !== g){ g = r.g; x = `<tr class="g"><td colspan="${EXP_HEAD.length}">${esc(g)} · ${rows.filter(y => y.g === g).length}</td></tr>`; } return x + `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`; }).join('')}</table></body></html>`; }
+function downloadText(name, text, type){ try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); return true; } catch { return false; } }
+
+// ---------- access analysis: weekly visit demand vs what's booked ----------
+const FREQ_RATE = f => { const s = String(f || '').toLowerCase(); if (/2x/.test(s)) return 2; if (/3x/.test(s)) return 3; if (/eow|every other|2 weeks/.test(s)) return 0.5; if (/3 weeks/.test(s)) return 1 / 3; if (/month|4 weeks/.test(s)) return 0.25; if (/1x|weekly|week/.test(s)) return 1; return null; };
+function accessModel(){
+  const F = S.acc || (S.acc = { status: 'current', weeks: 4, ph: 'all' }); const T = todaySerial(); const end = T + F.weeks * 7;
+  const P = S.P.filter(p => (F.status === 'active' ? /^active/i.test(p.status) : isCurrent(p)) && (F.ph === 'all' || p.pharm === F.ph));
+  const set = new Set(P.map(p => p.mrn));
+  const booked = new Map(); const slots = {};
+  for (const a of S.A){ if (!a.active || a.date < T || a.date >= end || !set.has(a.mrn)) continue; booked.set(a.mrn, (booked.get(a.mrn) || 0) + 1);
+    const d = dowOf(a.date); if (d >= 1 && d <= 5){ const k = `${d}|${(a.time ?? 0) < 720 ? 'AM' : 'PM'}`; slots[k] = (slots[k] || 0) + 1; } }
+  const rows = P.map(p => ({ p, need: FREQ_RATE(p.freq), booked: (booked.get(p.mrn) || 0) / F.weeks }));
+  const by = (keyf, order) => { const m = new Map(); for (const r of rows){ const k = keyf(r.p); const g = m.get(k) || { k, need: 0, booked: 0, n: 0, unknown: 0, noBook: 0, short: 0 }; g.n++; if (r.need == null) g.unknown++; else { g.need += r.need; g.short += Math.max(0, r.need - r.booked); } g.booked += r.booked; if (!r.booked) g.noBook++; m.set(k, g); } const L = [...m.values()]; return order ? L.sort(order) : L.sort((a, b) => b.need - a.need || a.k.localeCompare(b.k)); };
+  const protocol = by(p => `${doseLabel(p)} · ${freqLabel(p)}`);
+  const provider = by(p => p.provider || 'Not set');
+  const cred = by(credLabel, (a, b) => ['MD Only', 'MD & NP', 'Not set'].indexOf(a.k) - ['MD Only', 'MD & NP', 'Not set'].indexOf(b.k));
+  const provCred = new Map(); for (const r of rows){ const k = r.p.provider || 'Not set'; const c = credLabel(r.p); const o = provCred.get(k) || {}; o[c] = (o[c] || 0) + (r.need || 0); provCred.set(k, o); }
+  const tot = { short: rows.reduce((s, r) => s + (r.need == null ? 0 : Math.max(0, r.need - r.booked)), 0), n: rows.length, need: rows.reduce((s, r) => s + (r.need || 0), 0), booked: rows.reduce((s, r) => s + r.booked, 0), unknown: rows.filter(r => r.need == null).length, pending: P.filter(p => /^pending/i.test(p.status)).length, mdOnly: rows.filter(r => credLabel(r.p) === 'MD Only').reduce((s, r) => s + (r.need || 0), 0) };
+  return { F, rows, protocol, provider, cred, provCred, slots, tot };
+}
+const fmtN = n => (Math.round(n * 10) / 10).toString();
+function barsHTML(title, sub, groups){
+  const max = Math.max(1, ...groups.map(g => Math.max(g.need, g.booked)));
+  return `<div class="card"><h2>${title}</h2>${sub ? `<div class="small muted" style="margin:-4px 0 8px">${sub}</div>` : ''}
+    <div class="vleg small"><span><i class="sw s1"></i>Visits needed / week</span><span><i class="sw s2"></i>Booked / week</span></div>
+    <div class="vbars">${groups.map(g => { const gap = g.short; return `<div class="vrow2" title="${esc(g.k)} — ${g.n} patient${g.n === 1 ? '' : 's'}: need ${fmtN(g.need)}/wk, booked ${fmtN(g.booked)}/wk${g.unknown ? `, ${g.unknown} with no frequency set` : ''}">
+      <div class="vlab"><b>${esc(g.k)}</b><span class="muted"> · ${g.n} pt${g.n === 1 ? '' : 's'}</span></div>
+      <div class="vtrack"><div class="vbar s1" style="width:${(g.need / max * 100).toFixed(1)}%"></div><span class="vval">${fmtN(g.need)}</span></div>
+      <div class="vtrack"><div class="vbar s2" style="width:${(g.booked / max * 100).toFixed(1)}%"></div><span class="vval">${fmtN(g.booked)}</span></div>
+      <div class="vgap ${gap > 0.25 ? 'warnText' : 'muted'}">${gap > 0.25 ? `${fmtN(gap)} unbooked/wk` : 'covered'}${g.noBook ? ` · ${g.noBook} with nothing booked` : ''}${g.unknown ? ` · ${g.unknown} freq not set` : ''}</div></div>`; }).join('') || '<div class="muted small">No patients match.</div>'}</div></div>`;
+}
+function accessHTML(){
+  const m = accessModel(); const F = m.F; const t = m.tot;
+  const tile = (n, l, cls) => `<div class="stat"><div class="n" ${cls ? `style="color:var(--${cls})"` : ''}>${n}</div><div class="l">${l}</div></div>`;
+  const creds = ['MD Only', 'MD & NP', 'Not set']; const provs = [...m.provCred.keys()].sort();
+  const maxSlot = Math.max(1, ...Object.values(m.slots));
+  return `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><b>Access analysis</b><span class="grow"></span>
+      <select class="fld" data-accv="status" style="width:auto">${[['current', 'Active + Pending Start'], ['active', 'Active only']].map(([v, l]) => `<option value="${v}" ${F.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select class="fld" data-accv="ph" style="width:auto">${[['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']].map(([v, l]) => `<option value="${v}" ${F.ph === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select class="fld" data-accv="weeks" style="width:auto">${[2, 4, 8].map(w => `<option value="${w}" ${+F.weeks === w ? 'selected' : ''}>Booked: next ${w} weeks</option>`).join('')}</select></div>
+    <div class="stats" style="margin-top:10px">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(t.pending, 'pending starts')}</div>
+    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, EOW = 0.5, monthly = 0.25). Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} no frequency set and count as 0 needed.</span>` : ''}</div></div>
+  <div class="cols">
+    <div>${barsHTML('By protocol', 'Dose · Tx frequency', m.protocol)}${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}</div>
+    <div>${barsHTML('By provider', 'Rendering provider', m.provider)}
+      <div class="card"><h2>Provider × credential <span class="small muted" style="font-weight:500">visits needed / week</span></h2><div class="tw"><table class="t small"><thead><tr><th>Provider</th>${creds.map(c => `<th class="num">${c}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${provs.map(pv => { const o = m.provCred.get(pv); const tt = creds.reduce((s, c) => s + (o[c] || 0), 0); return `<tr><td>${esc(pv)}</td>${creds.map(c => `<td class="num">${o[c] ? fmtN(o[c]) : '·'}</td>`).join('')}<td class="num"><b>${fmtN(tt)}</b></td></tr>`; }).join('')}</tbody></table></div></div>
+      <div class="card"><h2>Booked slots by day <span class="small muted" style="font-weight:500">appointments / week, next ${F.weeks} weeks</span></h2><div class="tw"><table class="t small heat"><thead><tr><th></th>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => `<th class="num">${d}</th>`).join('')}</tr></thead><tbody>${['AM', 'PM'].map(h => `<tr><th>${h}</th>${[1, 2, 3, 4, 5].map(d => { const v = (m.slots[`${d}|${h}`] || 0) / F.weeks; return `<td class="num" style="background:color-mix(in srgb, #2a78d6 ${Math.round(v / (maxSlot / F.weeks) * 70)}%, transparent)" title="${['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][d]} ${h}: ${fmtN(v)} booked / week">${fmtN(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></div>
+    </div></div>`;
+}
+
 // ---------- ordering ----------
 function weeksFor(od){ const d = dowOf(od); let add = (1 - d + 7) % 7; if (add === 0) add = 7; const m = od + add; return [[m, m+4], [m+7, m+11]]; }
 function besseModel(){
@@ -971,7 +1069,7 @@ async function write(label, fn, okText){
 }
 
 // ---------- rendering ----------
-const VIEWS = [['today','Dashboard'],['patients','Patients'],['inventory','Inventory']];
+const VIEWS = [['today','Dashboard'],['patients','Patients'],['inventory','Inventory'],['access','Access']];
 const INV_TABS = [['stock','Stock'],['receive','Receive'],['order','To order'],['transit','In transit'],['besse','Besse order'],['audit','Daily audit']];
 function setMsg(k, kind, html){ S[k] = { kind, html }; render(); }
 function msgHTML(m){ return m ? `<div class="msg ${m.kind}" role="status">${m.html}</div>` : ''; }
@@ -989,7 +1087,7 @@ function render(){
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
-    <main>${S.full ? `<div class="card"><h2>Working in full screen</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : invShellHTML()}</main>`;
+    <main>${S.full ? `<div class="card"><h2>Working in full screen</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
   if (!CFG.me && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
@@ -1947,7 +2045,7 @@ function patientsHTML(){
   const list = S.P.filter(p => (S.patAll || !/discontinued|did not start/i.test(p.status)) && (!q || p.name.toLowerCase().includes(q) || p.mrn.includes(q))).sort((a, b) => a.name.localeCompare(b.name));
   const T = todaySerial(); const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
   return `<div class="card noprint"><div class="row"><input id="patQ" class="fld grow" data-input="patQ" placeholder="Search short name or MRN" value="${esc(S.patQ)}" aria-label="Search patients"><div class="seg">${[[false, 'Current'], [true, 'All']].map(([v, l]) => `<button data-act="patAll" data-v="${v}" aria-pressed="${S.patAll === v}">${l}</button>`).join('')}</div></div></div>
-  <div class="card print-target" id="guide"><h2>Patient guide <span class="chip">${list.length}</span><span class="sp"></span><button class="btn sm noprint" data-act="print" data-t="guide">Print</button></h2>
+  <div class="card print-target" id="guide"><h2>Patient guide <span class="chip">${list.length}</span><span class="sp"></span><button class="btn sm noprint" data-act="expOpen">⇩ Export list</button><button class="btn sm noprint" data-act="print" data-t="guide">Print</button></h2>
     <div class="printonly small">Printed ${new Date().toLocaleString()} — contains patient identifiers. Shred after use.</div>
     <div class="tw"><table class="t"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Coverage</th><th>Insurance</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th><th>Meds on hand</th><th>On order</th></tr></thead><tbody>
     ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr data-act="patient" data-m="${esc(p.mrn)}" style="cursor:pointer"><td><b>${esc(p.name)}</b></td><td>${esc(p.mrn)}</td><td>${esc(p.status)}</td><td>${covChip(p)}</td><td>${insChip(p)}</td><td>${PH_LABEL[p.pharm]}</td><td class="num">${p.mg ?? ''}</td><td>${esc(p.freq)}</td><td>${n ? fmtD(n.date) : '—'}</td><td>${th ? fmtD(th) : '—'}</td>${(() => { if (p.pharm === 'BESSE') return '<td class="muted small">Besse stock</td><td></td>'; const m = patientMeds(p.mrn); return `<td>${m.onhand.length ? `<span class="chip ok">${m.onhand.length}</span> <span class="small muted">use by ${fmtD(m.onhand[0].expDate)}</span>` : '<span class="chip bad">0</span>'}${m.expired.length ? ` <span class="chip bad">${m.expired.length} expired</span>` : ''}</td><td>${m.ordered.length ? `<span class="chip info">${m.ordered.length}</span> <span class="small muted">since ${fmtD(m.ordered[0].ordered)}</span>` : '—'}</td>`; })()}</tr>`; }).join('')}
@@ -2108,6 +2206,10 @@ const ACT = {
   admin: el => openAdmin(el.dataset.k),
   vitals: () => openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`),
   bays: () => openBays(),
+  expOpen: () => openExport(),
+  expCopy: async () => { const rows = expRows(); const text = [EXP_HEAD, ...rows.map(r => r.cells)].map(r => r.join('\t')).join('\n'); const html = `<table><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`; toast((await copyText(text, html)) ? 'ok' : 'bad', `${rows.length} rows copied — paste into Excel.`); },
+  expCsv: () => { const rows = expRows(); const csv = [EXP_HEAD, ...rows.map(r => r.cells)].map(r => r.map(csvCell).join(',')).join('\r\n'); const ok = downloadText(`ESK patient list ${isoOf(todaySerial())}.csv`, '\ufeff' + csv, 'text/csv'); toast(ok ? 'ok' : 'warn', ok ? 'CSV downloaded.' : 'Download was blocked here — use Copy for Excel.'); },
+  expPrint: () => { closeModal(); openPrintable(expDoc(), expTitle()); },
   baysSave: async () => { await baysSave(); closeModal(); render(); toast('ok', 'Bays saved.'); },
   baysPrint: async () => { await baysSave(); closeModal(); render(); openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`); },
   printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'Use “Open in new tab” and print from there.'); } },
@@ -2242,6 +2344,9 @@ document.addEventListener('input', e => {
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
+  if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
+  if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = el.dataset.accv === 'weeks' ? +el.value : el.value; render(); }
   if (el.dataset.bay != null && S.baysDraw){ const key = el.dataset.bay; S.visit = S.visit || {}; const v = el.value.trim(); if (v) (S.visit[key] = S.visit[key] || {}).bay = v; else if (S.visit[key]) delete S.visit[key].bay; saveVisit(); const bad = bayClashes(S.day); const span = (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); document.querySelectorAll('[data-clash]').forEach(td => { td.innerHTML = bad.has(td.dataset.clash) ? `<span class="chip warn">Same bay within ${span} min</span>` : ''; }); }
   if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
   if (el.dataset.rx != null && S.co && (el.tagName === 'SELECT' || el.type === 'time')){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); }
