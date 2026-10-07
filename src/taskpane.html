@@ -307,6 +307,7 @@ const SIG = {
   kits:     ['scanhere','mrn','receivedmg','mgremaining','administeredmg'],
   appts:    ['mrn','patient','date','time','event','status'],
   audit:    ['scanhere','auditor2','date'],
+  daily:    ['auditornamefirstandlast','scanhere','duplicateentry'],
 };
 const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
 const snapMatch = (vals, snap) => snap.every((s, c) => s === null || same(vals[c], s));
@@ -388,6 +389,8 @@ function OfficeStore(){
           const d = await readBody(ctx, x.t);
           tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
         }
+        let dailyHdr = null;
+        if (found.daily){ const hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); await ctx.sync(); dailyHdr = { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas }; }
         const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
@@ -395,7 +398,7 @@ function OfficeStore(){
         if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
         if (bo){ br = bo.getRange('A1:Z200'); br.load('values,formulas'); besseSheet = bo.name; }
         await ctx.sync();
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values, br.formulas) : null, besseSheet };
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values, br.formulas) : null, besseSheet, dailyHdr };
       }));
     },
     async update(k, r, snap, changes){
@@ -430,6 +433,16 @@ function OfficeStore(){
           const nr = rowRange(b, row, b.columnCount); nr.load('formulas'); await ctx.sync(); fRow = nr.formulas[0];
         } else fRow = d.formulas[row];
         await writeCells(ctx, b, row, fRow, changes);
+      });
+    },
+    // Clear hand-entered cells: cells = [[row, col, expectedValue]]. Stops if any cell changed or holds a formula.
+    async clearCells(k, cells){
+      return Excel.run(async ctx => {
+        const b = ctx.workbook.tables.getItem(names[k]).getDataBodyRange();
+        const rs = cells.map(([r, c]) => { const x = b.getCell(r, c); x.load('values,formulas'); return x; });
+        await ctx.sync();
+        rs.forEach((x, i) => { if (isF(x.formulas[0][0])) throw new Error('Stopped: that column holds a formula in the workbook.'); if (!same(x.values[0][0], cells[i][2])) throw new Error('The Daily Count tab changed since it was loaded. Refresh and try again.'); });
+        rs.forEach(x => { x.values = [['']]; }); await ctx.sync();
       });
     },
     async setCells(sheet, cells){ // cells: [[a1, value, expectFormula=false]]
@@ -524,14 +537,18 @@ function DemoStore(){
   const AUD_H = ['Location','Date','Auditor Name (First and Last)','Auditor 2','Scan Here','Pharmacy/Drug Source','Serial Number ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
   const AUD_F = new Set([0,5,6,7,8,9,10,11]); const audVals = Array.from({ length: 15 }, () => Array(12).fill(''));
   { let n = 0, skip = 0; for (const r of inv){ if (!r[1] || r[11] !== '' || r[19] === 'Yes') continue; if (r[3] === 'Besse' && skip < 1 && r[2] === ''){ skip++; continue; } if (n >= audVals.length) audVals.push(Array(12).fill('')); const row = audVals[n++]; row[1] = T - 1; row[2] = 'Taylor R.'; row[3] = 'Sam K.'; row[4] = r[1]; } }
+  const DC_H = ['Date','Auditor Name (First and Last)','Scan Here','Pharmacy/Drug Source','Serial Number  ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
+  const DC_F = new Set([0,3,4,5,6,7,8,9]); const dcVals = Array.from({ length: 40 }, () => Array(10).fill(''));
+  audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
+  const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = {};
-  const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null] };
+  const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
   return {
     live: false,
     async load(){
-      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit' }[k], h, v.map(r => r.slice()), F(v, fs));
+      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count' }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
-        besse: parseBesse(besse, besse), besseSheet: 'Besse Order' };
+        besse: parseBesse(besse, besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
     },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
@@ -545,7 +562,8 @@ function DemoStore(){
       for (const [c, v] of changes){ if (fs.has(c)) throw new Error('Stopped: formula column.'); vals[row][c] = (v && typeof v === 'object') ? v.date : v; }
       calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
     },
-    async setCells(sheet, cells){ for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
+    async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
+    async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
     async setDoc(key, val){ docs[key] = JSON.parse(JSON.stringify(val)); },
     watch(){},
@@ -1746,13 +1764,20 @@ function findHistRow(){ // the history's DATE column holds one row per order wee
 
 // ---------- daily audit ----------
 function auditState(){ const d = isoOf(todaySerial()); if (!S.aud || S.aud.date !== d) S.aud = { date: d, a1: CFG.me || '', a2: '', scans: [], filled: false }; return S.aud; }
+// Keep this session's audit as the source of truth; pull in scans another computer added for the same day.
+function mergeAud(mine, saved){
+  if (!saved) return mine; if (!mine || mine.date !== saved.date) return (!mine || saved.date > mine.date) ? JSON.parse(JSON.stringify(saved)) : mine;
+  const key = x => `${x.at}|${x.raw}`; const have = new Map(mine.scans.map(x => [key(x), x]));
+  for (const x of saved.scans || []){ const m = have.get(key(x)); if (m){ if (x.sheet) m.sheet = true; } else if (!(mine.removed || []).includes(key(x))) mine.scans.push({ ...x }); }
+  mine.scans.sort((p, q) => p.at - q.at); mine.a1 = mine.a1 || saved.a1; mine.a2 = mine.a2 || saved.a2; mine.filled = mine.filled || saved.filled; return mine;
+}
 async function saveAudit(){ clearTimeout(S._audT); await S.store.setDoc('eskAudit', S.aud); }
 function saveAuditSoon(){ clearTimeout(S._audT); S._audT = setTimeout(saveAudit, 1200); } // batch rapid scans into one save
 // Receiving scans wait their turn here so the scanner never has to pause for the workbook.
 async function runScanQ(){
   if (S.scanBusy) return;
-  while (S.scanQ.length){ const x = S.scanQ.shift(); S.scanBusy = x.k; try { if (x.k === 'recv') await recvScan(x.v); } catch (e){ console.error(e); } }
-  S.scanBusy = null; render();
+  while (S.scanQ.length){ const x = S.scanQ.shift(); S.scanBusy = x.k; try { if (x.k === 'recv') await recvScan(x.v); else if (x.k === 'aud') await writeAuditScan(x.sc); } catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); } }
+  S.scanBusy = null; if (S._dailyDirty){ S._dailyDirty = false; await reload(true); } render();
 }
 function auditModel(){
   const A = auditState(); const seen = new Set();
@@ -1782,8 +1807,10 @@ function auditHTML(){
   return `<div class="card"><h2>Daily audit · ${fmtD(todaySerial(), 'full')}<span class="sp"></span><button class="btn sm" data-act="audPrint" ${A.scans.length ? '' : 'disabled'}>🖨 Print audit sheet</button><button class="btn sm primary" data-act="audFill" ${A.scans.length && hasWeekly && !A.filled ? '' : 'disabled'}>${A.filled ? 'Filled to Weekly Audit ✓' : 'Fill to Weekly Audit'}</button></h2>
     <div class="row"><div class="grow"><label class="lbl" for="aud1">Auditor 1</label><input id="aud1" class="fld" data-aud="a1" list="dlAud" value="${esc(A.a1)}"></div><div class="grow"><label class="lbl" for="aud2">Auditor 2</label><input id="aud2" class="fld" data-aud="a2" list="dlAud" value="${esc(A.a2)}"></div></div>
     ${datalist('dlAud', [...distinct('kits', 'loggingpct'), ...(S.tables.audit ? distinct('audit', 'auditornamefirstandlast') : [])])}
-    <div class="scan" style="margin-top:10px"><input id="scanAudit" data-scan="audit" placeholder="Scan every kit in the med locker" autocomplete="off" aria-label="Scan kit for audit"></div>
-    <div class="small muted" style="margin-top:6px">Scans are saved with the workbook as you go. ${hasWeekly ? '“Fill to Weekly Audit” adds each scan to the SN Audit tab with today’s date and both auditors.' : 'The SN Audit table wasn’t found, so filling the weekly audit is off.'}</div>
+    <div class="scan" style="margin-top:10px"><input id="scanAudit" data-scan="audit" placeholder="${A.a1 ? 'Scan every kit in the med locker' : 'Enter Auditor 1 above to start scanning'}" autocomplete="off" aria-label="Scan kit for audit" ${A.a1 ? '' : 'disabled'}></div>
+    ${(() => { if (!S.tables.daily) return '<div class="msg warn small" style="margin-top:6px">The Daily Count scan table wasn’t found in this workbook, so scans stay in the add-in.</div>'; const pend = A.scans.filter(x => !x.sheet).length; const q = (S.scanQ || []).filter(x => x.k === 'aud').length + (S.scanBusy === 'aud' ? 1 : 0);
+      return `<div class="row small" style="margin-top:6px">${q ? `<span class="chip warn">Writing to Daily Count… ${q}</span>` : pend ? `<span class="chip bad">${pend} scan${pend > 1 ? 's' : ''} not on the Daily Count tab</span><button class="btn sm" data-act="audSync">Send to Daily Count</button>` : A.scans.length ? '<span class="chip ok">All scans are on the Daily Count tab</span>' : ''}<span class="muted">Each scan goes to the next row of the Daily Count tab; auditor names, date and location fill C2–C5.</span></div>`; })()}
+    <div class="small muted" style="margin-top:6px">${hasWeekly ? '“Fill to Weekly Audit” adds each scan to the SN Audit tab with today’s date and both auditors.' : 'The SN Audit table wasn’t found, so filling the weekly audit is off.'}</div>
     <div class="stats" style="margin-top:10px">${Object.entries(m.groups).map(([g, v]) => `<div class="stat"><div class="n" style="color:${v.ok === v.exp ? 'var(--ok)' : 'var(--bad)'}">${v.ok}/${v.exp}</div><div class="l">${g}</div></div>`).join('')}<div class="stat"><div class="n" style="color:${m.flags ? 'var(--bad)' : 'var(--ok)'}">${m.flags}</div><div class="l">flags</div></div></div>
   </div>
   <div class="cols"><div>
@@ -1852,6 +1879,57 @@ function auditDoc(){
       <h3>Scanned kits</h3>${dt(['#', 'Serial', 'Lot', 'mg', 'Pharmacy', 'Patient', 'Use by', 'Status'], m.rows.map(r => [r.i + 1, esc(r.p?.serial || r.k?.serial || ''), esc(r.k?.lot || r.p?.lot || ''), r.k?.recv ?? r.p?.mg ?? '', r.k ? PH_LABEL[r.k.pharm] : '', pt(r.k), r.k ? fmtD(r.k.expDate, 'full') : '', esc(r.st)]))}
     </div>
   </body></html>`;
+}
+// ---------- Daily Count tab (Table35 + header cells C2:C5) ----------
+// Each audit scan is written to the next row of the Daily Count scan table (Auditor Name + Scan Here; the rest are formulas).
+// Header: C2 Auditor 1, C3 Auditor 2, C4 Date, C5 Location — written only where the label in column B matches and the cell isn't a formula.
+const DH_KEYS = [['a1', /auditor\s*1/i], ['a2', /auditor\s*2/i], ['date', /^\s*date\s*$/i], ['loc', /location/i]];
+function dailyRows(){ const t = S.tables.daily; if (!t) return []; const c = t.cols.scanhere; const out = []; t.values.forEach((v, r) => { const sc = String(v[c] ?? '').trim(); if (sc && !t.isFormula(r, c)) out.push({ r, scan: sc, name: String(v[t.cols.auditornamefirstandlast] ?? '').trim() }); }); return out; }
+function dailyHeaderCells(){
+  const h = S.dailyHdr; if (!h) return []; const A = auditState(); const T = todaySerial();
+  const want = { a1: A.a1 || '', a2: A.a2 || '', date: { date: T }, loc: locName() }; const out = [];
+  DH_KEYS.forEach(([k, re], i) => { const lab = String(h.values?.[i]?.[0] ?? ''); const f = h.formulas?.[i]?.[1]; if (!re.test(lab) || isF(f)) return;
+    const cur = h.values[i][1]; const v = want[k]; const same2 = typeof v === 'object' ? toSerial(cur) === v.date : String(cur ?? '').trim() === String(v).trim(); if (!same2) out.push([`C${i + 2}`, v]); });
+  return out;
+}
+async function writeDailyHeader(){ const cells = dailyHeaderCells(); if (!cells.length || !S.dailyHdr) return; try { await S.store.setCells(S.dailyHdr.sheet, cells); cells.forEach(([a, v]) => { const i = +a.slice(1) - 2; S.dailyHdr.values[i][1] = typeof v === 'object' ? v.date : v; }); } catch (e){ toast('bad', esc(e.message || String(e))); } }
+// Before the first write of a new day: if the scan table still holds an earlier count, ask before clearing it.
+function ensureDailyDay(){
+  const today = isoOf(todaySerial()); if (!S.tables.daily || S.dailyDay === today) return Promise.resolve(true);
+  const old = dailyRows();
+  const begin = async clear => { if (clear && old.length){ await S.store.clearCells('daily', old.flatMap(x => [[x.r, S.tables.daily.cols.scanhere, x.scan], ...(x.name ? [[x.r, S.tables.daily.cols.auditornamefirstandlast, x.name]] : [])])); } S.dailyDay = today; await S.store.setDoc('eskDailyDay', today); if (clear && old.length) await reload(true); await writeDailyHeader(); return true; };
+  if (!old.length) return begin(false);
+  const at = S.tables.audit; let onSN = 0;
+  if (at){ const keys = new Set(); at.values.forEach((_, r) => { const sc = at.get(r, 'scanhere'); if (sc) keys.add(normScan(parseScan(cleanScan(sc))?.serial || sc)); }); onSN = old.filter(x => keys.has(normScan(parseScan(cleanScan(x.scan))?.serial || x.scan))).length; }
+  const hd = S.dailyHdr ? toSerial(S.dailyHdr.values?.[2]?.[1]) : null;
+  return new Promise(res => {
+    S.dayRes = res;
+    openModal(`<h2>Start today’s Daily Count?</h2>
+      <div>The Daily Count tab still has <b>${old.length}</b> scan${old.length === 1 ? '' : 's'} from an earlier count${hd ? ` (dated ${fmtD(hd, 'full')})` : ''}.</div>
+      ${at ? (onSN === old.length ? `<div class="msg ok" style="margin-top:8px">All of them are already on the SN Audit tab.</div>` : `<div class="msg warn" style="margin-top:8px"><b>${old.length - onSN} of them aren’t on the SN Audit tab yet.</b> Fill them there first if they still need to be recorded.</div>`) : ''}
+      <div class="small muted" style="margin-top:8px">Clearing empties only the Auditor Name and Scan Here cells; the formula columns are left alone.</div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="dayCancel">Not now</button><button class="btn" data-act="dayKeep">Keep them, add today’s below</button><button class="btn primary" data-act="dayClear">Clear and start today</button></div>`);
+  });
+}
+async function dayChoice(kind){
+  const res = S.dayRes; S.dayRes = null; closeModal(); if (!res) return;
+  if (kind === 'cancel'){ res(false); toast('warn', 'Scans are kept in the add-in only. Use “Send to Daily Count” when ready.'); render(); return; }
+  try { busy('Updating the Daily Count tab…'); const today = isoOf(todaySerial()); const old = dailyRows();
+    if (kind === 'clear' && old.length) await S.store.clearCells('daily', old.flatMap(x => [[x.r, S.tables.daily.cols.scanhere, x.scan], ...(x.name ? [[x.r, S.tables.daily.cols.auditornamefirstandlast, x.name]] : [])]));
+    S.dailyDay = today; await S.store.setDoc('eskDailyDay', today); if (kind === 'clear') await reload(true); await writeDailyHeader(); res(true);
+  } catch (e){ toast('bad', esc(e.message || String(e))); res(false); } finally { busy(false); }
+}
+async function writeAuditScan(sc){
+  const A = auditState(); if (sc.sheet || !S.tables.daily) return;
+  if (!(await ensureDailyDay())) return;
+  const { out } = changesFor('daily', { auditornamefirstandlast: A.a1 || '', scanhere: sc.raw });
+  await S.store.add('daily', out); sc.sheet = true; saveAuditSoon(); S._dailyDirty = true;
+}
+async function removeDailyRow(sc){
+  if (!sc?.sheet || !S.tables.daily) return;
+  const t = S.tables.daily; const rows = dailyRows().filter(x => same(x.scan, sc.raw)); const x = rows[rows.length - 1]; if (!x) return;
+  await S.store.clearCells('daily', [[x.r, t.cols.scanhere, x.scan], ...(x.name ? [[x.r, t.cols.auditornamefirstandlast, x.name]] : [])]);
+  S._dailyDirty = true;
 }
 async function audFill(){
   const m = auditModel(); const A = m.A; if (!S.tables.audit || A.filled) return;
@@ -2094,8 +2172,14 @@ const ACT = {
   rcvTop: el => { S.rcvFirst = el.dataset.id; render(); $('#scanRecv')?.focus(); },
   audPrint: () => openPrintable(auditDoc(), `Daily audit · ${fmtD(todaySerial(), 'full')}`),
   audFill: () => audFill(),
-  audClear: async () => { if (!confirmClear()) return; S.aud = null; auditState(); await saveAudit(); render(); },
-  audRemove: async el => { const A = auditState(); A.scans.splice(+el.dataset.i, 1); await saveAudit(); render(); },
+  audClear: async () => { if (!confirmClear()) return; const A = auditState(); const mine = A.scans.filter(x => x.sheet);
+    if (mine.length && S.tables.daily){ try { busy('Clearing today’s scans from the Daily Count tab…'); const t = S.tables.daily; const rows = dailyRows(); const used = new Set(); const cells = [];
+      for (const sc of mine){ const x = rows.filter(y => same(y.scan, sc.raw) && !used.has(y.r)).pop(); if (!x) continue; used.add(x.r); cells.push([x.r, t.cols.scanhere, x.scan]); if (x.name) cells.push([x.r, t.cols.auditornamefirstandlast, x.name]); }
+      if (cells.length) await S.store.clearCells('daily', cells); await reload(true); } catch (e){ toast('bad', esc(e.message || String(e))); busy(false); return; } finally { busy(false); } }
+    S.aud = null; auditState(); await saveAudit(); render(); },
+  audRemove: async el => { const A = auditState(); const sc = A.scans[+el.dataset.i]; try { if (sc?.sheet){ busy('Removing from the Daily Count tab…'); await removeDailyRow(sc); await reload(true); } } catch (e){ toast('bad', esc(e.message || String(e))); busy(false); return; } finally { busy(false); } const B = auditState(); const j = B.scans.findIndex(x => x.at === sc?.at && x.raw === sc?.raw); if (j >= 0) B.scans.splice(j, 1); (B.removed = B.removed || []).push(`${sc?.at}|${sc?.raw}`); await saveAudit(); render(); },
+  audSync: () => { const A = auditState(); if (!A.a1){ toast('warn', 'Enter Auditor 1 first.'); return; } A.scans.filter(x => !x.sheet).forEach(sc => S.scanQ.push({ k: 'aud', sc })); runScanQ(); render(); },
+  dayCancel: () => dayChoice('cancel'), dayKeep: () => dayChoice('keep'), dayClear: () => dayChoice('clear'),
   range: el => { S.range = el.dataset.v; if (S.range === 'week' && S.fSt !== 'all' && !['attention','pulled','done','sched'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'day' && ['avail','ordered','need','pulled'].includes(S.fSt)) S.fSt = 'all'; if (S.range === 'week' && ['onhand','check','bad'].includes(S.fSt)) S.fSt = 'all'; render(); },
   gotoDay: el => { S.day = +el.dataset.d; S.range = 'day'; render(); },
   fClear: () => { S.fQ = ''; S.fPh = 'all'; S.fSt = 'all'; S.sortBy = 'time'; render(); },
@@ -2143,7 +2227,7 @@ document.addEventListener('keydown', e => {
   if (k === 'today') todayScan(v);
   else if (k === 'recv'){ S.scanQ.push({ k, v }); runScanQ(); render(); }
   else if (k === 'inv') invScan(v);
-  else if (k === 'audit'){ const A = auditState(); A.scans.push({ raw: cleanScan(v), at: Date.now() }); A.filled = false; saveAuditSoon(); render(); }
+  else if (k === 'audit'){ const A = auditState(); if (!A.a1){ toast('warn', 'Enter Auditor 1 before scanning — it goes on the Daily Count tab.'); $('#aud1')?.focus(); return; } const sc = { raw: cleanScan(v), at: Date.now() }; A.scans.push(sc); A.filled = false; saveAuditSoon(); if (S.tables.daily){ S.scanQ.push({ k: 'aud', sc }); runScanQ(); } render(); }
   else if (k === 'admin'){ const { p, list } = findByScan(v); if (!list.length){ S.adm.msg = { kind:'bad', html: p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.' }; } else { S.adm.kitId = (list.find(x => !x.administered) || list[0]).id; S.adm.msg = null; } renderAdmin(); }
 });
 document.addEventListener('input', e => {
@@ -2170,7 +2254,7 @@ document.addEventListener('change', e => {
   if (el.dataset.pick){ const set = { fu: S.fuSel, fu2: S.oFu, pt: S.oPt }[el.dataset.pick]; el.checked ? set.add(el.dataset.id) : set.delete(el.dataset.id); (el.dataset.pick === 'fu' ? S.fuDraw : S.oDraw)(); }
   if (el.dataset.oinc){ S.oInc[el.dataset.oinc] = el.checked; S.oDraw(); }
   if (el.dataset.flag){ S[el.dataset.flag] = el.checked; render(); }
-  if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); }
+  if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); if (S.tables.daily && (S.dailyDay === isoOf(todaySerial()) || !dailyRows().length)) writeDailyHeader(); render(); }
   if (el.dataset.win){ const v = fromIso(el.value); if (v != null){ S.win[el.dataset.win] = v; if (S.win.to < S.win.from) S.win.to = S.win.from; render(); } }
   if ('gall' in el.dataset){ genoaModel().rows.filter(r => r.cover === 'need').forEach(r => el.checked ? S.genoaSel.add(r.a.key) : S.genoaSel.delete(r.a.key)); render(); }
   if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
@@ -2197,10 +2281,10 @@ async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
     const d = await S.store.load();
-    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet;
+    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; { const a = S.store.getDoc('eskAudit'); if (a && (!S.aud || a.scans?.length >= (S.aud.scans?.length || 0))) S.aud = a; } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2232,12 +2316,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -2251,6 +2335,7 @@ function RemoteStore(){
     update: (k, r, snap, ch) => call('update', [k, r, snap, ch]),
     add: (k, ch) => call('add', [k, ch]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
+    clearCells: (k, cells) => call('clearCells', [k, cells]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
     watch(cb){ onChanged = cb; },
@@ -2268,7 +2353,7 @@ function openFull(){
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       const { rid, op, args } = m;
-      try { if (!['load','update','add','setCells','setDoc'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','setCells','setDoc','clearCells'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
     });
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
