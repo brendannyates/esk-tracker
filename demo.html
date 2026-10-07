@@ -79,6 +79,8 @@ table.rt td .row{gap:6px}
 :root{--s1:#2a78d6;--s2:#eb6834}
 @media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])){--s1:#3987e5;--s2:#d95926}}
 :root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926}
+.wk{display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:1px 8px} .wk.ok{border-color:var(--ok)} .wk.warn{border-color:var(--warn)} .wk.bad{border-color:var(--bad)}
+.wk .dot{font-size:11px;color:var(--muted)} .wk .dot.on{color:var(--ink);font-weight:700}
 .vleg{display:flex;gap:14px;margin-bottom:8px;color:var(--muted)} .vleg .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .sw.s1,.vbar.s1{background:var(--s1)} .sw.s2,.vbar.s2{background:var(--s2)}
 .vbars{display:grid;gap:12px} .vrow2{display:grid;gap:2px} .vlab{font-size:13px}
@@ -498,7 +500,7 @@ function DemoStore(){
     for (let k = -3; k <= 12; k++){
       let d = Math.round(base + k*s); if (dowOf(d) === 0) d += 1; if (dowOf(d) === 6) d += 2;
       if (d < base - 21) continue;
-      const isStart = st === 'Pending Start' && d >= base;
+      const isStart = st === 'Pending Start' && d >= base && !appts.some(x => x[0] === mrn && /Start/.test(x[3]));
       if (d >= base && (d - base) > weeksAhead * 7) break;
       if (st === 'Paused' && d >= base) break;
       appts.push([mrn, d, times[(i + k + 8) % 8], isStart ? 'Esketamine Tx Start' : 'Esketamine Follow Up', d < base ? (k === -2 && i === 4 ? 'No Show' : 'Kept') : 'Expected']);
@@ -629,7 +631,7 @@ function derive(){
     k.partialOpen = !k.disposed && k.recv > 0 && k.remaining > 0 && k.remaining < k.recv;
     K.push(k);
   });
-  Object.assign(S, { P, A, K, byMrn });
+  Object.assign(S, { P, A, K, byMrn }); S._ind = null;
 }
 S.win = defaultWindow();
 const nm = mrn => S.byMrn.get(mrn)?.name || S.A.find(a => a.mrn === mrn)?.patient || mrn;
@@ -745,6 +747,56 @@ const covChip = p => !p ? '' : p.coverage ? `<span class="small muted">${esc(p.c
 const protoFlag = p => needsProto(p) ? `<span class="chip bad">New protocol · ${p.protoExp ? (p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span>` : '';
 const insChip = p => !p ? '' : p.insurance ? `<span class="chip">${esc(p.insurance)}</span>` : '<span class="chip warn">Insurance not set</span>';
 function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip warn">No protocol date</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">${p.protoExp < T ? 'Protocol expired' : 'Protocol exp'} ${fmtD(p.protoExp, 'full')}</span>`; }
+// ---------- treatment starts (induction) ----------
+// 6 visits: visit 1 at 56 mg, visits 2–6 at 84 mg, twice weekly. Weeks run from the start day (Tue start → Tue–Mon).
+// Visits can't be on back-to-back days; 2–3 days apart is ideal. After the 6th visit the tracker frequency takes over.
+const IND = { visits: 6, weeks: 3 };
+const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function suggestDays(from, to, taken, n){
+  const T = todaySerial(); const picks = []; const all = taken.slice();
+  for (let k = 0; k < n; k++){
+    let best = null;
+    for (let d = Math.max(from, T); d <= to; d++){ const w = dowOf(d); if (w === 0 || w === 6 || all.some(t => Math.abs(t - d) < 2)) continue;
+      const prev = all.filter(t => t < d).sort((x, y) => y - x)[0]; const next = all.filter(t => t > d).sort((x, y) => x - y)[0];
+      const sc = g => g == null ? 1 : g === 3 ? 0 : g === 2 ? 1 : g === 4 ? 2 : 3; const score = sc(prev == null ? null : d - prev) + (next == null ? 0 : sc(next - d));
+      if (!best || score < best.score) best = { d, score }; }
+    if (!best) break; picks.push(best.d); all.push(best.d);
+  }
+  return picks.sort((x, y) => x - y);
+}
+function inductionModel(){
+  const T = todaySerial(); const out = [];
+  for (const p of S.P){
+    const ap = S.A.filter(a => a.mrn === p.mrn && a.active).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+    const st = ap.filter(a => a.isStart && a.date >= T - IND.weeks * 7).sort((a, b) => a.date - b.date)[0];
+    if (!st){ if (/^pending/i.test(p.status)) out.push({ p, start: null, issues: ['Start not booked'], weeks: [], visits: [] }); continue; }
+    const s = st.date, end = s + IND.weeks * 7 - 1;
+    const visits = ap.filter(a => a.date >= s && a.date <= end).slice(0, IND.visits);
+    if (end < T && visits.length >= IND.visits) continue; // finished
+    const issues = [], sugg = [];
+    const weeks = Array.from({ length: IND.weeks }, (_, w) => { const from = s + w * 7, to = from + 6; const v = visits.filter(a => a.date >= from && a.date <= to); return { w: w + 1, from, to, v }; });
+    const planned = visits.map(a => a.date);
+    for (const wk of weeks){ if (wk.v.length < 2 && wk.to >= T){ const need = 2 - wk.v.length; const sd = suggestDays(wk.from, wk.to, planned, need); planned.push(...sd); issues.push(`Week ${wk.w} needs ${need} more`); sugg.push({ w: wk.w, need, days: sd }); }
+      if (wk.v.length > 2) issues.push(`Week ${wk.w} has ${wk.v.length} visits`); }
+    for (let i = 1; i < visits.length; i++){ const gap = visits[i].date - visits[i - 1].date; if (gap === 0) issues.push(`Two visits on ${fmtD(visits[i].date, 'dow')}`); else if (gap === 1) issues.push(`Back-to-back: ${fmtD(visits[i - 1].date, 'dow')} → ${fmtD(visits[i].date, 'dow')}`); }
+    visits.forEach((a, i) => { const mg = apptInfo(a).mg; if (i === 0 && mg && mg !== 56) issues.push(`Visit 1 is ${mg} mg — starts at 56 mg`); if (i > 0 && mg === 56) issues.push(`Visit ${i + 1} (${fmtD(a.date, 'dow')}) is 56 mg — should be 84 mg`); });
+    out.push({ p, start: s, end, visits, weeks, issues, sugg, done: visits.filter(a => a.date < T).length });
+  }
+  return out.sort((a, b) => (a.start ?? 1e9) - (b.start ?? 1e9));
+}
+const inInduction = mrn => (S._ind || (S._ind = inductionModel())).some(x => x.p.mrn === mrn);
+function startsHTML(){
+  const L = inductionModel(); S._ind = L; if (!L.length) return '';
+  const T = todaySerial();
+  return `<div class="card"><h2>Treatment starts <span class="chip ${L.some(x => x.issues.length) ? 'warn' : 'ok'}">${L.length}</span></h2>
+    <div class="small muted">6 visits: 56 mg first, then 84 mg, twice a week (weeks run from the start day). No back-to-back days; 2–3 days apart is ideal.</div>
+    ${L.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.p.mrn)}${x.start != null ? ` · started ${fmtD(x.start, 'dow')} · visit ${Math.min(x.done + 1, IND.visits)} of ${IND.visits}` : ''}</span></div>
+      ${x.start != null ? `<div class="line row small" style="gap:10px;flex-wrap:wrap">${x.weeks.map(wk => `<span class="wk ${wk.v.length >= 2 ? 'ok' : wk.to < T ? 'bad' : 'warn'}" title="Week ${wk.w}: ${fmtD(wk.from, 'dow')} – ${fmtD(wk.to, 'dow')}"><b>W${wk.w}</b> ${[0, 1].map(i => wk.v[i] ? `<span class="dot on" title="${fmtD(wk.v[i].date, 'dow')} ${fmtT(wk.v[i].time)}">${DOWS[dowOf(wk.v[i].date)]}</span>` : '<span class="dot">—</span>').join('')}</span>`).join('')}</div>` : ''}
+      ${x.issues.length ? `<div class="line row small">${x.issues.map(t => `<span class="chip ${/back-to-back|two visits|56 mg|starts at/i.test(t) ? 'bad' : 'warn'}">${esc(t)}</span>`).join('')}</div>` : '<div class="line small okText">On track</div>'}
+      ${(x.sugg || []).filter(g => g.days.length).map(g => `<div class="line small">Week ${g.w} — book ${g.days.map(d => `<b>${fmtD(d, 'dow')}</b>`).join(' / ')}${g.days.length < g.need ? ' <span class="warnText">(no other day fits the 2-day spacing)</span>' : ''}</div>`).join('')}
+      ${x.start == null ? `<div class="line small">Pending Start with no “Tx Start” appointment booked.${x.p.prefs ? ` Prefers: ${esc(x.p.prefs)}` : ''}</div>` : ''}</div>`).join('')}
+  </div>`;
+}
 function schedHTML(){
   const g = schedGaps(); const T = todaySerial();
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
@@ -935,9 +987,10 @@ function accessModel(){
   const booked = new Map(); const slots = {};
   for (const a of S.A){ if (!a.active || a.date < T || a.date >= end || !set.has(a.mrn)) continue; booked.set(a.mrn, (booked.get(a.mrn) || 0) + 1);
     const d = dowOf(a.date); if (d >= 1 && d <= 5){ const k = `${d}|${(a.time ?? 0) < 720 ? 'AM' : 'PM'}`; slots[k] = (slots[k] || 0) + 1; } }
-  const rows = P.map(p => ({ p, need: FREQ_RATE(p.freq), booked: (booked.get(p.mrn) || 0) / F.weeks }));
+  const ind = new Set((S._ind || (S._ind = inductionModel())).map(x => x.p.mrn));
+  const rows = P.map(p => ({ p, ind: ind.has(p.mrn), need: ind.has(p.mrn) ? 2 : FREQ_RATE(p.freq), booked: (booked.get(p.mrn) || 0) / F.weeks }));
   const by = (keyf, order) => { const m = new Map(); for (const r of rows){ const k = keyf(r.p); const g = m.get(k) || { k, need: 0, booked: 0, n: 0, unknown: 0, noBook: 0, short: 0 }; g.n++; if (r.need == null) g.unknown++; else { g.need += r.need; g.short += Math.max(0, r.need - r.booked); } g.booked += r.booked; if (!r.booked) g.noBook++; m.set(k, g); } const L = [...m.values()]; return order ? L.sort(order) : L.sort((a, b) => b.need - a.need || a.k.localeCompare(b.k)); };
-  const protocol = by(p => `${doseLabel(p)} · ${freqLabel(p)}`);
+  const protocol = by(p => ind.has(p.mrn) ? 'Start · 56 → 84 mg · 2x per week' : `${doseLabel(p)} · ${freqLabel(p)}`);
   const provider = by(p => p.provider || 'Not set');
   const cred = by(credLabel, (a, b) => ['MD Only', 'MD & NP', 'Not set'].indexOf(a.k) - ['MD Only', 'MD & NP', 'Not set'].indexOf(b.k));
   const provCred = new Map(); for (const r of rows){ const k = r.p.provider || 'Not set'; const c = credLabel(r.p); const o = provCred.get(k) || {}; o[c] = (o[c] || 0) + (r.need || 0); provCred.set(k, o); }
@@ -965,7 +1018,7 @@ function accessHTML(){
       <select class="fld" data-accv="ph" style="width:auto">${[['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']].map(([v, l]) => `<option value="${v}" ${F.ph === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select class="fld" data-accv="weeks" style="width:auto">${[2, 4, 8].map(w => `<option value="${w}" ${+F.weeks === w ? 'selected' : ''}>Booked: next ${w} weeks</option>`).join('')}</select></div>
     <div class="stats" style="margin-top:10px">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(t.pending, 'pending starts')}</div>
-    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, EOW = 0.5, monthly = 0.25). Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} no frequency set and count as 0 needed.</span>` : ''}</div></div>
+    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, EOW = 0.5, monthly = 0.25); patients in their first 6 start visits count as 2 a week. Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} no frequency set and count as 0 needed.</span>` : ''}</div></div>
   <div class="cols">
     <div>${barsHTML('By protocol', 'Dose · Tx frequency', m.protocol)}${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}</div>
     <div>${barsHTML('By provider', 'Rendering provider', m.provider)}
@@ -1211,6 +1264,7 @@ function todayHTML(){
   </div>
   <div class="cols swap"><div>
     ${actionHTML()}
+    ${startsHTML()}
     ${schedHTML()}
   </div><div>
     <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="bays" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker &amp; bays</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
@@ -1450,6 +1504,7 @@ function itemHTML(i){
     i.needsProto ? `<span class="flag bad">new protocol${x('protoRenew', a.mrn, 'Enter the renewed protocol date')}</span>` : '',
     i.needsSched && !taskGet(a.mrn, 'sched') ? `<span class="flag warn">schedule out${x('taskDoX', a.mrn, 'Mark scheduled')}</span>` : '',
     i.inf.mg === 56 && !a.isStart ? '<span class="flag warn">56 mg — verify</span>' : '',
+    (() => { const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); return adj ? `<span class="flag bad">back-to-back with ${fmtD(adj.date, 'dow')}</span>` : ''; })(),
     S._re?.has(k?.id) ? '<span class="flag warn">re-assign kit</span>' : '',
   ].filter(Boolean);
   const notes = notesFor(a.mrn);
