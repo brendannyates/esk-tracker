@@ -25,6 +25,12 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1p
 .bar{display:flex;align-items:center;gap:8px;padding:10px 12px 6px}
 .brand{font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .brand .dot{width:22px;height:22px;border-radius:7px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:11px;font-weight:800}
+.brand .mlogo{height:34px;width:auto;flex:none;border-radius:6px}
+.brand .bsep{width:1px;height:22px;background:var(--line);flex:none}
+@media (prefers-color-scheme: dark){:root:where(:not([data-theme="light"])) .brand .mlogo{background:#fff;padding:2px 5px}}
+:root[data-theme="dark"] .brand .mlogo{background:#fff;padding:2px 5px}
+@media (max-width:460px){.brand .mlogo{height:26px}.brand .bsep{display:none}.brand small{display:none}}
+.brand > span:not(.bsep){white-space:nowrap}
 .brand small{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
 .iconbtn:hover{border-color:var(--accent)}
@@ -974,7 +980,7 @@ const csvCell = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${
 function expTitle(){ const F = S.exp; return `ESK patient list · ${{ current: 'Active + Pending', active: 'Active', all: 'All' }[F.status]} · ${fmtD(todaySerial(), 'full')}`; }
 function expDoc(){ const rows = expRows(); let g = null;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(expTitle())}</title><style>@page{size:letter landscape;margin:0.4in} body{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:10pt} h1{font-size:14pt;margin:0 0 4px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #999;padding:3px 6px;text-align:left} th{background:#eee} tr.g td{background:#f6f1e7;font-weight:700}</style></head><body>
-  <h1>${esc(expTitle())}</h1><div style="margin-bottom:6px">${rows.length} patients · contains patient identifiers — shred after use.</div>
+  <img src="${LOGO_URI}" alt="Mindful Health Solutions" style="height:44px;margin-bottom:6px"><h1>${esc(expTitle())}</h1><div style="margin-bottom:6px">${rows.length} patients · contains patient identifiers — shred after use.</div>
   <table><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => { let x = ''; if (S.exp.group !== 'none' && r.g !== g){ g = r.g; x = `<tr class="g"><td colspan="${EXP_HEAD.length}">${esc(g)} · ${rows.filter(y => y.g === g).length}</td></tr>`; } return x + `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`; }).join('')}</table></body></html>`; }
 function downloadText(name, text, type){ try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); return true; } catch { return false; } }
 
@@ -1133,7 +1139,7 @@ function render(){
   app.innerHTML = `
     ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
     <header class="top">
-      <div class="bar"><div class="brand"><span class="dot">ESK</span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
+      <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
         ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button><button class="btn sm" data-act="fullWin" title="Open in its own window — move it or put it on another monitor">⧉ New window</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
@@ -1543,7 +1549,7 @@ function vitalsDoc(day){
     const vv = it ? visitGet(it.a.key) : null;
     return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center;font-size:13pt;font-weight:700">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit(it ? fmtT(it.a.time) : '')}${vit(vv?.start != null ? fmtT(vv.start + (+CFG.vitalsMin || 40)) : '')}${vit(vv?.start != null ? fmtT(disAt(vv.start)) : '')}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
   };
-  const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
+  const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title"><img src="${LOGO_URI}" alt="" style="height:30px;vertical-align:middle;margin-right:10px">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
     <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>${esc(CFG.vitalsMin)} min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
     ${[0,1,2,3,4,5].map(i => block(list[i])).join('')}
     <tr class="an"><td colspan="7"><b>Additional Notes</b></td></tr></table>`;
