@@ -105,6 +105,8 @@ table.rt td .row{gap:6px}
 .docrow .lab{font-weight:700;margin-right:2px}
 .doc{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--surface);font-size:12px;line-height:1.5;color:var(--muted)}
 button.doc{cursor:pointer} button.doc:hover{border-color:var(--accent)}
+.doc.split{padding:0;overflow:hidden} .doc.split .tick{border:0;background:transparent;color:inherit;font:inherit;padding:2px 4px 2px 9px;cursor:pointer}
+.doc.split a{color:inherit;text-decoration:underline;text-underline-offset:2px;padding:2px 9px 2px 0} .doc.split:hover{border-color:var(--accent)}
 .doc.on{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-weight:700}
 .okText{color:var(--ok)}
 .pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:700;border:1.5px solid var(--line);background:var(--surface2);color:var(--ink)}
@@ -1342,12 +1344,12 @@ const dueChip = (due, isToday) => `<span class="chip ${dueCls(due, isToday)}" da
 function visitRowHTML(i){
   const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
   if (!v || v.start == null){ const iv = { what: 'Initial vitals', at: a.time, kind: 'v40' };
-    return `<div class="vrow small">${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}<span class="grow"></span><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><button class="btn sm" data-act="vOut" data-k="${esc(a.key)}">Check out / Tx report</button>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`; }
+    return `<div class="vrow small">${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}<span class="grow"></span><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><button class="btn sm" data-act="vOut" data-k="${esc(a.key)}">${v?.savedAt ? 'Check out / Tx report · draft saved' : 'Check out / Tx report'}</button>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`; }
   return `<div class="vrow small"><span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
     ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : visitMarks(v).map(m => dueChip(m, isToday)).join('')}
     ${(v.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}
     <span class="grow"></span>
-    <button class="btn sm ${v.out ? '' : 'primary'}" data-act="vOut" data-k="${esc(a.key)}">${v.out ? 'Tx report draft' : 'Check out'}</button>
+    <button class="btn sm ${v.out ? '' : 'primary'}" data-act="vOut" data-k="${esc(a.key)}">${v.out ? 'Tx report draft' : v.savedAt ? 'Check out / Tx report · draft saved' : 'Check out / Tx report'}</button>
     <button class="linkbtn" data-act="vStart" data-k="${esc(a.key)}" title="Edit start time / bay">edit</button></div>`;
 }
 function openStart(key){
@@ -1422,11 +1424,10 @@ function coOutHTML(){
         <li>☐ “${esc(NG_BOX)}” → ${box ? '<b class="okText">check it</b>' : '<b class="warnText">leave unchecked</b> <span class="muted">(' + [c.dizzy ? 'dizziness reported' : '', c.ride !== 'yes' ? 'no ride confirmed' : '', !c.gait ? 'gait not confirmed stable' : ''].filter(Boolean).join(', ') + ')</span>'}</li>
         <li>Note text ↓ ${n.missing ? `<span class="warnText">${n.missing} blank${n.missing > 1 ? 's' : ''} marked [___]</span>` : ''}</li>
       </ol></div>
-    <textarea id="coText" class="fld mono" rows="15" style="margin-top:8px;font-size:12.5px" aria-label="Treatment report note">${esc(S.coEdit ?? n.text)}</textarea>
-    ${S.coEdit != null ? '<div class="small muted">Edited by hand — <button class="linkbtn" data-act="coReset">rebuild from the form</button></div>' : ''}`;
+    `;
 }
 function openCheckout(key){
-  S.co = coDefaults(key); S.coKey = key; S.coEdit = null;
+  S.co = coDefaults(key); S.coKey = key; const pv = visitGet(key) || {}; S.coEdit = pv.noteEdited && pv.note ? pv.note : null;
   const it = S.A.find(a => a.key === key); const v = visitGet(key) || {};
   const radio = (k, opts) => `<div class="opts">${opts.map(([val, lab]) => `<label class="opt"><input type="radio" name="co_${k}" data-co="${k}" value="${val}" ${String(S.co[k]) === String(val) ? 'checked' : ''}> ${lab}</label>`).join('')}</div>`;
   const disLab = ['Not at all.', 'Mild, a little disconnected, but basically all here.', 'Moderate, somewhat detached, but basically all together.', 'Severe, detached but not far removed.', 'Extreme, completely out of body / removed from the room.'];
@@ -1454,17 +1455,25 @@ function openCheckout(key){
       <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
       <label class="opt" style="margin-top:6px"><input type="checkbox" data-co="gait" ${S.co.gait ? 'checked' : ''}> Gait noted to be stable</label>
       <div class="small" style="font-weight:800;margin-top:12px">Rescue medication given?</div><div id="coRx">${rescueHTML()}</div>
-    </div><div class="coout"><div id="coOut">${coOutHTML()}</div></div></div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="coSave">Save</button><button class="btn" data-act="coCopy">Copy note</button><button class="btn primary" data-act="coDone">${v.out ? 'Save &amp; copy note' : 'Check out &amp; copy note'}</button></div>`, true);
+    </div><div class="coout"><div id="coOut">${coOutWrap()}</div></div></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><span id="coSaved" class="small muted grow">${v.savedAt ? 'Draft saved ' + new Date(v.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Saves as you type — finish later anytime'}</span><button class="btn ghost" data-act="coClose">Close</button><button class="btn" data-act="coSave">Save draft</button><button class="btn" data-act="coCopy">Copy note</button><button class="btn primary" data-act="coDone">${v.out ? 'Save &amp; copy note' : 'Check out &amp; copy note'}</button></div>`, true);
 }
-function coRefresh(){ const o = $('#coOut'); if (o){ const ta = $('#coText'); const keep = ta && document.activeElement === ta; o.innerHTML = coOutHTML(); if (keep) $('#coText')?.focus(); } }
-async function coPersist(checkout){
+// The guide re-renders on every answer; the note box is built once and only its text is updated, so focus and typing are never lost.
+function coOutWrap(){ return `<div id="coGuide">${coOutHTML()}</div><textarea id="coText" class="fld mono" rows="15" style="margin-top:8px;font-size:12.5px" aria-label="Treatment report note">${esc(S.coEdit ?? coNote(S.co).text)}</textarea><div id="coEditNote" class="small muted">${S.coEdit != null ? EDIT_HINT : ''}</div>`; }
+const EDIT_HINT = 'Edited by hand — <button class="linkbtn" data-act="coReset">rebuild from the form</button>';
+function coRefresh(){
+  const g = $('#coGuide'); if (!g) return; g.innerHTML = coOutHTML();
+  const ta = $('#coText'); if (ta && S.coEdit == null) ta.value = coNote(S.co).text;
+  const en = $('#coEditNote'); if (en) en.innerHTML = S.coEdit != null ? EDIT_HINT : '';
+}
+function coAutosave(){ clearTimeout(S._coT); S._coT = setTimeout(() => { if (S.co && S.coKey && !$('#modal').hidden) coPersist(false, true).then(() => { const el = $('#coSaved'); if (el) el.textContent = 'Draft saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }); }, 900); }
+async function coPersist(checkout, quiet){
   const key = S.coKey; const { rescue, ...form } = S.co;
   const cleanRx = (rescue || []).filter(r => r.med);
   const prev = visitGet(key) || {};
-  const patch = { form, rescue: cleanRx, note: $('#coText')?.value ?? coNote(S.co).text };
+  const patch = { form, rescue: cleanRx, note: $('#coText')?.value ?? coNote(S.co).text, noteEdited: S.coEdit != null, savedAt: Date.now() };
   if (checkout && !prev.out) patch.out = { at: nowMin(), by: CFG.me || '' };
-  await visitSet(key, patch); render();
+  await visitSet(key, patch); if (!quiet) render();
 }
 // Visit documentation checklist. ESK Tracker + med logs are done by Administer in this add-in;
 // Tx report (NextGen) and the REMS monitoring form are ticked by hand (saved with the workbook).
@@ -1490,7 +1499,10 @@ function docRowHTML(i){
     if (t === 'tracker' || t === 'logs') return `<span class="doc ${d[t] ? 'on' : ''}" title="${d[t] ? 'Done when the kit was marked administered' : 'Completes automatically when you Administer'}">${d[t] ? '✓' : '○'} ${l}</span>`;
     const g = docGet(i.a.key, t);
     const medInv = (S.shared || {}).medInvUrl;
-    return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? `Marked by ${esc(g.by || '—')} — click to undo` : t === 'tx' ? 'Completed in NextGen — click to mark done' : t === 'medinv' ? 'Logged on the Medication Inventory Tracker — click to mark done' : 'Uploaded to REMS — click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>${t === 'tx' ? `<button class="linkbtn small" data-act="vOut" data-k="${esc(i.a.key)}" title="Open the check-out form and drafted Tx report">Draft ✎</button>` : ''}${t === 'rems' ? `<a class="linkbtn small" href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site to upload the monitoring form">Upload ↗</a>` : ''}${t === 'medinv' && medInv ? `<a class="linkbtn small" href="${esc(medInv)}" target="_blank" rel="noopener">Med Inventory ↗</a>` : ''}`;
+    const tip = g ? `Marked by ${esc(g.by || '—')} — click to undo` : 'Click to mark done';
+    if (t === 'rems') return `<span class="doc split ${g ? 'on' : ''}"><button class="tick" data-act="docTog" data-k="${esc(i.a.key)}" data-t="rems" title="${tip}" aria-label="Mark REMS form done">${g ? '✓' : '○'}</button><a href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site">${l} ↗</a></span>`;
+    if (t === 'medinv' && medInv) return `<span class="doc split ${g ? 'on' : ''}"><button class="tick" data-act="docTog" data-k="${esc(i.a.key)}" data-t="medinv" title="${tip}" aria-label="Mark rescue med logged">${g ? '✓' : '○'}</button><a href="${esc(medInv)}" target="_blank" rel="noopener" title="Open the Medication Inventory Tracker">${l} ↗</a></span>`;
+    return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? tip : t === 'tx' ? 'Completed in NextGen — click to mark done' : 'Click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>`;
   };
   return `<div class="docrow small"><span class="lab ${d.done ? 'okText' : given ? 'warnText' : 'muted'}">Documentation ${d.n}/${d.total}</span>${docItems(i).map(chip).join('')}</div>`;
 }
@@ -2300,10 +2312,11 @@ const ACT = {
   vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the start time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim(); closeModal(); await visitSet(key, { start: m, bay }); render(); },
   vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; } closeModal(); await saveVisit(); render(); },
   vOut: el => openCheckout(el.dataset.k),
-  rxAdd: el => { S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
-  rxDel: el => { S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
+  rxAdd: el => { coAutosave(); S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
+  rxDel: el => { coAutosave(); S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   coReset: () => { S.coEdit = null; coRefresh(); },
-  coSave: async () => { await coPersist(false); toast('ok', 'Saved.'); },
+  coSave: async () => { clearTimeout(S._coT); await coPersist(false); const el = $('#coSaved'); if (el) el.textContent = 'Draft saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); toast('ok', 'Draft saved — not checked out.'); },
+  coClose: async () => { clearTimeout(S._coT); if (S.co && S.coKey) await coPersist(false, true); closeModal(); render(); },
   coCopy: async () => { const t = $('#coText')?.value || ''; toast((await copyText(t)) ? 'ok' : 'bad', 'Note copied — paste it into the NextGen treatment report.'); },
   coDone: async () => { const t = $('#coText')?.value || ''; const ok = await copyText(t); await coPersist(true); closeModal(); toast(ok ? 'ok' : 'bad', ok ? 'Checked out. Note copied — paste it into NextGen, then tick “Tx report”.' : 'Checked out, but copying was blocked — reopen and copy the note.'); },
   noteAdd: el => { S.noteFor = el.dataset.k; render(); setTimeout(() => $('#noteIn')?.focus(), 20); },
@@ -2395,7 +2408,8 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('input', e => {
   const el = e.target;
-  if (el.id === 'coText'){ S.coEdit = el.value; }
+  if (el.id === 'coText'){ const first = S.coEdit == null; S.coEdit = el.value; coAutosave(); if (first){ const en = $('#coEditNote'); if (en) en.innerHTML = EDIT_HINT; } }
+  if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
   if (el.dataset.co && S.co && (el.tagName === 'TEXTAREA' || el.type === 'number')){ S.co[el.dataset.co] = el.value; if (S.coEdit == null) coRefresh(); }
   if (el.dataset.rx != null && S.co && el.tagName === 'INPUT' && el.type !== 'time'){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; if (S.coEdit == null) coRefresh(); }
   if (el.dataset.input){ S[el.dataset.input] = el.value; clearTimeout(S._t); S._t = setTimeout(render, 180); }
@@ -2409,6 +2423,7 @@ document.addEventListener('change', e => {
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
   if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = el.dataset.accv === 'weeks' ? +el.value : el.value; render(); }
   if (el.dataset.bay != null && S.baysDraw){ const key = el.dataset.bay; S.visit = S.visit || {}; const v = el.value.trim(); if (v) (S.visit[key] = S.visit[key] || {}).bay = v; else if (S.visit[key]) delete S.visit[key].bay; saveVisit(); const bad = bayClashes(S.day); const span = (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); document.querySelectorAll('[data-clash]').forEach(td => { td.innerHTML = bad.has(td.dataset.clash) ? `<span class="chip warn">Same bay within ${span} min</span>` : ''; }); }
+  if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
   if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
   if (el.dataset.rx != null && S.co && (el.tagName === 'SELECT' || el.type === 'time')){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); }
   if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
