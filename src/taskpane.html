@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#f6f1e7;--surface:#fffdf8;--surface2:#f1eadc;--ink:#2b2622;--muted:#6f665c;--line:#e3d9c6;
@@ -237,6 +238,7 @@ details.sec[open]>summary::before{content:"▾"}
 </head>
 <body>
 <div id="app"></div>
+<input type="file" id="apptFile" accept=".xls,.xlsx,.csv" hidden>
 <div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" aria-live="polite"></div>
 <div id="busy" hidden><div class="spin"></div><span id="busyText">Working…</span></div>
@@ -454,6 +456,25 @@ function OfficeStore(){
         await writeCells(ctx, b, row, fRow, changes);
       });
     },
+    // Replace the Appt List (NextGen) rows: MRN…Status (M:R) from the top of the table down; the formula columns after them (S:T) are left alone.
+    async replaceAppts(rows){
+      return Excel.run(async ctx => {
+        const t = ctx.workbook.tables.getItem(names.appts); const h = t.getHeaderRowRange(); h.load('values');
+        let b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+        const hn = h.values[0].map(norm), cols = APPT_COLS.map(k => hn.indexOf(k)), c0 = cols[0], had = b.rowCount, W = APPT_COLS.length;
+        if (cols.some((c, i) => c !== c0 + i)) throw new Error('Stopped: the Appt List table should start with MRN, Patient, Date, Time, Event, Status, in that order.');
+        const top = b.getCell(0, c0).getResizedRange(0, W - 1); top.load('formulas'); const last = b.getRow(had - 1); last.load('formulasR1C1'); await ctx.sync();
+        if (top.formulas[0].some(isF)) throw new Error('Stopped: one of the MRN to Status columns holds a formula.');
+        if (rows.length > had){   // grow the table, carrying the formula columns down
+          t.resize(t.getRange().getResizedRange(rows.length - had, 0)); await ctx.sync();
+          b = t.getDataBodyRange(); b.load('rowCount'); await ctx.sync();
+          last.formulasR1C1[0].forEach((f, c) => { if (isF(f)) b.getCell(had, c).getResizedRange(rows.length - had - 1, 0).formulasR1C1 = Array.from({ length: rows.length - had }, () => [f]); });
+          await ctx.sync();
+        }
+        for (let s = 0; s < rows.length; s += CH){ const part = rows.slice(s, s + CH); b.getCell(s, c0).getResizedRange(part.length - 1, W - 1).values = part; await ctx.sync(); }
+        if (had > rows.length){ b.getCell(rows.length, c0).getResizedRange(had - rows.length - 1, W - 1).clear(Excel.ClearApplyTo.contents); await ctx.sync(); }
+      });
+    },
     // Clear hand-entered cells: cells = [[row, col, expectedValue]]. Stops if any cell changed or holds a formula.
     async clearCells(k, cells){
       return Excel.run(async ctx => {
@@ -612,8 +633,9 @@ function derive(){
     const ev = String(ta.get(r,'event') ?? ''); const st = String(ta.get(r,'status') ?? ''); const time = toMinutes(ta.get(r,'time'));
     let key = `${mrn}|${date}|${time ?? ''}`; if (keys.has(key)) key += '#' + r; keys.add(key);
     const hold = /^\s*hold/i.test(ev);
-    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: st, hold,
-      active: !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
+    const marked = !!(S.cancel || {})[key];   // cancelled in the tracker before the next NextGen list shows it
+    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked,
+      cancelled: marked || /cancel/i.test(st), active: !marked && !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
   });
   const tk = S.tables.kits; const ids = new Map();
   if (tk) tk.values.forEach((_, r) => {
@@ -1141,9 +1163,11 @@ function render(){
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id)); S._b = badges();
   app.innerHTML = `
     ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
+    ${freshHTML()}
     <header class="top">
       <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
         ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button><button class="btn sm" data-act="fullWin" title="Open in its own window — move it or put it on another monitor">⧉ New window</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
@@ -1279,9 +1303,83 @@ function todayHTML(){
     <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="bays" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker &amp; bays</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
       ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
         return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
-      ${(() => { const shown = filterSort(items, itemState); return items.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
+      ${(() => { const live = items.filter(i => !i.a.cancelled), shown = filterSort(live, itemState); return live.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
+      ${cancelledHTML(items)}
     </div>
   </div></div>`;
+}
+// ---------- cancelled visits: marked here (saved with the workbook) or cancelled in NextGen; listed under the day, not in it ----------
+async function setCancelled(key, on){
+  const a = S.A.find(x => x.key === key); if (!a) return;
+  const T = todaySerial(); const c = Object.fromEntries(Object.entries(S.cancel || {}).filter(([, v]) => v.date >= T - 30));
+  if (on) c[key] = { date: a.date, at: isoOf(T) }; else delete c[key];
+  S.cancel = c; await S.store.setDoc('eskCancel', c); derive(); render();
+  toast(on ? 'warn' : 'ok', on ? `${esc(nm(a.mrn))} ${fmtT(a.time)} marked cancelled. Cancel it in NextGen too. Undo is under “Cancelled” below the list.` : 'Appointment restored.');
+}
+function cancelledHTML(items){
+  const c = items.filter(i => i.a.cancelled); if (!c.length) return '';
+  return `<details class="small noprint" style="margin-top:10px"><summary class="muted">Cancelled · ${c.length}</summary>${c.map(i => `<div class="row" style="gap:8px;margin-top:4px"><span>${fmtT(i.a.time)}</span><b>${esc(nm(i.a.mrn))}</b><span class="muted">${i.a.marked ? 'marked in the tracker' : 'cancelled in NextGen'}</span>${i.a.marked ? `<button class="btn sm ghost" data-act="apptUncancel" data-k="${esc(i.a.key)}">Undo</button>` : ''}</div>`).join('')}</details>`;
+}
+// ---------- daily appointment list: the panel notes the day the Appt List (NextGen) table last changed ----------
+function apptSig(){ const s = JSON.stringify((S.tables.appts?.values || []).filter(r => r.some(v => v !== '' && v != null))); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
+async function noteApptList(){
+  const sig = apptSig(), prev = S.store.getDoc('eskApptList');
+  if (prev && prev.sig === sig){ S.apptList = prev; return; }
+  S.apptList = { sig, on: prev ? isoOf(todaySerial()) : null };   // first time: there is no way to tell how old the list is
+  await S.store.setDoc('eskApptList', S.apptList);
+}
+function freshHTML(){
+  if (!S.store.live) return '';
+  const on = fromIso(S.apptList?.on); if ((on != null && on >= todaySerial()) || S.freshHidden === (S.apptList?.on || 'none')) return '';
+  return `<div class="msg warn noprint" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
+    <details style="margin-top:4px"><summary>How to run the report</summary><ol style="margin:6px 0 0 18px;padding:0">
+      <li>Navigate to NextGen PM.</li>
+      <li>Locate the “Reports” menu option on the top-left.</li>
+      <li>Click “Memorized”.</li>
+      <li>Change the Report Type drop-down to “Appointment Reports” and select “1 ESK Ordering - B”.</li>
+      <li>Select “OK” to run the report.</li>
+      <li>Export the report by clicking the x symbol beside the bar graph icon <img src="assets/export-icon.png" alt="Export icon: spreadsheet x next to a bar graph" height="16">.</li>
+      <li>Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:R and below on the Appt List tab; S and T are left alone.</li>
+    </ol></details>
+    <div style="margin-top:6px"><button class="btn sm primary" data-act="upAppt">⇪ Upload appt list</button> <button class="btn sm ghost" data-act="freshHide">Dismiss</button></div></div>`;
+}
+// ---------- upload: 1 ESK Ordering - B export → Appt List (NextGen) table (M5:R and down) ----------
+const APPT_COLS = ['mrn', 'patient', 'date', 'time', 'event', 'status'];
+const APPT_HDR = { mrn: ['mdrc', 'mrn'], patient: ['patname', 'patientname', 'patient'], date: ['apptdt', 'apptdate', 'date'], time: ['begtm', 'time'], event: ['event'], status: ['sts', 'status'] };
+function parseApptReport(aoa){
+  const hr = aoa.slice(0, 30).findIndex(r => r.some(v => APPT_HDR.mrn.includes(norm(v))) && r.some(v => APPT_HDR.date.includes(norm(v))));
+  if (hr < 0) return null;
+  const hn = aoa[hr].map(norm), idx = APPT_COLS.map(k => hn.findIndex(h => APPT_HDR[k].includes(h)));
+  if (idx.some(i => i < 0)) return null;
+  const rows = [];
+  for (const r of aoa.slice(hr + 1)){
+    const v = idx.map(i => r[i] ?? ''); v[2] = toSerial(v[2]);
+    if (v[0] === '' || v[2] == null) continue;   // blank and footer lines
+    rows.push(v);
+  }
+  return rows;
+}
+async function readApptFile(f){
+  if (!S.store?.live) return toast('warn', 'Demo mode: uploads only work in a real workbook.');
+  if (!window.XLSX) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
+  let rows;
+  try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); rows = parseApptReport(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })); }
+  catch (e){ console.error(e); return toast('bad', 'That file couldn’t be read. Upload the export from NextGen unchanged.'); }
+  if (!rows || !rows.length) return toast('bad', 'This doesn’t look like the 1 ESK Ordering - B report (no MRN / Appt Dt columns). Upload the export unchanged.');
+  S.upRows = rows; const ds = rows.map(r => r[2]), sts = {}; rows.forEach(r => { const k = String(r[5] || 'blank'); sts[k] = (sts[k] || 0) + 1; });
+  const had = S.tables.appts ? S.tables.appts.values.filter(r => r.some(v => v !== '' && v != null)).length : 0;
+  openModal(`<h2>Replace the appointment list?</h2>
+    <div class="small muted">${esc(f.name)}</div>
+    <div class="msg info" style="margin-top:8px">${rows.length} appointments, ${fmtD(Math.min(...ds), 'full')} to ${fmtD(Math.max(...ds), 'full')}. ${Object.entries(sts).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</div>
+    <div class="small" style="margin-top:8px">The ${had} rows now in the Appt List tab (MRN to Status, M5:R and below) are replaced. Columns S and T are left alone.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="apptReplace">Replace list</button></div>`);
+}
+async function apptReplace(){
+  const rows = S.upRows; if (!rows) return; closeModal();
+  try { busy('Writing the appointment list…'); await S.store.replaceAppts(rows); S.upRows = null; S.freshHidden = null; toast('ok', `Appointment list updated: ${rows.length} appointments.`); }
+  catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); }
+  finally { busy(false); }
+  await reload();
 }
 // Most recent audit: today's in-app daily audit, or the latest date on the SN Audit tab.
 function lastAudit(){
@@ -1540,7 +1638,7 @@ function itemHTML(i){
       <div class="r1">${SAFE(i.inf.pharm)}${status}</div>
       <div class="r2">${k ? `<span class="mono sn">SN ${esc(k.serial)}</span>` : ''}<span class="mono sn">${i.inf.mg ?? '?'} mg</span></div>
       <div class="r3">${k ? `<span class="muted small">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="small ${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</div>
-      <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button>` : ''}</div>
+      <div class="r4 noprint">${a.active && !i.adminKit ? `<button class="btn primary" data-act="admin" data-k="${esc(a.key)}">Administer</button><button class="btn sm ghost" data-act="apptCancel" data-k="${esc(a.key)}" title="Patient cancelled: take this visit off the list">Cancelled</button>` : ''}</div>
     </div>
     ${a.active && a.date === todaySerial() ? visitRowHTML(i) : ''}
     ${a.active ? docRowHTML(i) : ''}
@@ -2270,6 +2368,11 @@ function confirmClear(){ if (S._clr && Date.now() - S._clr < 4000){ S._clr = 0; 
 const ACT = {
   view: el => { S.view = el.dataset.v; render(); },
   refresh: () => reload(),
+  upAppt: () => $('#apptFile').click(),
+  apptReplace: () => apptReplace(),
+  apptCancel: el => setCancelled(el.dataset.k, true),
+  apptUncancel: el => setCancelled(el.dataset.k, false),
+  freshHide: () => { S.freshHidden = S.apptList?.on || 'none'; render(); },
   settings: openSettings,
   close: closeModal,
   day: el => { const d = +el.dataset.d; S.day = d === 0 ? todaySerial() : S.day + d; S.todayMsg = null; S.target = null; render(); },
@@ -2420,6 +2523,7 @@ document.addEventListener('input', e => {
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
   if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = el.dataset.accv === 'weeks' ? +el.value : el.value; render(); }
@@ -2466,7 +2570,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    derive(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2498,7 +2602,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), 'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
@@ -2518,6 +2622,7 @@ function RemoteStore(){
     add: (k, ch) => call('add', [k, ch]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
+    replaceAppts: rows => call('replaceAppts', [rows]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
     watch(cb){ onChanged = cb; },
@@ -2539,7 +2644,7 @@ function openFull(win){
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       const { rid, op, args } = m;
-      try { if (!['load','update','add','setCells','setDoc','clearCells'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','setCells','setDoc','clearCells','replaceAppts'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
     });
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
