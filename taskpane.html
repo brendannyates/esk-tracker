@@ -34,6 +34,7 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1p
 @media (max-width:460px){.brand .mlogo{height:26px}.brand .bsep{display:none}.brand small{display:none}}
 .brand > span:not(.bsep){white-space:nowrap}
 .brand small{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:480px){.hdrc .hl{display:none}}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
 .iconbtn:hover{border-color:var(--accent)}
 nav.tabs{display:flex;gap:4px;padding:0 8px 8px;overflow-x:auto;scrollbar-width:none}
@@ -461,10 +462,11 @@ function OfficeStore(){
       return Excel.run(async ctx => {
         const t = ctx.workbook.tables.getItem(names.appts); const h = t.getHeaderRowRange(); h.load('values');
         let b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
-        const hn = h.values[0].map(norm), cols = APPT_COLS.map(k => hn.indexOf(k)), c0 = cols[0], had = b.rowCount, W = APPT_COLS.length;
+        const hn = h.values[0].map(norm), cols = APPT_COLS.map(k => hn.indexOf(k)), c0 = cols[0], had = b.rowCount, W = APPT_COLS.length + (APPT_HDR.rendering.includes(hn[c0 + APPT_COLS.length]) ? 1 : 0);   // + Rendering when the table has it right after Status
+        rows = rows.map(r => r.slice(0, W));
         if (cols.some((c, i) => c !== c0 + i)) throw new Error('Stopped: the Appt List table should start with MRN, Patient, Date, Time, Event, Status, in that order.');
         const top = b.getCell(0, c0).getResizedRange(0, W - 1); top.load('formulas'); const last = b.getRow(had - 1); last.load('formulasR1C1'); await ctx.sync();
-        if (top.formulas[0].some(isF)) throw new Error('Stopped: one of the MRN to Status columns holds a formula.');
+        if (top.formulas[0].some(isF)) throw new Error('Stopped: one of the MRN to Status (or Rendering) columns holds a formula.');
         if (rows.length > had){   // grow the table, carrying the formula columns down
           t.resize(t.getRange().getResizedRange(rows.length - had, 0)); await ctx.sync();
           b = t.getDataBodyRange(); b.load('rowCount'); await ctx.sync();
@@ -508,8 +510,8 @@ function DemoStore(){
   const T = todaySerial();
   const INV_H = ['Logging PCT','Scan Here','MRN','Pharmacy','Date Ordered','Date Received ','Expiration Date','Use By Date','Received (mg)','Serial Number','Lot Number','Administered (mg)','Date Administered','DOW','Partial?','Treating Technician','Supervising Physician ','Comments','Expired?','Marked for Disposal?','Date of Disposal','Disposal Method','mg Disposed','mg Remaining','Disposing PCT','Practice Manager'];
   const PT_H = ['MRN','Patient Name','Status','Rendering Provider','Auth Exp.','Tx Frequency','Tx Start Date','Protocol Exp Date','Order Status','# Doses On Hand','# Partial On Hand','Pharmacy ','Protocol mg','Last Treatment','Next Treatment','Scheduled Thru','Auth Start','Authorized Txs','Coverage Options','Insurance','PA Number','Last MADRS','Last WHO5','Scheduling Preferences ','Notes:','PCN Notes'];
-  const AP_H = ['MRN','Patient','Date','Time','Event','Dose','Status','Lookup Key'];
-  const INV_F = new Set([6,7,8,9,10,13,14,18,23]); const PT_F = new Set([9,10,13,14,15]); const AP_F = new Set([1,5,7]);
+  const AP_H = ['MRN','Patient','Date','Time','Event','Status','Rendering','Dose','Lookup Key'];
+  const INV_F = new Set([6,7,8,9,10,13,14,18,23]); const PT_F = new Set([9,10,13,14,15]); const AP_F = new Set([7,8]);
   const pts = [
     [900101,'ALDBEN','Active','BESSE',84,'1x per week',6,'Mon mornings'],[900102,'BROCAM','Active','GENOA',84,'1x per week',3,''],
     [900103,'CARDEL','Active','BESSE',84,'1x per 2 weeks',1,''],[900104,'DUNEMI','Pending Start','BESSE',56,'2x per week',0,'Tue/Thu'],
@@ -538,7 +540,7 @@ function DemoStore(){
   });
   const apVals = appts.sort((a,b) => a[1]-b[1] || a[2]-b[2]).map(([mrn,d,t,ev,st]) => {
     const p = pts.find(x => x[0] === mrn); const dose = /Start/.test(ev) ? 56 : p[4];
-    return [mrn, p[1], d, t/1440, ev, dose, st, `${d}|${fmtT(t)}|${mrn}`];
+    return [mrn, p[1], d, t/1440, ev, st, ['Provider A','Provider B','Provider C'][pts.indexOf(p) % 3], dose, `${d}|${fmtT(t)}|${mrn}`];
   });
   // inventory
   let sn = 100000000000; const code = (mg, ser, exp) => { const d = sDate(exp); const yy = String(d.getUTCFullYear()).slice(2), mm = String(d.getUTCMonth()+1).padStart(2,'0'), dd = String(d.getUTCDate()).padStart(2,'0'); return `01${mg===84?'00350458028034':'00350458028027'}21${ser}17${yy}${mm}${dd}10AB12345`; };
@@ -634,7 +636,7 @@ function derive(){
     let key = `${mrn}|${date}|${time ?? ''}`; if (keys.has(key)) key += '#' + r; keys.add(key);
     const hold = /^\s*hold/i.test(ev);
     const marked = !!(S.cancel || {})[key];   // cancelled in the tracker before the next NextGen list shows it
-    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked,
+    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: String(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider') ?? '').trim(),
       cancelled: marked || /cancel/i.test(st), active: !marked && !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
   });
   const tk = S.tables.kits; const ids = new Map();
@@ -761,7 +763,8 @@ function openProto(mrn){
   openModal(`<h2>Protocol renewed — ${esc(p.name)}</h2><div class="muted small">MRN ${esc(mrn)} · current protocol exp ${p.protoExp ? fmtD(p.protoExp, 'full') : '—'}</div>
     <label class="lbl" for="protoDate">New protocol expiration date</label><input id="protoDate" type="date" class="fld" value="">
     <div class="writes"><b>Will write to Master Patient Tracker row ${p.r + 3}:</b><div><code>${esc(colLetterFor('patients', t.cols.protocolexpdate))}</code> ${esc(t.headers[t.cols.protocolexpdate].trim())} = the date above</div></div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="protoSave" data-m="${esc(mrn)}">Save date</button></div>`);
+    <div class="msg warn" style="margin-top:8px">Consent due: print a fresh consent for the patient to sign with this protocol.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="consent" data-m="${esc(mrn)}">Print consent</button><button class="btn primary" data-act="protoSave" data-m="${esc(mrn)}">Save date</button></div>`);
   setTimeout(() => $('#protoDate')?.focus(), 30);
 }
 async function protoSave(mrn){
@@ -775,7 +778,8 @@ function taskBtns(mrn, ns, np){
 }
 const taskDone = (mrn, ns, np) => (!ns || taskGet(mrn, 'sched')) && !np;
 const covChip = p => !p ? '' : p.coverage ? `<span class="small muted">${esc(p.coverage)}</span>` : '<span class="chip warn">MD/NP not set</span>';
-const protoFlag = p => needsProto(p) ? `<span class="chip bad">New protocol · ${p.protoExp ? (p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span>` : '';
+// a renewed consent is due whenever the protocol renewal is due
+const protoFlag = p => needsProto(p) ? `<span class="chip bad">New protocol · consent due · ${p.protoExp ? (p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn noprint" data-act="consent" data-m="${esc(p.mrn)}">Print consent</button>` : '';
 const insChip = p => !p ? '' : p.insurance ? `<span class="chip">${esc(p.insurance)}</span>` : '<span class="chip warn">Insurance not set</span>';
 function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip warn">No protocol date</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">${p.protoExp < T ? 'Protocol expired' : 'Protocol exp'} ${fmtD(p.protoExp, 'full')}</span>`; }
 // ---------- treatment starts (induction) ----------
@@ -1193,6 +1197,7 @@ function render(){
     <header class="top">
       <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
         ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button><button class="btn sm" data-act="fullWin" title="Open in its own window — move it or put it on another monitor">⧉ New window</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
+        <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
         ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
@@ -1365,21 +1370,22 @@ function freshHTML(){
       <li>Change the Report Type drop-down to “Appointment Reports” and select “1 ESK Ordering - B”.</li>
       <li>Select “OK” to run the report.</li>
       <li>Export the report by clicking the x symbol beside the bar graph icon <img src="assets/export-icon.png" alt="Export icon: spreadsheet x next to a bar graph" height="16">.</li>
-      <li>Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:R and below on the Appt List tab; S and T are left alone.</li>
+      <li>Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:S and below on the Appt List tab (MRN to Status, then Rendering); the formula columns after them are left alone.</li>
     </ol></details>
     <div style="margin-top:6px"><button class="btn sm primary" data-act="upAppt">⇪ Upload appt list</button> <button class="btn sm ghost" data-act="freshHide">Dismiss</button></div></div>`;
 }
 // ---------- upload: 1 ESK Ordering - B export → Appt List (NextGen) table (M5:R and down) ----------
 const APPT_COLS = ['mrn', 'patient', 'date', 'time', 'event', 'status'];
-const APPT_HDR = { mrn: ['mdrc', 'mrn'], patient: ['patname', 'patientname', 'patient'], date: ['apptdt', 'apptdate', 'date'], time: ['begtm', 'time'], event: ['event'], status: ['sts', 'status'] };
+const APPT_HDR = { mrn: ['mdrc', 'mrn'], patient: ['patname', 'patientname', 'patient'], date: ['apptdt', 'apptdate', 'date'], time: ['begtm', 'time'], event: ['event'], status: ['sts', 'status'], rendering: ['rendering', 'renderingprovider', 'provider'] };   // Rendering (report col H → table col S) is optional
 function parseApptReport(aoa){
   const hr = aoa.slice(0, 30).findIndex(r => r.some(v => APPT_HDR.mrn.includes(norm(v))) && r.some(v => APPT_HDR.date.includes(norm(v))));
   if (hr < 0) return null;
   const hn = aoa[hr].map(norm), idx = APPT_COLS.map(k => hn.findIndex(h => APPT_HDR[k].includes(h)));
   if (idx.some(i => i < 0)) return null;
+  const ri = APPT_HDR.rendering.map(k => hn.indexOf(k)).find(i => i >= 0) ?? -1; S.upRendering = ri >= 0;
   const rows = [];
   for (const r of aoa.slice(hr + 1)){
-    const v = idx.map(i => r[i] ?? ''); v[2] = toSerial(v[2]);
+    const v = idx.map(i => r[i] ?? ''); v[2] = toSerial(v[2]); v.push(ri >= 0 ? String(r[ri] ?? '').trim() : '');
     if (v[0] === '' || v[2] == null) continue;   // blank and footer lines
     rows.push(v);
   }
@@ -1397,7 +1403,7 @@ async function readApptFile(f){
   openModal(`<h2>Replace the appointment list?</h2>
     <div class="small muted">${esc(f.name)}</div>
     <div class="msg info" style="margin-top:8px">${rows.length} appointments, ${fmtD(Math.min(...ds), 'full')} to ${fmtD(Math.max(...ds), 'full')}. ${Object.entries(sts).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</div>
-    <div class="small" style="margin-top:8px">The ${had} rows now in the Appt List tab (MRN to Status, M5:R and below) are replaced. Columns S and T are left alone.</div>
+    <div class="small" style="margin-top:8px">The ${had} rows now in the Appt List tab (MRN to Status in M:R, and Rendering in S, from row 5 down) are replaced. The formula columns after them are left alone.</div>${S.upRendering ? '' : '<div class="msg warn" style="margin-top:8px">This report has no Rendering column, so Rendering will be left blank and the consent provider list will be empty. Add Rendering to the 1 ESK Ordering - B report in NextGen.</div>'}
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="apptReplace">Replace list</button></div>`);
 }
 async function apptReplace(){
@@ -1646,7 +1652,7 @@ function itemHTML(i){
   else status = '<span class="pill bad">No kit on hand</span>';
   const x = (act, m, title) => `<button class="x" data-act="${act}" data-m="${esc(m)}" title="${title}" aria-label="${title}">×</button>`;
   const flags = !a.active ? [] : [
-    i.needsProto ? `<span class="flag bad">new protocol${x('protoRenew', a.mrn, 'Enter the renewed protocol date')}</span>` : '',
+    i.needsProto ? `<span class="flag bad">new protocol · consent due${x('protoRenew', a.mrn, 'Enter the renewed protocol date')}</span><button class="linkbtn noprint" data-act="consent" data-m="${esc(a.mrn)}">Print consent</button>` : '',
     i.needsSched && !taskGet(a.mrn, 'sched') ? `<span class="flag warn">schedule out${x('taskDoX', a.mrn, 'Mark scheduled')}</span>` : '',
     i.inf.mg === 56 && !a.isStart ? '<span class="flag warn">56 mg — verify</span>' : '',
     (() => { const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); return adj ? `<span class="flag bad">back-to-back with ${fmtD(adj.date, 'dow')}</span>` : ''; })(),
@@ -2258,7 +2264,50 @@ function openPatient(mrn){
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
     <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="ptPrint" data-m="${esc(mrn)}" ${up.some(a => a.active) ? '' : 'disabled'}>🖨 Print schedule</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="consent" data-m="${esc(mrn)}">Print consent</button><button class="btn" data-act="ptPrint" data-m="${esc(mrn)}" ${up.some(a => a.active) ? '' : 'disabled'}>🖨 Print schedule</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+}
+// ---------- consent for esketamine treatment: due with each protocol renewal; reprint any time ----------
+// The form lives in consent.html (wording owned by compliance). The PCT types the patient name every time; it is never
+// read from the workbook or saved, and reaches the print window by message only (not the URL, storage, or logs).
+const CONSENT_REASON = 'Major Depressive Disorder (MDD)';
+function apptProviders(){
+  const t = S.tables.appts; const c = t && ['rendering', 'renderingprovider', 'provider'].map(k => t.cols[k]).find(x => x != null); if (c == null) return [];
+  return [...new Set(t.values.map(r => String(r[c] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+function openConsent(mrn){
+  const provs = apptProviders();
+  const last = mrn ? S.A.filter(a => a.mrn === mrn && a.rendering).sort((a, b) => b.date - a.date)[0]?.rendering : '';
+  openModal(`<h2>Print consent for esketamine treatment</h2>
+    <div class="small muted">Fills the three blanks on the consent. Signature, witness and date lines stay blank. Nothing here is saved.</div>
+    <label class="lbl" for="cnPt">Patient name (type it in)</label><input id="cnPt" class="fld" autocomplete="off" spellcheck="false" value="">
+    <label class="lbl" for="cnProv">Rendering provider</label>${provs.length ? `<select id="cnProv" class="fld"><option value="">Choose…</option>${provs.map(v => `<option${v === last ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>` : '<div class="msg warn">No providers on the latest appointment list. Upload a 1 ESK Ordering - B report that includes the Rendering column.</div>'}
+    <label class="lbl" for="cnWhy">Treatment of</label><input id="cnWhy" class="fld" value="${esc(CONSENT_REASON)}">
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="consentGo" ${provs.length ? '' : 'disabled'}>Open printable form</button></div>`);
+  setTimeout(() => $('#cnPt')?.focus(), 30);
+}
+function consentGo(){
+  const data = { patient: ($('#cnPt')?.value || '').trim(), provider: $('#cnProv')?.value || '', reason: ($('#cnWhy')?.value || '').trim() };
+  if (!data.patient) return toast('warn', 'Type the patient name.'); if (!data.provider) return toast('warn', 'Choose the rendering provider.'); if (!data.reason) return toast('warn', 'Enter what the treatment is for.');
+  closeModal(); openConsentWindow(data);
+}
+// From the task pane: an Office dialog (a real window, so printing works). From the full-screen window or demo: window.open.
+function openConsentWindow(data){
+  const url = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '') + 'consent.html';
+  let sent = false; const payload = () => { const s = JSON.stringify({ ev: 'consentData', data }); sent = true; data = null; return s; };
+  const viaWindow = () => {
+    const w = window.open(url, '_blank', 'width=900,height=1000'); if (!w) return toast('bad', 'The browser blocked the print window. Allow pop-ups for this site and try again.');
+    const onMsg = e => { if (e.source !== w || e.origin !== location.origin || e.data?.ev !== 'consentReady' || sent) return; w.postMessage(JSON.parse(payload()), location.origin); window.removeEventListener('message', onMsg); };
+    window.addEventListener('message', onMsg);
+  };
+  if (S.mode !== 'pane' || !window.Office?.context?.ui?.displayDialogAsync) return viaWindow();
+  Office.context.ui.displayDialogAsync(url, { height: 90, width: 60, displayInIframe: false, promptBeforeOpen: false }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded) return viaWindow();   // e.g. the full-screen window is already open
+    const dlg = res.value;
+    dlg.addEventHandler(Office.EventType.DialogMessageReceived, a => { let m; try { m = JSON.parse(a.message); } catch { return; }
+      if (m.ev === 'consentReady' && !sent) dlg.messageChild(payload());
+      if (m.ev === 'consentClose') { try { dlg.close(); } catch {} } });
+    dlg.addEventHandler(Office.EventType.DialogEventReceived, () => { data = null; });
+  });
 }
 // Patient's own schedule to hand them: every upcoming visit still ahead (cancelled and no-shows left off).
 function ptSchedDoc(mrn){
@@ -2432,6 +2481,8 @@ const ACT = {
   admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
   admSave: adminSave,
   patient: el => openPatient(el.dataset.m),
+  consent: el => openConsent(el.dataset.m || ''),
+  consentGo: () => consentGo(),
   ptPrint: el => { const m = el.dataset.m; closeModal(); openPrintable(ptSchedDoc(m), 'Appointment schedule · ' + nm(m)); },
   copyPull: async () => {
     const items = todayModel(S.day).filter(i => i.a.active && (i.adminKit || i.suggest));
@@ -2785,7 +2836,7 @@ function openFull(win){
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
   const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if (DLG && S.notifyDialog){ S.notifyDialog(); return; } if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
-  if (demo){ start(DemoStore()); return; }
+  if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); if (location.hash === '#dash') setTimeout(closeModal, 1500); return; }   // demo screenshots: #consent opens the consent pop-up, #dash closes the first-run settings
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
   Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()); if (S.canFull && CFG.autoFull) setTimeout(() => openFull(!!CFG.fullWin), 600); } else $('#app').innerHTML = notInExcelHTML(); });

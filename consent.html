@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consent for Esketamine Treatment</title>
+<!--
+  CONSENT FOR ESKETAMINE TREATMENT â€” print template.
+  Wording is verbatim from Consent_for_esketamine_treatment_updated.pdf. Do not edit wording here without compliance sign-off.
+  Layout: each page is a Letter sheet; every printed line is placed with --y (top of the line) and --x (left edge),
+  in pixels of a 150 dpi page (1275 x 1650), measured from the PDF. Lines wrap exactly where the PDF wraps.
+  The three filled fields are the elements with data-field; consent.js fills them. Nothing else on the page changes.
+-->
+<style>
+  @page { size: letter; margin: 0; }
+  :root { --navy: #1f3864; --off: 7.5; --dx: 1.5; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  .page { position: relative; width: 8.5in; height: 11in; overflow: hidden; page-break-after: always; break-after: page; background: #fff; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .logo { position: absolute; left: calc(50in / 150); top: calc(36in / 150); width: calc(229in / 150); }
+  .l, .b, .o, .f { position: absolute; white-space: nowrap; color: var(--navy);
+    font-family: 'Microsoft PhagsPa', sans-serif; font-size: 13pt; line-height: calc(34.6in / 150);
+    left: calc((var(--x) - var(--dx)) * 1in / 150); top: calc((var(--y) - var(--off)) * 1in / 150); }
+  .b { font-family: Symbol, 'Microsoft PhagsPa', sans-serif; }
+  .ab { font-family: Arial, sans-serif; top: calc((var(--y) - var(--off) + 6) * 1in / 150); }
+  .o { font-family: 'Courier New', monospace; }
+  .t { position: absolute; left: 0; right: 0; text-align: center; top: calc((var(--y) - var(--off) - 4.5) * 1in / 150);
+    font-family: 'Microsoft PhagsPa', sans-serif; font-weight: bold; font-size: 20pt; color: var(--navy); white-space: nowrap; }
+  .u { text-decoration: underline; }
+  .f { font-weight: normal; }
+  .n { position: absolute; left: calc(149.5in / 150); top: calc((1522 - 7) * 1in / 150); font-family: Calibri, sans-serif; font-size: 12pt; color: #000; }
+  @media screen { body { background: #e9ecef; padding: 16px 0; } .page { margin: 0 auto 16px; box-shadow: 0 1px 6px rgba(0,0,0,.25); } }
+  @media print { body { background: #fff; padding: 0; } .page { margin: 0; box-shadow: none; } .noprint { display: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- ===================== PAGE 1 ===================== -->
+<div class="page">
+  <img class="logo" src="assets/mhs-logo.png" alt="Mindful Health Solutions">
+  <div class="t" style="--y:162">Consent for Esketamine Treatment</div>
+
+  <div class="l" style="--x:152;--y:271">Name of Attending Provider: ___________________________________</div>
+  <div class="f" style="--x:508;--y:271" data-field="provider"></div>
+  <div class="l" style="--x:152;--y:340">Name of Patient: ____________________________________________</div>
+  <div class="f" style="--x:365;--y:340" data-field="patient"></div>
+  <div class="l" style="--x:151;--y:410">I hereby consent to <b>esketamine</b> for the treatment of:</div>
+  <div class="l" style="--x:152;--y:478">_______________________________________________.</div>
+  <div class="f" style="--x:158;--y:478" data-field="reason"></div>
+
+  <div class="l u" style="--x:152;--y:548">I have been fully informed of the following:</div>
+  <div class="l ab" style="--x:189;--y:608">&#8226;</div><div class="l" style="--x:206;--y:608">the type and purpose of the procedure</div>
+  <div class="l ab" style="--x:189;--y:670">&#8226;</div><div class="l" style="--x:206;--y:670">the expected benefits of the procedure and</div>
+  <div class="l ab" style="--x:189;--y:733">&#8226;</div><div class="l" style="--x:206;--y:733">possible adverse events associated with the procedure,</div>
+  <div class="l ab" style="--x:189;--y:796">&#8226;</div><div class="l" style="--x:206;--y:796">alternatives to the procedure,</div>
+  <div class="l ab" style="--x:189;--y:859">&#8226;</div><div class="l" style="--x:206;--y:859">the likely outcome of my condition if I receive esketamine therapy, and</div>
+  <div class="l ab" style="--x:189;--y:922">&#8226;</div><div class="l" style="--x:206;--y:922">the likely outcome of my condition if no treatment is received.</div>
+
+  <div class="l u" style="--x:152;--y:985">Specifically, I understand:</div>
+  <div class="b" style="--x:190;--y:1045">&#183;</div>
+  <div class="l" style="--x:226;--y:1045">that esketamine is a schedule III medication under the DEA Controlled<br>Substance Act that can be administered intranasally to treat patients for<br>major depression who have not responded to one or more antidepressant<br>medications. My doctor may choose to use esketamine for other<br>conditions.</div>
+  <div class="b" style="--x:190;--y:1250">&#183;</div>
+  <div class="l" style="--x:226;--y:1250">that, to be effective, esketamine must be administered repeatedly, and that<br>some patients may experience benefits in less time while other patients<br>may take longer to respond.</div>
+  <div class="b" style="--x:190;--y:1385">&#183;</div>
+  <div class="l" style="--x:226;--y:1385">that, as with any medical treatment, there are no guarantees or promises of<br>success;</div>
+
+  <div class="n">1</div>
+</div>
+
+<!-- ===================== PAGE 2 ===================== -->
+<div class="page">
+  <img class="logo" src="assets/mhs-logo.png" alt="Mindful Health Solutions">
+  <div class="b" style="--x:190;--y:158">&#183;</div>
+  <div class="l" style="--x:226;--y:158">that, even if effective, the effects of esketamine may not be permanent and<br>that some form of subsequent ongoing treatment may be necessary;</div>
+  <div class="b" style="--x:190;--y:259">&#183;</div>
+  <div class="l" style="--x:226;--y:259">that, as with any medical treatment, side effects may sometimes occur;</div>
+  <div class="b" style="--x:190;--y:326">&#183;</div>
+  <div class="l" style="--x:226;--y:326">These side effects may include but are not limited to:</div>
+
+  <div class="o" style="--x:264;--y:393">o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o<br>o</div>
+  <div class="l" style="--x:301;--y:393">Nausea/vomiting<br>Dissociation<br>Confusion<br>Dizziness/vertigo<br>Headaches<br>Bad taste in mouth<br>Reduced sense of touch and sensation<br>Nasal discomfort<br>Fatigue<br>Sedation<br>Loss of appetite<br>Blurry vision<br>Feeling drunk<br>Anxiety<br>Short-term cognitive impairment<br>Increased blood pressure<br>Embryo-fetal toxicity<br>Suicidal thoughts in adolescents and young adults</div>
+
+  <div class="b" style="--x:190;--y:1051">&#183;</div>
+  <div class="l" style="--x:226;--y:1051">that ketamine has been known to cause unusual thoughts, hallucinations,<br>ulcerative or interstitial cystitis, long-term cognitive impairment, liver<br>damage, addiction, and death in people who use or abuse ketamine for<br>recreational purposes</div>
+  <div class="b" style="--x:190;--y:1222">&#183;</div>
+  <div class="l" style="--x:226;--y:1222">that an esketamine Physician or Nurse Practitioner will oversee my<br>treatments and that after administration, I will be monitored by a ketamine<br>technician who has been properly trained in ketamine;</div>
+  <div class="b" style="--x:190;--y:1360">&#183;</div>
+  <div class="l" style="--x:226;--y:1360">that I will make arrangements to safely leave the healthcare setting and get<br>home;</div>
+  <div class="b" style="--x:190;--y:1455">&#183;</div>
+  <div class="l" style="--x:226;--y:1455">that I will not drive or use heavy machinery for the rest of the day on which</div>
+
+  <div class="n">2</div>
+</div>
+
+<!-- ===================== PAGE 3 ===================== -->
+<div class="page">
+  <img class="logo" src="assets/mhs-logo.png" alt="Mindful Health Solutions">
+  <div class="l" style="--x:226;--y:158">I receive esketamine</div>
+  <div class="b" style="--x:190;--y:227">&#183;</div>
+  <div class="l" style="--x:226;--y:227">that unforeseen circumstances or conditions may arise, or be discovered<br>during treatment, which could necessitate a change in treatment plan;</div>
+  <div class="b" style="--x:190;--y:329">&#183;</div>
+  <div class="l" style="--x:226;--y:329">that this consent is valid for the duration of the treatment but that I may<br>revoke all or any part of this authorization at any time; and</div>
+  <div class="b" style="--x:190;--y:430">&#183;</div>
+  <div class="l" style="--x:226;--y:430">that I am responsible for the costs of treatment regardless of treatment<br>outcome.</div>
+  <div class="b" style="--x:190;--y:531">&#183;</div>
+  <div class="l" style="--x:226;--y:531">that TMS Health Solutions has an outcomes data base. Outcomes,<br>demographic variables and information regarding treatment history are<br>entered in the repository and that information from the data base may be<br>shared for educational, research or other purposes. No protected health<br>information (PHI) that identifies individuals is entered in the data base.</div>
+  <div class="b" style="--x:190;--y:736">&#183;</div>
+  <div class="l" style="--x:226;--y:736">that the following items were reviewed during my consultation visit:</div>
+  <div class="o" style="--x:264;--y:771">o</div>
+  <div class="l" style="--x:301;--y:771">the specific risks of COVID-19 transmission associated with receiving<br>esketamine treatment in an outpatient medical office</div>
+  <div class="o" style="--x:264;--y:840">o</div>
+  <div class="l" style="--x:301;--y:840">the general risks of COVID-19 transmission associated with an<br>outpatient medical office</div>
+  <div class="o" style="--x:264;--y:910">o</div>
+  <div class="l" style="--x:301;--y:910">the safety measures taken by TMS health solutions to minimize the<br>risk of contraction and transmission of COVID-19 to ensure a safe<br>environment for staff and patients</div>
+  <div class="b" style="--x:190;--y:1048">&#183;</div>
+  <div class="l" style="--x:226;--y:1048">all my questions and concerns regarding the risks and benefits associated<br>with receiving esketamine treatment during the COVID-19 pandemic were<br>answered</div>
+  <div class="b" style="--x:190;--y:1187">&#183;</div>
+  <div class="l" style="--x:226;--y:1187">I knowingly and willingly consent to have esketamine treatment during the<br>COVID-19 pandemic</div>
+
+  <div class="n">3</div>
+</div>
+
+<!-- ===================== PAGE 4 (signature block only) ===================== -->
+<div class="page">
+  <img class="logo" src="assets/mhs-logo.png" alt="Mindful Health Solutions">
+  <div class="l" style="--x:151;--y:397">Signature:____________________________________</div>
+  <div class="l" style="--x:152;--y:466">Printed Name:___________________________________________________________</div>
+  <div class="l" style="--x:152;--y:536">Date:___________________</div>
+  <div class="l" style="--x:151;--y:605">Witness:________________________________________________________________</div>
+  <div class="l" style="--x:152;--y:674">Printed Name: __________________________________________________________</div>
+  <div class="l" style="--x:152;--y:744">Date:___________________</div>
+  <div class="l" style="--x:151;--y:812">Signature of Provider:____________________________________________________</div>
+  <div class="l" style="--x:152;--y:883">Date:____________________</div>
+
+  <div class="n">4</div>
+</div>
+
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="consent.js"></script>
+</body>
+</html>
