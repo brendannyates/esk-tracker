@@ -1081,10 +1081,36 @@ function besseModel(){
   return { w, rows, list: list.sort((a, b) => a.a.date - b.a.date || (a.a.time ?? 0) - (b.a.time ?? 0)), review };
 }
 const PS = ph => ph === 'GENOA' || ph === 'OTHER'; // patient-specific pharmacies
+// a visit that still needs meds: not before today, no kit logged as given that day, and today's only until its time has passed
+function pendingAppt(a){
+  const T = todaySerial(); if (a.date < T) return false;
+  if (S.K.some(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date)) return false;
+  return a.date > T || a.time == null || a.time >= nowMin();
+}
+// Order Status (column J of the Master Patient Tracker) for Genoa / other-pharmacy patients: when the open order was placed and which visit it is for;
+// blank once everything ordered is received. Besse patients are left alone.
+function orderStatusText(mrn, fm){
+  const f = fm.filter(x => x.k.mrn === mrn); if (!f.length) return '';
+  const x = f[0]; return `${x.k.ordered != null ? `Ordered ${fmtD(x.k.ordered)}` : 'On order'}${x.need != null ? ` for ${fmtD(x.need)} appt` : ''}${f.length > 1 ? ` (+${f.length - 1} more on order)` : ''}`;
+}
+async function syncOrderStatus(){
+  const t = S.tables.patients, c = t?.cols.orderstatus; if (!S.store?.live || S.store.remote || c == null) return;
+  const seen = new Set(), ch = [], fm = followModel();
+  for (const p of S.P){
+    if (!PS(p.pharm) || seen.has(p.mrn)) continue; seen.add(p.mrn);
+    if (t.isFormula(p.r, c)) continue;
+    const want = orderStatusText(p.mrn, fm), cur = String(t.get(p.r, 'orderstatus') ?? '').trim();
+    if (want !== cur) ch.push([p, want]);
+  }
+  for (const [p, want] of ch){
+    try { await S.store.update('patients', p.r, t.snap(p.r), [[c, want]]); t.values[p.r][c] = want; }
+    catch (e){ console.error(e); toast('bad', `Order Status for ${esc(p.name)} wasn’t updated: ${esc(e.message || String(e))}`); break; }
+  }
+}
 function defaultWindow(){ const T = todaySerial(); const d = dowOf(T); let add = (1 - d + 7) % 7; if (add === 0) add = 7; return { from: T, to: T + add + 4 }; } // today → Friday of next week
 function genoaModel(from, to){
   const T = todaySerial(); from = from ?? S.win.from; to = to ?? S.win.to;
-  const appts = S.A.filter(a => a.active && a.date >= Math.max(from, T) && a.date <= to && PS(apptInfo(a).pharm)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  const appts = S.A.filter(a => a.active && a.date >= Math.max(from, T) && a.date <= to && PS(apptInfo(a).pharm) && pendingAppt(a)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
   const onhand = new Map(), open = new Map();
   for (const k of S.K){ if (!k.mrn || k.pharm === 'BESSE') continue;
     if (k.available){ if (!onhand.has(k.mrn)) onhand.set(k.mrn, []); onhand.get(k.mrn).push(k); }
@@ -1107,7 +1133,7 @@ function followModel(){
     if (!byMrn.has(k.mrn)) byMrn.set(k.mrn, []); byMrn.get(k.mrn).push(k); }
   for (const [mrn, orders] of byMrn){
     orders.sort((a, b) => (a.ordered ?? 0) - (b.ordered ?? 0) || a.r - b.r);
-    const appts = S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+    const appts = S.A.filter(a => a.mrn === mrn && a.active && pendingAppt(a)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
     const onhand = S.K.filter(k => k.mrn === mrn && k.available && k.pharm !== 'BESSE').sort(fifo);
     const oh = onhand.slice(); const uncovered = [];
     for (const a of appts){ const i = oh.findIndex(k => k.expDate == null || k.expDate >= a.date); if (i >= 0) oh.splice(i, 1); else uncovered.push(a); }
@@ -1261,7 +1287,7 @@ function actionModel(){
   const rows = rangeModel(T, end).filter(r => r.a.active);
   const fm = followModel();
   const transit = rows.filter(r => r.st === 'ordered').map(r => ({ r, f: fm.find(f => f.k.id === r.kit?.id) }));
-  const order = rows.filter(r => r.st === 'need');
+  const order = rows.filter(r => r.st === 'need' && pendingAppt(r.a));
   const today = todayModel(T).filter(i => i.a.active && (i.needsSched || i.needsProto));
   return { end, transit, order, today: today.filter(i => !taskDone(i.a.mrn, i.needsSched, i.needsProto)), schedMeds: scheduledNeedingMeds(), reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
 }
@@ -1430,19 +1456,21 @@ function dueText(due, isToday){
   if (!due) return '';
   if (!isToday) return `${due.what} ${fmtT(due.at)}`;
   const d = due.at - nowMin();
+  if (due.kind === 'arr') return d > 0 ? `Expected in ${d} min · ${fmtT(due.at)}` : d === 0 ? `Expected now · ${fmtT(due.at)}` : `Expected ${fmtT(due.at)} · ${-d} min late`;
   if (due.kind === 'v40' && d < -GRACE) return `${due.what} were due ${fmtT(due.at)}`;
   if (due.kind === 'dis' && d <= 0) return `Discharge vitals due · ${fmtT(due.at)}`;
   return `${due.what} ${d > 0 ? `in ${d} min` : d === 0 ? 'now' : `overdue ${-d} min`} · ${fmtT(due.at)}`;
 }
 function dueCls(due, isToday){
   if (!due || !isToday) return ''; const d = due.at - nowMin();
+  if (due.kind === 'arr') return d <= 0 ? 'warn' : 'info';
   if (due.kind === 'v40') return d < -GRACE ? '' : d <= 0 ? 'bad' : d <= 5 ? 'warn' : 'info';
   return d <= 0 ? 'ok' : d <= 10 ? 'warn' : 'info';
 }
 const dueChip = (due, isToday) => `<span class="chip ${dueCls(due, isToday)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="${isToday ? 1 : 0}">${esc(dueText(due, isToday))}</span>`;
 function visitRowHTML(i){
   const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
-  if (!v || v.start == null){ const iv = { what: 'Initial vitals', at: a.time, kind: 'v40' };
+  if (!v || v.start == null){ const iv = { what: 'Expected', at: a.time, kind: 'arr' };   // awaiting arrival
     return `<div class="vrow small">${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}<span class="grow"></span><button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button><button class="btn sm" data-act="vOut" data-k="${esc(a.key)}">${v?.savedAt ? 'Check out / Tx report · draft saved' : 'Check out / Tx report'}</button>${(v?.rescue || []).length ? `<span class="chip warn">${esc(v.rescue.map(r => r.med).join(', '))}</span>` : ''}</div>`; }
   return `<div class="vrow small"><span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
     ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : visitMarks(v).map(m => dueChip(m, isToday)).join('')}
@@ -2230,7 +2258,16 @@ function openPatient(mrn){
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
     <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="ptPrint" data-m="${esc(mrn)}" ${up.some(a => a.active) ? '' : 'disabled'}>🖨 Print schedule</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+}
+// Patient's own schedule to hand them: every upcoming visit still ahead (cancelled and no-shows left off).
+function ptSchedDoc(mrn){
+  const rows = S.A.filter(a => a.mrn === mrn && a.active && pendingAppt(a)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Appointment schedule · ${esc(nm(mrn))}</title><style>@page{size:letter portrait;margin:0.6in} body{font-family:Calibri,"Segoe UI",Arial,sans-serif;font-size:12pt} h1{font-size:16pt;margin:8px 0 2px} table{width:100%;border-collapse:collapse;margin-top:12px} th,td{border:1px solid #999;padding:6px 8px;text-align:left} th{background:#eee}</style></head><body>
+  <img src="${LOGO_URI}" alt="Mindful Health Solutions" style="height:48px"><h1>Your appointment schedule</h1>
+  <div><b>${esc(nm(mrn))}</b> · ${esc(CFG.clinic)}</div><div style="color:#555;font-size:10pt">Printed ${fmtD(todaySerial(), 'full')}.</div>
+  ${rows.length ? `<table><tr><th>Date</th><th>Time</th><th>Visit</th></tr>${rows.map(a => `<tr><td>${DAYNAME[dowOf(a.date)]}, ${fmtD(a.date, 'full')}</td><td>${fmtT(a.time)}</td><td>${a.isStart ? 'Treatment start' : 'Treatment'}</td></tr>`).join('')}</table>` : '<p>No upcoming appointments are booked.</p>'}
+  </body></html>`;
 }
 
 // ---------- inventory ----------
@@ -2395,6 +2432,7 @@ const ACT = {
   admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
   admSave: adminSave,
   patient: el => openPatient(el.dataset.m),
+  ptPrint: el => { const m = el.dataset.m; closeModal(); openPrintable(ptSchedDoc(m), 'Appointment schedule · ' + nm(m)); },
   copyPull: async () => {
     const items = todayModel(S.day).filter(i => i.a.active && (i.adminKit || i.suggest));
     const H = ['Time', 'Patient', 'MRN', 'mg', 'Pharmacy', 'Serial', 'Lot', 'Use by', 'Status'];
@@ -2570,7 +2608,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render(); syncOrderStatus();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
