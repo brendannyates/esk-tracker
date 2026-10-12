@@ -23,7 +23,7 @@ if (-not (Test-Path $Edge)) { throw "Edge not found at $Edge" }
 $ReferencePdf = (Resolve-Path $ReferencePdf).Path
 
 # FICTIONAL test values only.
-$FILL = @{ provider = 'Dr. Avery Example'; patient = 'Testpatient Sample'; reason = 'Major Depressive Disorder (MDD)' }
+$FILL = @{ provider = 'Dr. Avery Example'; patient = 'Testpatient Sample'; reason = 'Major Depressive Disorder (MDD)'; witness = 'Witness Sample' }
 
 # ---------- helpers ----------
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
@@ -107,6 +107,9 @@ for ($i = 0; $i -lt $refText.Count; $i++) {
   $want = Norm $refText[$i]; $got = Norm $filledText[$i]
   if ($i -eq 0) {
     foreach ($k in 'provider', 'patient', 'reason') { $v = Norm $FILL[$k]; Check ($got.Contains($v)) "page 1 shows the $k value"; $got = $got.Replace($v, '') }
+  }
+  if ($i -eq 3) {
+    foreach ($k in 'patient', 'witness') { $v = Norm $FILL[$k]; Check ($got.Contains($v)) "page 4 shows the $k printed name"; $got = $got.Replace($v, '') }
   }
   $ok = $want -eq $got
   if (-not $ok) { $n = 0; while ($n -lt [Math]::Min($want.Length, $got.Length) -and $want[$n] -eq $got[$n]) { $n++ }

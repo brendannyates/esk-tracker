@@ -8,7 +8,7 @@
   Wording is verbatim from Consent_for_esketamine_treatment_updated.pdf. Do not edit wording here without compliance sign-off.
   Layout: each page is a Letter sheet; every printed line is placed with --y (top of the line) and --x (left edge),
   in pixels of a 150 dpi page (1275 x 1650), measured from the PDF. Lines wrap exactly where the PDF wraps.
-  The three filled fields are the elements with data-field; consent.js fills them. Nothing else on the page changes.
+  The filled fields are the elements with data-field (provider, patient on page 1 and as the printed name on page 4, reason, and the witness printed name); consent.js fills them. Nothing else on the page changes.
 -->
 <style>
   @page { size: letter; margin: 0; }
@@ -125,9 +125,11 @@
   <img class="logo" src="assets/mhs-logo.png" alt="Mindful Health Solutions">
   <div class="l" style="--x:151;--y:397">Signature:____________________________________</div>
   <div class="l" style="--x:152;--y:466">Printed Name:___________________________________________________________</div>
+  <div class="f" style="--x:328;--y:466" data-field="patient"></div>
   <div class="l" style="--x:152;--y:536">Date:___________________</div>
   <div class="l" style="--x:151;--y:605">Witness:________________________________________________________________</div>
   <div class="l" style="--x:152;--y:674">Printed Name: __________________________________________________________</div>
+  <div class="f" style="--x:336;--y:674" data-field="witness"></div>
   <div class="l" style="--x:152;--y:744">Date:___________________</div>
   <div class="l" style="--x:151;--y:812">Signature of Provider:____________________________________________________</div>
   <div class="l" style="--x:152;--y:883">Date:____________________</div>

@@ -1,9 +1,9 @@
-// Consent print window. Fills the three fields in consent.html and prints.
+// Consent print window. Fills the provider, patient (page 1 and printed name), reason and witness printed name, then prints.
 // The fields arrive by message from the ESK Tracker panel (Office dialog messaging, or postMessage from the same origin)
 // and live only in this page's memory. Nothing is written to the URL, storage, the console, or the workbook.
 (function () {
   'use strict';
-  var FIELDS = ['provider', 'patient', 'reason'];
+  var FIELDS = ['provider', 'patient', 'reason', 'witness'];
   var filled = false;
 
   function fill(d) {

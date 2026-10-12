@@ -2278,16 +2278,17 @@ function openConsent(mrn){
   const provs = apptProviders();
   const last = mrn ? S.A.filter(a => a.mrn === mrn && a.rendering).sort((a, b) => b.date - a.date)[0]?.rendering : '';
   openModal(`<h2>Print consent for esketamine treatment</h2>
-    <div class="small muted">Fills the three blanks on the consent. Signature, witness and date lines stay blank. Nothing here is saved.</div>
+    <div class="small muted">Fills the provider, patient name and diagnosis, and the two printed-name lines on the signature page (patient and witness). Signature and date lines stay blank. Nothing here is saved.</div>
     <label class="lbl" for="cnPt">Patient name (type it in)</label><input id="cnPt" class="fld" autocomplete="off" spellcheck="false" value="">
     <label class="lbl" for="cnProv">Rendering provider</label>${provs.length ? `<select id="cnProv" class="fld"><option value="">Choose…</option>${provs.map(v => `<option${v === last ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>` : '<div class="msg warn">No providers on the latest appointment list. Upload a 1 ESK Ordering - B report that includes the Rendering column.</div>'}
     <label class="lbl" for="cnWhy">Treatment of</label><input id="cnWhy" class="fld" value="${esc(CONSENT_REASON)}">
+    <label class="lbl" for="cnWit">Witness printed name (PCT)</label><input id="cnWit" class="fld" value="${esc(CFG.me || '')}">
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="consentGo" ${provs.length ? '' : 'disabled'}>Open printable form</button></div>`);
   setTimeout(() => $('#cnPt')?.focus(), 30);
 }
 function consentGo(){
-  const data = { patient: ($('#cnPt')?.value || '').trim(), provider: $('#cnProv')?.value || '', reason: ($('#cnWhy')?.value || '').trim() };
-  if (!data.patient) return toast('warn', 'Type the patient name.'); if (!data.provider) return toast('warn', 'Choose the rendering provider.'); if (!data.reason) return toast('warn', 'Enter what the treatment is for.');
+  const data = { patient: ($('#cnPt')?.value || '').trim(), provider: $('#cnProv')?.value || '', reason: ($('#cnWhy')?.value || '').trim(), witness: ($('#cnWit')?.value || '').trim() };
+  if (!data.patient) return toast('warn', 'Type the patient name.'); if (!data.provider) return toast('warn', 'Choose the rendering provider.'); if (!data.reason) return toast('warn', 'Enter what the treatment is for.'); if (!data.witness) return toast('warn', 'Enter the witness (PCT) name.');
   closeModal(); openConsentWindow(data);
 }
 // From the task pane: an Office dialog (a real window, so printing works). From the full-screen window or demo: window.open.
