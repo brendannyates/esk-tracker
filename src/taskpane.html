@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#f6f1e7;--surface:#fffdf8;--surface2:#f1eadc;--ink:#2b2622;--muted:#6f665c;--line:#e3d9c6;
@@ -69,7 +68,7 @@ table.rt td .row{gap:6px}
 .safe.besse{color:#8a3a17;background:#f7e4d9;border-color:#d9a58a} .safe.genoa{color:#0d5d57;background:#dcf1ee;border-color:#8cc9c1} .safe.other{color:#5b4a8a;background:#ebe6f7;border-color:#b7aadb}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33}:root:not([data-theme="light"]) .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}}
 :root[data-theme="dark"] .safe.besse{color:#f3b597;background:#3a2419;border-color:#7a4a33} :root[data-theme="dark"] .safe.genoa{color:#8fdad0;background:#16302d;border-color:#2f6c65}
-.warnText{color:var(--warn);font-weight:600} .badText{color:var(--bad);font-weight:600}
+.warnText{color:var(--warn);font-weight:600}
 .item.appt2{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;padding:12px 14px}
 .appt2 .al,.appt2 .ar{display:flex;flex-direction:column;gap:6px;min-width:0}
 .appt2 .ar{align-items:flex-end;text-align:right}
@@ -129,7 +128,6 @@ button.doc{cursor:pointer} button.doc:hover{border-color:var(--accent)}
 .item.appt .sn{font-size:13px;font-weight:600;margin-top:4px;letter-spacing:.3px}
 .item.appt .meta{color:var(--muted);font-size:12.5px}
 @media(max-width:520px){.item.appt{grid-template-columns:1fr}.item.appt .ar{align-items:flex-start;text-align:left}.item.appt .ar .acts{justify-content:flex-start}}
-.bignum{font-size:34px;font-weight:800;line-height:1} .midnum{font-size:22px;font-weight:700;line-height:1}
 .item.st-onhand{border-left-color:var(--line)} .item.st-check{border-left-color:var(--warn)}
 .osec{border-left:5px solid;border-radius:10px;padding:8px 12px;margin-top:8px}
 .subnav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
@@ -145,7 +143,6 @@ details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--mu
 .dayblock .bh span{color:var(--muted);font-size:12px}
 .srow{background:var(--surface);border-radius:10px;padding:8px 10px;margin-top:8px}
 .srow .name{font-weight:700} .srow .meta{color:var(--muted);font-size:12px;margin-left:6px} .srow .line{margin-top:4px}
-.todaypill{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:3px 12px;font-weight:800;letter-spacing:.5px}
 .asec{border-radius:12px;padding:10px 12px;margin-top:10px}
 .asec.red{background:var(--bad-soft)} .asec.blue{background:var(--info-soft)} .asec.amber{background:var(--warn-soft)} .asec.gray{background:var(--surface2)}
 .asec h3{margin:0 0 6px;color:inherit;text-transform:none;letter-spacing:0;font-size:14px}
@@ -177,7 +174,6 @@ label.lbl{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px;font-
 .chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.info{background:var(--info-soft);color:var(--info)} .chip.acc{background:var(--accent-soft);color:var(--accent)}
 .list{display:flex;flex-direction:column;gap:8px}
 .item{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface)}
-.item.dim{opacity:.6}
 .item.target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .item .head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .item .time{font-weight:700;min-width:64px}
@@ -341,7 +337,7 @@ function parseRef(values){
   return out;
 }
 // Besse Order tab: the summary table (Clinic/Date/Dose/…/To Be Ordered) and the weekly history (DATE | 56 | 84)
-function parseBesse(values, formulas){
+function parseBesse(values){
   const out = { rows:{}, hist:null, vals:values };
   for (let r = 0; r < values.length; r++){
     const row = values[r].map(norm);
@@ -371,7 +367,8 @@ function OfficeStore(){
   }
   // Read a table body in chunks; stops after 2 chunks with no hand-entered data (the prefilled blank rows at the bottom).
   async function readBody(ctx, t, opts = {}){
-    const b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+    let b = opts.b;   // body range with rowCount/columnCount already loaded, when the caller batched it
+    if (!b){ b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync(); }
     const n = b.rowCount, cols = b.columnCount, values = [], formulas = [];
     let empty = 0;
     for (let s = 0; s < n; s += CH){
@@ -400,27 +397,28 @@ function OfficeStore(){
     live: true,
     async load(){
       return retry(() => Excel.run(async ctx => {
-        const ts = ctx.workbook.tables; ts.load('items/name'); await ctx.sync();
+        const ts = ctx.workbook.tables; ts.load('items/name'); const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const hs = ts.items.map(t => { const h = t.getHeaderRowRange(); h.load('values'); const ws = t.worksheet; ws.load('name'); return { t, h, ws }; });
         await ctx.sync();
         const found = {};
         for (const x of hs){ const set = new Set(x.h.values[0].map(norm)); for (const [k, req] of Object.entries(SIG)) if (!found[k] && req.every(q => set.has(q))) found[k] = x; }
+        // one sync for every table's size plus the Daily Count header, REF and Besse Order ranges
+        for (const x of Object.values(found)){ x.b = x.t.getDataBodyRange(); x.b.load('rowCount,columnCount'); }
+        const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
+        const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
+        let hr = null, rr = null, br = null;
+        if (found.daily){ hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); }
+        if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
+        if (bo){ br = bo.getRange('A1:Z200'); br.load('values'); besseSheet = bo.name; }
+        await ctx.sync();
         const tables = {};
         for (const [k, x] of Object.entries(found)){
           names[k] = x.t.name;
-          const d = await readBody(ctx, x.t);
+          const d = await readBody(ctx, x.t, { b: x.b });
           tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
         }
-        let dailyHdr = null;
-        if (found.daily){ const hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); await ctx.sync(); dailyHdr = { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas }; }
-        const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
-        const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
-        const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
-        let rr = null, br = null;
-        if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
-        if (bo){ br = bo.getRange('A1:Z200'); br.load('values,formulas'); besseSheet = bo.name; }
-        await ctx.sync();
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values, br.formulas) : null, besseSheet, dailyHdr };
+        const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr };
       }));
     },
     async update(k, r, snap, changes){
@@ -590,7 +588,7 @@ function DemoStore(){
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count' }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
-        besse: parseBesse(besse, besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
+        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
     },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
@@ -615,7 +613,7 @@ function DemoStore(){
 // ---------- app state ----------
 const S = {
   store:null, tables:{}, ref:{}, besse:null, besseSheet:null, P:[], A:[], K:[], byMrn:new Map(), loaded:false, loadErr:null,
-  view:'today', day:todaySerial(), orderDate:todaySerial(), orderTab:'NEED', win:null, target:null, pull:{},
+  view:'today', day:todaySerial(), orderDate:todaySerial(), win:null, pull:{},
   patQ:'', patAll:false, invTab:'stock', openDays:new Set(), range:'day', fPh:'all', fSt:'all', fQ:'', sortBy:'time', invFilter:'attention', invQ:'', recvPharm:'Genoa', rcvFirst:null, recvMsg:null, rcvLog:[], rcvHold:[], scanQ:[], scanBusy:null,
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
@@ -819,7 +817,6 @@ function inductionModel(){
   }
   return out.sort((a, b) => (a.start ?? 1e9) - (b.start ?? 1e9));
 }
-const inInduction = mrn => (S._ind || (S._ind = inductionModel())).some(x => x.p.mrn === mrn);
 function startsHTML(){
   const L = inductionModel(); S._ind = L; if (!L.length) return '';
   const T = todaySerial();
@@ -859,31 +856,6 @@ function findByScan(raw){
   if (!list.length && p) list = S.K.filter(k => k.serialN && k.serialN === normScan(p.serial));
   if (!list.length && n.length >= 8) list = S.K.filter(k => k.serialN && k.serialN === n);
   return { p, list };
-}
-function todayScan(raw){
-  const day = S.day; const { p, list } = findByScan(raw);
-  if (!list.length) return setMsg('todayMsg', 'bad', p ? `Serial ${p.serial} isn't in the Inventory log yet. Receive it first (Inventory → Receive).` : `That scan isn't a Spravato code and doesn't match any serial in the log.`);
-  const k = list.find(x => !x.administered && !x.disposed) || list[0];
-  if (k.administered) return setMsg('todayMsg', 'bad', `Serial ${k.serial} was already administered (${fmtD(k.adminDate,'full')}, ${esc(nm(k.mrn))}).`);
-  if (k.disposed) return setMsg('todayMsg', 'bad', `Serial ${k.serial} is marked for disposal. Do not use.`);
-  if (k.expired) return setMsg('todayMsg', 'bad', `Serial ${k.serial} is <b>expired</b> (use by ${fmtD(k.expDate,'full')}). Do not use — set it aside for disposal.`);
-  const items = todayModel(day); const d = isoOf(day); S.pull[d] = S.pull[d] || {};
-  const already = Object.entries(S.pull[d]).find(([, id]) => id === k.id);
-  if (already){ const it = items.find(i => i.a.key === already[0]); return setMsg('todayMsg', 'info', `Already pulled for ${esc(it ? nm(it.a.mrn) : 'a patient')}.`); }
-  const open = i => i.a.active && !i.pulledKit && !i.adminKit;
-  let it = S.target ? items.find(i => i.a.key === S.target) : null;
-  if (!it){
-    if (k.pharm !== 'BESSE' || k.mrn) it = items.find(i => open(i) && i.a.mrn === k.mrn);
-    else it = items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv && !S.K.some(x => besseOwner(x) === i.a.mrn && x.available && x.recv === k.recv)) || items.find(i => open(i) && i.inf.pharm === 'BESSE' && i.inf.mg === k.recv);
-  }
-  if (!it) return setMsg('todayMsg', 'bad', k.mrn ? `This kit is labeled for <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}), who has no open appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)}.${k.pharm === 'BESSE' ? ' If it should go to someone else, use <b>Re-assign</b> (Dashboard → Action Needed) so the label and tracker are updated.' : ''}` : `No open Besse appointment ${day === todaySerial() ? 'today' : 'on ' + fmtD(day)} needs this kit.`);
-  if (k.mrn && k.mrn !== it.a.mrn) return setMsg('todayMsg', 'bad', `<b>Assigned to another patient.</b> This ${PH_LABEL[k.pharm]} kit is labeled for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}), not ${esc(nm(it.a.mrn))}.${k.pharm === 'BESSE' ? ' Kits are only moved through <b>Re-assign</b> after the PCT re-labels them.' : ''}`);
-  if (k.pharm !== it.inf.pharm && it.inf.pharm) return setMsg('todayMsg', 'bad', `${esc(nm(it.a.mrn))} gets ${PH_LABEL[it.inf.pharm]} medication, but this kit is ${PH_LABEL[k.pharm]}.`);
-  const notes = [];
-  if (it.inf.mg && k.recv !== it.inf.mg) notes.push(`<b>Dose check:</b> kit is ${k.recv} mg, appointment is ${it.inf.mg} mg.`);
-  if (k.pharm === 'BESSE' && !k.mrn){ const own = S.K.find(x => besseOwner(x) === it.a.mrn && x.available && x.recv === k.recv && !Object.values(S.pull[d]).includes(x.id)); if (own) notes.push(`${esc(nm(it.a.mrn))} already has a labeled kit (SN …${esc(own.serial.slice(-5))}, received ${fmtD(own.received)}) — use that one first.`); else { const older = S.K.filter(x => x.pharm === 'BESSE' && !x.mrn && x.available && x.recv === k.recv && x.id !== k.id && !Object.values(S.pull[d]).includes(x.id) && fifo(x, k) < 0); if (older.length) notes.push(`An older unlabeled Besse ${k.recv} mg kit is available (received ${fmtD(older.sort(fifo)[0].received)}).`); } }
-  S.pull[d][it.a.key] = k.id; S.target = null; savePull();
-  setMsg('todayMsg', notes.length ? 'warn' : 'ok', `Pulled serial ${esc(k.serial)} (${k.recv} mg ${PH_LABEL[k.pharm]}) for <b>${esc(nm(it.a.mrn))}</b> at ${fmtT(it.a.time)}.` + (notes.length ? '<br>' + notes.join('<br>') : ''));
 }
 // ---------- re-assign a labeled Besse kit ----------
 function openReassign(id){
@@ -1178,7 +1150,7 @@ async function write(label, fn, okText){
   if (label) busy(label);
   try { await fn(); await reload(true); if (label) toast('ok', okText || 'Saved to the workbook.'); return true; }
   catch (e){ console.error(e); try { await reload(true); } catch {} toast('bad', esc(e.message || String(e))); return false; }
-  finally { if (label) busy(false); }
+  finally { S._selfWriteAt = Date.now(); if (label) busy(false); }   // the watcher ignores table change events from this write
 }
 
 // ---------- rendering ----------
@@ -1391,9 +1363,15 @@ function parseApptReport(aoa){
   }
   return rows;
 }
+// SheetJS (self-hosted in assets/) loads only when an appointment file is uploaded.
+let xlsxP = null;
+function loadXLSX(){
+  if (window.XLSX) return Promise.resolve(true);
+  return xlsxP || (xlsxP = new Promise(res => { const s = document.createElement('script'); s.src = 'assets/xlsx.full.min.js'; s.onload = () => res(!!window.XLSX); s.onerror = () => { xlsxP = null; s.remove(); res(false); }; document.head.appendChild(s); }));
+}
 async function readApptFile(f){
   if (!S.store?.live) return toast('warn', 'Demo mode: uploads only work in a real workbook.');
-  if (!window.XLSX) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
+  if (!(await loadXLSX())) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
   let rows;
   try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); rows = parseApptReport(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })); }
   catch (e){ console.error(e); return toast('bad', 'That file couldn’t be read. Upload the export from NextGen unchanged.'); }
@@ -1856,16 +1834,6 @@ async function rcvAdd(i){
 function mrnFromInput(v){ const m = String(v || '').match(/(\d{3,})\s*$/); if (m) return m[1]; const p = S.P.find(p => p.name.toUpperCase() === String(v || '').trim().toUpperCase()); return p?.mrn || null; }
 
 // ---------- order ----------
-function orderHTML(){
-  const g = genoaModel(); const need = g.rows.filter(r => r.cover === 'need').length; const fm = followModel(); const urgent = fm.filter(f => f.cls === 'bad').length;
-  const tabs = [['NEED', 'To order', need, 'bad'], ['FOLLOW', 'On order', fm.length, urgent ? 'bad' : ''], ['BESSE', 'Besse weekly', 0, '']];
-  return `<div class="card"><div class="row" style="justify-content:space-between">
-      <div class="seg" role="group" aria-label="Order view">${tabs.map(([k, l, n, c]) => `<button data-act="orderTab" data-p="${k}" aria-pressed="${S.orderTab === k}">${l}${n ? ` <span class="chip ${c}" style="margin-left:4px">${n}</span>` : ''}</button>`).join('')}</div>
-      ${S.orderTab === 'NEED' ? `<div class="row small"><label class="muted" for="winFrom">Order window</label><input id="winFrom" type="date" class="fld" style="width:auto" data-win="from" value="${isoOf(S.win.from)}"><span class="muted">to</span><input id="winTo" type="date" class="fld" style="width:auto" data-win="to" value="${isoOf(S.win.to)}"><button class="linkbtn" data-act="winReset">Through next Friday</button></div>`
-        : S.orderTab === 'BESSE' ? `<div class="row small"><label class="muted" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld" style="width:auto" data-act-change="orderDate" value="${isoOf(S.orderDate)}"></div>` : ''}
-    </div></div>
-    ${S.orderTab === 'NEED' ? needHTML(g) : S.orderTab === 'FOLLOW' ? followHTML(fm) : besseHTML()}`;
-}
 function needHTML(g){
   const T = todaySerial(); const need = g.rows.filter(r => r.cover === 'need'); const covered = g.rows.filter(r => r.cover !== 'need');
   const sel = need.filter(r => S.genoaSel.has(r.a.key)).length;
@@ -1925,7 +1893,7 @@ async function genoaOrder(){
   if (!CFG.me) return openSettings();
   const T = todaySerial();
   const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
-    for (const r of rows){ const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText(r.inf.pharm), dateordered: { date: T }, comments: nm(r.a.mrn) }); await S.store.add('kits', out); await reload(true); }
+    for (const r of rows){ const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText(r.inf.pharm), dateordered: { date: T }, comments: nm(r.a.mrn) }); await S.store.add('kits', out); }   // add() re-reads the table each time; write() reloads once at the end
   }, `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered.`);
   if (ok){ S.genoaSel.clear(); render(); }
 }
@@ -1955,13 +1923,6 @@ async function cancelDo(id){
   const k = S.K.find(x => x.id === id); if (!k) return;
   const { out } = changesFor('kits', { loggingpct: '', mrn: '', pharmacy: '', dateordered: '', comments: '' });
   if (await write('Clearing…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), 'Order line cleared.')){ closeModal(); render(); }
-}
-function besseTableText(){
-  const m = besseModel(); const H = ['Clinic', 'Date', 'Dose', 'Besse O/H', 'Appts Next Week', 'Appts 2 Week Out', 'Approved Overage', 'To Be Ordered'];
-  const R = [56, 84].map((mg, i) => { const r = m.rows[mg]; return [i ? '' : CFG.clinic, i ? '' : fmtD(S.orderDate, 'full'), mg + 'mg', r.oh, r.w1, r.w2, r.ov, r.order]; });
-  const html = `<table border="1" cellpadding="6" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:11pt"><tr>${H.map(h => `<th style="background:#f1eadc">${h}</th>`).join('')}</tr>${R.map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`;
-  const text = [H, ...R].map(r => r.join('\t')).join('\n');
-  return { html, text, m };
 }
 async function saveBesse(){
   const b = S.besse; const m = besseModel(); const cells = []; let histNote = '';
@@ -2462,12 +2423,8 @@ const ACT = {
   freshHide: () => { S.freshHidden = S.apptList?.on || 'none'; render(); },
   settings: openSettings,
   close: closeModal,
-  day: el => { const d = +el.dataset.d; S.day = d === 0 ? todaySerial() : S.day + d; S.todayMsg = null; S.target = null; render(); },
-  target: el => { S.target = S.target === el.dataset.k ? null : el.dataset.k; S.todayMsg = null; render(); setTimeout(() => $('#scanToday')?.focus(), 20); },
-  untarget: () => { S.target = null; render(); },
-  unpull: el => { const d = isoOf(S.day); if (S.pull[d]) delete S.pull[d][el.dataset.k]; savePull(); S.todayMsg = { kind:'info', html:'Pull undone.' }; render(); },
+  day: el => { const d = +el.dataset.d; S.day = d === 0 ? todaySerial() : S.day + d; S.todayMsg = null; render(); },
   admin: el => openAdmin(el.dataset.k),
-  vitals: () => openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`),
   bays: () => openBays(),
   expOpen: () => openExport(),
   expCopy: async () => { const rows = expRows(); const text = [EXP_HEAD, ...rows.map(r => r.cells)].map(r => r.join('\t')).join('\n'); const html = `<table><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`; toast((await copyText(text, html)) ? 'ok' : 'bad', `${rows.length} rows copied — paste into Excel.`); },
@@ -2494,8 +2451,6 @@ const ACT = {
   },
   print: el => { const t = el.dataset.t; document.querySelectorAll('.print-target').forEach(x => x.classList.toggle('print-target', x.id === t)); document.body.dataset.print = t; setTimeout(() => { window.print(); delete document.body.dataset.print; }, 30); },
   recvPh: el => { S.recvPharm = el.dataset.p; S.rcvFirst = null; S.recvMsg = null; render(); $('#scanRecv')?.focus(); },
-  orderTab: el => { S.orderTab = el.dataset.p; render(); },
-  copyBesse: async () => { const { html, text } = besseTableText(); const ok = await copyText(text, html); toast(ok ? 'ok' : 'bad', ok ? 'Table copied — paste it into the email.' : 'Couldn’t copy.'); },
   saveBesse,
   gselAll: () => { genoaModel().rows.filter(r => r.cover === 'need').forEach(r => S.genoaSel.add(r.a.key)); render(); },
   genoaOrder,
@@ -2554,8 +2509,6 @@ const ACT = {
   gotoDay: el => { S.day = +el.dataset.d; S.range = 'day'; render(); },
   fClear: () => { S.fQ = ''; S.fPh = 'all'; S.fSt = 'all'; S.sortBy = 'time'; render(); },
   winReset: () => { S.win = defaultWindow(); render(); },
-  copyNeed: async () => { const rows = genoaModel().rows.filter(r => r.cover === 'need'); const t = rows.map(r => `${nm(r.a.mrn)}\tMRN ${r.a.mrn}\t${r.inf.mg ?? '?'} mg\t${PH_LABEL[r.inf.pharm]}\tneeded ${fmtD(r.a.date, 'full')} ${fmtT(r.a.time)}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Order list copied.'); },
-  copyFollow: async () => { const t = followModel().map(f => `${nm(f.k.mrn)}\tMRN ${f.k.mrn}\t${PH_LABEL[f.k.pharm]}\tordered ${fmtD(f.k.ordered, 'full')}\t${f.next ? 'needed ' + fmtD(f.next.date, 'full') + ' ' + fmtT(f.next.time) : 'no appt'}`).join('\n'); toast((await copyText(t)) ? 'ok' : 'bad', 'Follow-up list copied.'); },
   recvGo: el => { const k = S.K.find(x => x.id === el.dataset.id); if (!k) return; S.view = 'inventory'; S.invTab = 'receive'; S.recvPharm = k.pharm === 'BESSE' ? 'Besse' : 'Genoa'; S.rcvFirst = k.id; S.recvMsg = null; render(); setTimeout(() => $('#scanRecv')?.focus(), 30); },
   fuLog: el => openFollowUp(el.dataset.id),
   fuSave: el => fuSave(el.dataset.id),
@@ -2594,8 +2547,7 @@ document.addEventListener('keydown', e => {
   const el = e.target; if (e.key !== 'Enter' || !el.dataset?.scan) return;
   e.preventDefault(); const v = el.value; el.value = ''; if (!cleanScan(v)) return;
   const k = el.dataset.scan;
-  if (k === 'today') todayScan(v);
-  else if (k === 'recv'){ S.scanQ.push({ k, v }); runScanQ(); render(); }
+  if (k === 'recv'){ S.scanQ.push({ k, v }); runScanQ(); render(); }
   else if (k === 'inv') invScan(v);
   else if (k === 'audit'){ const A = auditState(); if (!A.a1){ toast('warn', 'Enter Auditor 1 before scanning — it goes on the Daily Count tab.'); $('#aud1')?.focus(); return; } const sc = { raw: cleanScan(v), at: Date.now() }; A.scans.push(sc); A.filled = false; saveAuditSoon(); if (S.tables.daily){ S.scanQ.push({ k: 'aud', sc }); runScanQ(); } render(); }
   else if (k === 'admin'){ const { p, list } = findByScan(v); if (!list.length){ S.adm.msg = { kind:'bad', html: p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.' }; } else { S.adm.kitId = (list.find(x => !x.administered) || list[0]).id; S.adm.msg = null; } renderAdmin(); }
@@ -2746,7 +2698,7 @@ function openFull(win){
 (function boot(){
   const demo = /[?&]demo\b/.test(location.search);
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
-  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if (DLG && S.notifyDialog){ S.notifyDialog(); return; } if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
+  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if (Date.now() - (S._selfWriteAt || 0) < 3000) return; if (DLG && S.notifyDialog){ S.notifyDialog(); return; } if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
   if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); if (location.hash === '#dash') setTimeout(closeModal, 1500); return; }   // demo screenshots: #consent opens the consent pop-up, #dash closes the first-run settings
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
