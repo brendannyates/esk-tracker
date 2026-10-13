@@ -569,7 +569,7 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; if (i === 6) r[21] = T - 5; if (i === 9) r[21] = T - 40; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
@@ -624,7 +624,7 @@ function derive(){
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -696,7 +696,7 @@ function todayModel(day){
     const fut = S.A.filter(x => x.mrn === a.mrn && x.active && x.date > day);
     const thru = scheduledThru(a.mrn);
     if (adminKit) used.add(adminKit.id);
-    return { a, inf, p, adminKit, pulledKit, remaining: fut.length, thru, needsSched: thru == null || thru < T + CFG.schedDays, needsProto: needsProto(p) };
+    return { a, inf, p, adminKit, pulledKit, remaining: fut.length, thru, needsSched: thru == null || thru < T + CFG.schedDays, needsProto: needsProto(p), needsMadrs: needsMadrs(p) };
   });
   const pool = S.K.filter(k => k.available && !used.has(k.id)).sort(fifo);
   for (const it of items){
@@ -709,6 +709,23 @@ function todayModel(day){
   return items;
 }
 function needsProto(p){ if (!p || !/^(active|pending)/i.test(p.status)) return false; return !p.protoExp || p.protoExp < todaySerial() + CFG.schedDays; }
+// From 30 days before auth expiration: due until Last MADRS holds a date inside that window (stays due once the auth lapses).
+const MADRS_DAYS = 30;
+function needsMadrs(p){ if (!p?.authExp || !/^(active|pending)/i.test(p.status)) return false; const from = p.authExp - MADRS_DAYS; return todaySerial() >= from && !(p.lastMadrs != null && p.lastMadrs >= from); }
+const madrsFlag = p => needsMadrs(p) ? `<span class="chip bad">Needs MADRS · auth ${p.authExp < todaySerial() ? 'expired' : 'exp'} ${fmtD(p.authExp)}${p.lastMadrs ? ` · last ${fmtD(p.lastMadrs)}` : ''}</span>` : '';
+function openMadrs(mrn){
+  const p = S.byMrn.get(mrn); const t = S.tables.patients; if (!p || t.cols.lastmadrs == null) return toast('bad', 'Last MADRS column not found on the Master Patient Tracker.');
+  openModal(`<h2>MADRS collected — ${esc(p.name)}</h2><div class="muted small">MRN ${esc(mrn)} · auth exp ${fmtD(p.authExp, 'full')} · last MADRS ${p.lastMadrs ? fmtD(p.lastMadrs, 'full') : '—'}</div>
+    <label class="lbl" for="madrsDate">Date collected</label><input id="madrsDate" type="date" class="fld" value="${isoOf(todaySerial())}">
+    <div class="writes"><b>Will write to Master Patient Tracker row ${p.r + 3}:</b><div><code>${esc(colLetterFor('patients', t.cols.lastmadrs))}</code> ${esc(t.headers[t.cols.lastmadrs].trim())} = the date above</div></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="madrsSave" data-m="${esc(mrn)}">Save date</button></div>`);
+  setTimeout(() => $('#madrsDate')?.focus(), 30);
+}
+async function madrsSave(mrn){
+  const p = S.byMrn.get(mrn); const t = S.tables.patients; const d = fromIso($('#madrsDate')?.value);
+  if (d == null) return toast('warn', 'Enter the date the MADRS was collected.'); if (d > todaySerial()) return toast('warn', 'The MADRS date can’t be in the future.');
+  if (await write('Saving MADRS date…', () => S.store.update('patients', p.r, t.snap(p.r), [[t.cols.lastmadrs, { date: d }]]), `Last MADRS for ${p.name} set to ${fmtD(d, 'full')}.`)){ closeModal(); render(); }
+}
 // Assigned Besse kits to flag: expire in < 21 days AND their patient has no visit in the next 7 days.
 function reassignModel(){
   const T = todaySerial(); const out = []; const taken = new Set();
@@ -770,9 +787,9 @@ async function protoSave(mrn){
   if (d == null) return toast('warn', 'Enter the new expiration date.'); if (d <= todaySerial()) return toast('warn', 'The new expiration date should be in the future.');
   if (await write('Saving protocol date…', () => S.store.update('patients', p.r, t.snap(p.r), [[t.cols.protocolexpdate, { date: d }]]), `Protocol for ${p.name} now expires ${fmtD(d, 'full')}.`)){ closeModal(); render(); }
 }
-function taskBtns(mrn, ns, np){
+function taskBtns(mrn, ns, np, nmd){
   const sd = taskGet(mrn, 'sched'), pd = taskGet(mrn, 'proto');
-  return `<div class="line row" style="gap:6px">${ns ? (sd ? `<span class="chip ok">Scheduled ✓ ${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${esc(mrn)}" data-k="sched">Undo</button>` : `<button class="btn sm" data-act="taskDo" data-m="${esc(mrn)}" data-k="sched">Mark scheduled</button>`) : ''}${np ? `<button class="btn sm" data-act="protoRenew" data-m="${esc(mrn)}">Protocol renewed…</button>` : ''}</div>`;
+  return `<div class="line row" style="gap:6px">${ns ? (sd ? `<span class="chip ok">Scheduled ✓ ${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${esc(mrn)}" data-k="sched">Undo</button>` : `<button class="btn sm" data-act="taskDo" data-m="${esc(mrn)}" data-k="sched">Mark scheduled</button>`) : ''}${np ? `<button class="btn sm" data-act="protoRenew" data-m="${esc(mrn)}">Protocol renewed…</button>` : ''}${nmd ? `<button class="btn sm" data-act="madrsDo" data-m="${esc(mrn)}">MADRS collected…</button>` : ''}</div>`;
 }
 const taskDone = (mrn, ns, np) => (!ns || taskGet(mrn, 'sched')) && !np;
 const covChip = p => !p ? '' : p.coverage ? `<span class="small muted">${esc(p.coverage)}</span>` : '<span class="chip warn">MD/NP not set</span>';
@@ -1265,18 +1282,18 @@ function actionModel(){
   const fm = followModel();
   const transit = rows.filter(r => r.st === 'ordered').map(r => ({ r, f: fm.find(f => f.k.id === r.kit?.id) }));
   const order = rows.filter(r => r.st === 'need' && pendingAppt(r.a));
-  const today = todayModel(T).filter(i => i.a.active && (i.needsSched || i.needsProto));
-  return { end, transit, order, today: today.filter(i => !taskDone(i.a.mrn, i.needsSched, i.needsProto)), schedMeds: scheduledNeedingMeds(), reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
+  const today = todayModel(T).filter(i => i.a.active && (i.needsSched || i.needsProto || i.needsMadrs));
+  return { end, transit, order, today: today.filter(i => !taskDone(i.a.mrn, i.needsSched, i.needsProto) || i.needsMadrs), schedMeds: scheduledNeedingMeds(), reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
 }
 function actionHTML(){
   const m = actionModel(); const T = todaySerial();
   const when = a => `${a.date === T ? 'Today' : fmtD(a.date, 'dow')} ${fmtT(a.time)}`;
   const total = m.transit.length + m.order.length + m.today.length + m.schedMeds.length;
   return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
-    <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days), and today’s patients who need scheduling or a new protocol.</div>
+    <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days), and today’s patients who need scheduling, a new protocol or a MADRS.</div>
     <div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : '<div class="small">Nothing to order for the next 3 business days.</div>'}</div>
     <div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.length ? m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>` : '<div class="small">Nothing in transit is needed in the next 3 business days.</div>'}</div>
-    <div class="asec amber"><h3>Today — schedule out or new protocol · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${protoFlag(i.p)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol.</div>'}</div>
+    <div class="asec amber"><h3>Today — schedule out, new protocol or MADRS · ${m.today.length}</h3>${m.today.length ? m.today.map(i => `<div class="srow"><div class="head"><span class="name">${esc(nm(i.a.mrn))}</span><span class="meta">${fmtT(i.a.time)} · booked thru ${i.thru ? fmtD(i.thru) : '—'}</span></div><div class="line row">${i.needsSched && !taskGet(i.a.mrn, 'sched') ? '<span class="chip warn">Schedule out</span>' : ''}${protoFlag(i.p)}${madrsFlag(i.p)}${medChip(i.a.mrn)}</div>${taskBtns(i.a.mrn, i.needsSched, i.needsProto, i.needsMadrs)}</div>`).join('') : '<div class="small">Everyone today is booked out with a current protocol and MADRS.</div>'}</div>
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
       ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
@@ -1631,6 +1648,7 @@ function itemHTML(i){
   const x = (act, m, title) => `<button class="x" data-act="${act}" data-m="${esc(m)}" title="${title}" aria-label="${title}">×</button>`;
   const flags = !a.active ? [] : [
     i.needsProto ? `<span class="flag bad">new protocol · consent due${x('protoRenew', a.mrn, 'Enter the renewed protocol date')}</span><button class="linkbtn noprint" data-act="consent" data-m="${esc(a.mrn)}">Print consent</button>` : '',
+    i.needsMadrs ? `<span class="flag bad">needs MADRS${x('madrsDo', a.mrn, 'Enter the MADRS date')}</span>` : '',
     i.needsSched && !taskGet(a.mrn, 'sched') ? `<span class="flag warn">schedule out${x('taskDoX', a.mrn, 'Mark scheduled')}</span>` : '',
     i.inf.mg === 56 && !a.isStart ? '<span class="flag warn">56 mg — verify</span>' : '',
     (() => { const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); return adj ? `<span class="flag bad">back-to-back with ${fmtD(adj.date, 'dow')}</span>` : ''; })(),
@@ -1667,7 +1685,7 @@ function vitalsDoc(day){
     const k = it ? (it.adminKit || it.pulledKit || it.suggest) : null;
     const pt = it ? `<div class="tm">${fmtT(it.a.time)}</div><div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>` : '';
     const med = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
-    const acts = !it ? [] : [it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
+    const acts = !it ? [] : [it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null, it.needsMadrs ? `Needs MADRS (auth ${it.p.authExp < todaySerial() ? 'expired' : 'exp'} ${fmtD(it.p.authExp)})` : null].filter(Boolean);
     const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
     const vv = it ? visitGet(it.a.key) : null;
     return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center;font-size:13pt;font-weight:700">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit(it ? fmtT(it.a.time) : '')}${vit(vv?.start != null ? fmtT(vv.start + (+CFG.vitalsMin || 40)) : '')}${vit(vv?.start != null ? fmtT(disAt(vv.start)) : '')}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
@@ -2221,7 +2239,7 @@ function openPatient(mrn){
   const p = S.byMrn.get(mrn); const T = todaySerial();
   const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
   const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
-  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${medChip(mrn)}</div>` : ''}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
+  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${madrsFlag(p)}${medChip(mrn)}</div>` : ''}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
     <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
@@ -2472,6 +2490,8 @@ const ACT = {
   noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
   protoSave: el => protoSave(el.dataset.m),
+  madrsDo: el => openMadrs(el.dataset.m),
+  madrsSave: el => madrsSave(el.dataset.m),
   taskUndo: el => taskSet(el.dataset.m, el.dataset.k, false),
   orderFor: async el => { const mrn = el.dataset.m; const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText(p.pharm), dateordered: { date: todaySerial() }, comments: `${nm(mrn)} | Ordered after scheduling ${fmtD(todaySerial())}` }); await write('Opening an order line…', () => S.store.add('kits', out), `${nm(mrn)} marked as ordered.`); },
   selAll: el => { const k = el.dataset.k; if (k === 'fu'){ followItems(S.fuPh).forEach(x => S.fuSel.add(x.id)); S.fuDraw(); } else if (k === 'fu2'){ followItems(S.oPh).forEach(x => S.oFu.add(x.id)); S.oDraw(); } else { patientOrderItems().forEach(x => S.oPt.add(x.id)); S.oDraw(); } },
