@@ -225,7 +225,9 @@ details.sec>summary::-webkit-details-marker{display:none}
 details.sec>summary::before{content:"▸";color:var(--muted)}
 details.sec[open]>summary::before{content:"▾"}
 .empty{padding:18px;text-align:center;color:var(--muted)}
-#modal{position:fixed;inset:0;background:rgba(20,14,8,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+#modal{position:fixed;inset:0;background:rgba(20,14,8,.32);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+#cfloat{position:fixed;inset:0;z-index:25;background:rgba(20,14,8,.32);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:2vh 2vw}
+#cfloat iframe{width:min(920px,100%);height:100%;border:0;border-radius:12px;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.3)}
 #modal[hidden]{display:none}
 #modal .sheet{background:var(--surface);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px;box-shadow:0 -6px 30px rgba(0,0,0,.2)}
 @media(min-width:700px){#modal{align-items:center}#modal .sheet{border-radius:16px}}
@@ -1307,14 +1309,14 @@ function render(){
     ${freshHTML()}
     <header class="top">
       <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
-        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button><button class="btn sm" data-act="fullWin" title="Open in its own window — move it or put it on another monitor">⧉ New window</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
         ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
-    <main>${S.full ? `<div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button><button class="btn" data-act="fullWin">Reopen in new window</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
+    <main>${S.full ? `<div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open — it connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
   if (!CFG.me && S.msTried && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
@@ -1896,10 +1898,9 @@ function vitalsDoc(day){
   </style></head><body>${pages.map(page).join('')}</body></html>`;
 }
 function openPrintable(html, title){
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
   openModal(`<h2>${esc(title)}</h2><div class="small muted">Contains patient identifiers — shred after use.</div>
     <iframe class="print" id="printFrame" title="${esc(title)}"></iframe>
-    <div class="row" style="margin-top:10px;justify-content:flex-end"><a class="btn ghost" href="${url}" target="_blank" rel="noopener">Open in new tab</a><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="printFrame">Print</button></div>`, true);
+    <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="printFrame">Print</button></div>`, true);
   const f = $('#printFrame'); f.srcdoc = html;
 }
 
@@ -2453,18 +2454,26 @@ function consentGo(){
   if (!data.patient) return toast('warn', 'Type the patient name.'); if (!data.provider) return toast('warn', 'Choose the rendering provider.'); if (!data.reason) return toast('warn', 'Enter what the treatment is for.'); if (!data.witness) return toast('warn', 'Enter the witness (PCT) name.');
   closeModal(); openConsentWindow(data);
 }
-// From the task pane: an Office dialog (a real window, so printing works). From the full-screen window or demo: window.open.
+// The consent form floats over the page, never in a new window: from the task pane an in-page Office dialog;
+// from the full-screen view or demo (one Office dialog at a time) a blurred overlay with the form in a frame.
 function openConsentWindow(data){
   const url = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '') + 'consent.html';
   let sent = false; const payload = () => { const s = JSON.stringify({ ev: 'consentData', data }); sent = true; data = null; return s; };
-  const viaWindow = () => {
-    const w = window.open(url, '_blank', 'width=900,height=1000'); if (!w) return toast('bad', 'The browser blocked the print window. Allow pop-ups for this site and try again.');
-    const onMsg = e => { if (e.source !== w || e.origin !== location.origin || e.data?.ev !== 'consentReady' || sent) return; w.postMessage(JSON.parse(payload()), location.origin); window.removeEventListener('message', onMsg); };
+  const viaFrame = () => {
+    const ov = document.createElement('div'); ov.id = 'cfloat'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Consent form');
+    ov.innerHTML = `<iframe title="Consent form" src="${url}"></iframe>`; document.body.appendChild(ov);
+    const fr = ov.querySelector('iframe');
+    const done = () => { window.removeEventListener('message', onMsg); document.removeEventListener('keydown', onKey); ov.remove(); data = null; };
+    const onKey = e => { if (e.key === 'Escape') done(); }; document.addEventListener('keydown', onKey);
+    const onMsg = e => { if (e.source !== fr.contentWindow || e.origin !== location.origin) return;
+      if (e.data?.ev === 'consentReady' && !sent) fr.contentWindow.postMessage(JSON.parse(payload()), location.origin);
+      if (e.data?.ev === 'consentClose') done(); };
     window.addEventListener('message', onMsg);
+    ov.addEventListener('click', e => { if (e.target === ov) done(); });
   };
-  if (S.mode !== 'pane' || !window.Office?.context?.ui?.displayDialogAsync) return viaWindow();
-  Office.context.ui.displayDialogAsync(url, { height: 90, width: 60, displayInIframe: false, promptBeforeOpen: false }, res => {
-    if (res.status !== Office.AsyncResultStatus.Succeeded) return viaWindow();   // e.g. the full-screen window is already open
+  if (S.mode !== 'pane' || !window.Office?.context?.ui?.displayDialogAsync) return viaFrame();
+  Office.context.ui.displayDialogAsync(url, { height: 90, width: 60, displayInIframe: true }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded) return viaFrame();   // e.g. the full-screen view is already open
     const dlg = res.value;
     dlg.addEventHandler(Office.EventType.DialogMessageReceived, a => { let m; try { m = JSON.parse(a.message); } catch { return; }
       if (m.ev === 'consentReady' && !sent) dlg.messageChild(payload());
@@ -2597,7 +2606,7 @@ function openSettings(){
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
-    ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open automatically when the panel opens, as <select id="sFullWin" class="fld" style="width:auto;min-height:28px;padding:2px 6px"><option value="0" ${CFG.fullWin ? '' : 'selected'}>full screen</option><option value="1" ${CFG.fullWin ? 'selected' : ''}>a new window</option></select></label>` : ''}
+    ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open full screen automatically when the panel opens</label>` : ''}
     ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
     <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn primary" data-act="cfgSave">Done</button></div>`);
@@ -2636,9 +2645,8 @@ const ACT = {
   expPrint: () => { closeModal(); openPrintable(expDoc(), expTitle()); },
   baysSave: async () => { await baysSave(); closeModal(); render(); toast('ok', 'Bays saved.'); },
   baysPrint: async () => { await baysSave(); closeModal(); render(); openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`); },
-  printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'Use “Open in new tab” and print from there.'); } },
-  full: () => openFull(false),
-  fullWin: () => openFull(true),
+  printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'The browser blocked printing from the panel. Open Full screen and print from there.'); } },
+  full: () => openFull(),
   exitFull: () => { if (S.store.close) S.store.close(); },
   admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
   admSave: adminSave,
@@ -2737,7 +2745,7 @@ const ACT = {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
-    const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; const sw = $('#sFullWin'); if (sw) CFG.fullWin = sw.value === '1'; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
+    const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
   demo: () => { location.search = '?demo=1'; },
@@ -2998,15 +3006,12 @@ function RemoteStore(){
   };
 }
 let DLG = null;
-// win = true opens a separate browser window (movable / second monitor) instead of the overlay over Excel.
-function openFull(win){
+// Full screen floats over the Excel page (an in-page Office dialog); there is no separate-window option.
+function openFull(){
   if (DLG) return;
   const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog';
-  const opts = win ? { height: 90, width: 85, displayInIframe: false, promptBeforeOpen: false } : { height: 96, width: 96, displayInIframe: true };
-  Office.context.ui.displayDialogAsync(url, opts, res => {
-    if (res.status !== Office.AsyncResultStatus.Succeeded){
-      if (win){ toast('warn', 'The browser blocked the new window — allow pop-ups for Excel. Opening full screen instead.'); setTimeout(() => openFull(false), 400); return; }
-      toast('bad', 'Couldn’t open full screen: ' + esc(res.error?.message || '')); return; }
+  Office.context.ui.displayDialogAsync(url, { height: 96, width: 96, displayInIframe: true }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded){ toast('bad', 'Couldn’t open full screen: ' + esc(res.error?.message || '')); return; }
     DLG = res.value; S.full = true; render();
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
     const rx = makeRx(async m => {
@@ -3030,7 +3035,7 @@ function openFull(win){
   if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); if (location.hash === '#dash') setTimeout(closeModal, 1500); if (location.hash === '#access') setTimeout(() => { closeModal(); S.view = 'access'; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up, #dash closes the first-run settings
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded) openFull(!!CFG.fullWin); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>
