@@ -261,6 +261,7 @@ details.sec[open]>summary::before{content:"▾"}
 <body>
 <div id="app"></div>
 <input type="file" id="apptFile" accept=".xls,.xlsx,.csv" hidden>
+<input type="file" id="benFile" accept=".csv,.xlsx,.xls" hidden>
 <div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" aria-live="polite"></div>
 <div id="busy" hidden><div class="spin"></div><span id="busyText">Working…</span></div>
@@ -313,6 +314,92 @@ const cleanScan = s => String(s ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim();
 const normScan = s => cleanScan(s).replace(/\s+/g, '').toUpperCase();
 function pharmOf(v){ const s = String(v ?? '').toUpperCase(); if (s.includes('BESSE')) return 'BESSE'; if (s.includes('GENOA')) return 'GENOA'; return s.trim() ? 'OTHER' : ''; }
 const PH_LABEL = { BESSE:'Besse', GENOA:'Genoa', OTHER:'Other', '':'—' };
+
+// ---------- Sohar benefits: parsing and merging (no Excel calls; tests/benefits.test.js runs this block in Node) ----------
+// Input: the "Final tracker file" from the Sohar Eligibility add-in (CSV or xlsx). Output: the Benefits tab, table tblBenefits.
+const BEN_SHEET = 'Benefits', BEN_TABLE = 'tblBenefits';
+const BEN_COLS = ['MRN', 'Patient Name', 'Per Nbr', 'Sohar Payer', 'Plan', 'Network', 'Coverage Level', 'Coverage Start', 'Coverage End', 'Copay', 'Coinsurance', 'Deductible', 'Deductible Remaining', 'Deductible Status', 'OOP Max', 'OOP Remaining', 'OOP Status', 'Benefit Flag', 'Sohar Status', 'Sohar Date', 'Source', 'Imported'];
+const BEN_IN = ['pernbr', 'mrn', 'soharpayer', 'plan', 'network', 'coveragelevel', 'coveragestart', 'coverageend', 'copay', 'coinsurance', 'deductible', 'deductibleremaining', 'deductiblestatus', 'oopmax', 'oopremaining', 'oopstatus', 'benefitflag', 'soharstatus', 'sohardate', 'service', 'source', 'exported'];   // file columns used (names and DOB are not read)
+// MRN match key: like mrnKey, then ignoring case, punctuation and leading zeros.
+const benKey = v => mrnKey(v).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^0+(?=.)/, '');
+const benElig = s => /\beligible\b/i.test(String(s ?? '')) && !/ineligible|not\s*eligible/i.test(String(s ?? ''));
+function parseCSV(text){
+  const s = String(text ?? '').replace(/^﻿/, ''), rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < s.length; i++){
+    const c = s[i];
+    if (q){ if (c === '"'){ if (s[i + 1] === '"'){ f += '"'; i++; } else q = false; } else f += c; continue; }
+    if (c === '"') q = true;
+    else if (c === ','){ row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r'){ if (c === '\r' && s[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += c;
+  }
+  if (f !== '' || row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+// Sohar Date as a sortable number (ms); null if it can't be read.
+function sohTime(v){
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Math.round((v - 25569) * 864e5);
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?)?/i);
+  if (m){ let y = +m[3], h = +(m[4] || 0); if (y < 100) y += 2000; if (m[7]){ if (/p/i.test(m[7]) && h < 12) h += 12; if (/a/i.test(m[7]) && h === 12) h = 0; } return Date.UTC(y, +m[1] - 1, +m[2], h, +(m[5] || 0), +(m[6] || 0)); }
+  const t = Date.parse(s); return isNaN(t) ? null : t;
+}
+const sohShort = v => { const s = String(v ?? '').trim(); let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${+m[2]}/${+m[3]}`; m = s.match(/^(\d{1,2})\/(\d{1,2})/); return m ? `${+m[1]}/${+m[2]}` : s; };
+// Rows of the file (array of arrays) → { rows:[{ mrn, key, t, …BEN_IN }], hasService, exported } or null if it isn't the Sohar file.
+function parseBenefits(aoa){
+  const hr = (aoa || []).findIndex(r => { const h = (r || []).map(norm); return h.includes('mrn') && (h.includes('deductibleremaining') || h.includes('oopremaining')); });
+  if (hr < 0) return null;
+  const hn = aoa[hr].map(norm), ix = {}; BEN_IN.forEach(k => { ix[k] = hn.indexOf(k); });
+  const rows = [];
+  for (const r of aoa.slice(hr + 1)){
+    const o = {}; BEN_IN.forEach(k => { o[k] = ix[k] < 0 ? '' : String(r[ix[k]] ?? '').trim(); });
+    o.mrn = mrnKey(ix.mrn < 0 ? '' : r[ix.mrn]); o.key = benKey(o.mrn); if (!o.key) continue;
+    o.t = sohTime(o.sohardate); rows.push(o);
+  }
+  return { rows, hasService: ix.service >= 0, exported: (rows.find(o => o.exported) || {}).exported || '' };
+}
+// Latest row per MRN (by Sohar Date; a tie goes to the later line), matched to Master Patient Tracker patients ([{ mrn, name }]).
+function planBenefits(rows, patients){
+  const byKey = new Map(); for (const p of patients || []){ const k = benKey(p.mrn); if (k && !byKey.has(k)) byKey.set(k, p); }
+  const latest = new Map();
+  for (const o of rows){ const was = latest.get(o.key); if (!was || (o.t ?? -Infinity) >= (was.t ?? -Infinity)) latest.set(o.key, o); }
+  const matched = [], eskMissing = []; let skipped = 0;
+  for (const o of latest.values()){
+    const p = byKey.get(o.key);
+    if (p) matched.push({ row: o, p });
+    else if (/\besk\b/i.test(o.service)) eskMissing.push(o.mrn);
+    else skipped++;
+  }
+  matched.sort((a, b) => String(a.p.name).localeCompare(String(b.p.name)));
+  return { matched, eskMissing, skipped, notElig: matched.filter(x => !benElig(x.row.soharstatus)), lines: rows.length, people: latest.size };
+}
+// One tblBenefits row (all text), in BEN_COLS order.
+const benRowOut = (o, p, now) => [o.mrn, String(p.name ?? ''), o.pernbr, o.soharpayer, o.plan, o.network, o.coveragelevel, o.coveragestart, o.coverageend, o.copay, o.coinsurance, o.deductible, o.deductibleremaining, o.deductiblestatus, o.oopmax, o.oopremaining, o.oopstatus, o.benefitflag, o.soharstatus, o.sohardate, o.source, now].map(v => String(v ?? ''));
+// Upsert by MRN (column 0): matched rows are replaced in place, new MRNs fill blank rows then go at the end, other rows are kept.
+function mergeBenefits(existing, incoming){
+  const out = (existing || []).map(r => r.map(v => v == null ? '' : String(v)));
+  const at = new Map(); out.forEach((r, i) => { const k = benKey(r[0]); if (k && !at.has(k)) at.set(k, i); });
+  const free = out.map((r, i) => r.every(v => v === '') ? i : -1).filter(i => i >= 0);
+  let updated = 0, added = 0;
+  for (const r of incoming){
+    const k = benKey(r[0]);
+    if (at.has(k)){ out[at.get(k)] = r.slice(); updated++; continue; }
+    const i = free.length ? free.shift() : out.length; out[i] = r.slice(); at.set(k, i); added++;
+  }
+  return { values: out, updated, added };
+}
+// Compact summary for a patient's card: "Copay 30 · Coins 20% · Ded left 100 (Approaching) · OOP left 2500 · Sohar 10/15".
+function benLine(o){
+  const v = k => String(o?.[k] ?? '').trim(), st = k => /^(met|approaching)$/i.test(v(k)) ? ` (${v(k)})` : '', parts = [];
+  if (v('copay')) parts.push('Copay ' + v('copay'));
+  if (v('coinsurance')) parts.push('Coins ' + v('coinsurance'));
+  if (v('deductibleremaining')) parts.push('Ded left ' + v('deductibleremaining') + st('deductiblestatus'));
+  if (v('oopremaining')) parts.push('OOP left ' + v('oopremaining') + st('oopstatus'));
+  if (v('sohardate')) parts.push('Sohar ' + sohShort(v('sohardate')));
+  return parts.join(' · ');
+}
+// ---------- Sohar benefits: end of the Node-tested block ----------
 
 // Spravato GS1 code — same layout the Inventory formulas use:
 // 01 + GTIN(14) | 21 + serial(12) | 17 + YYMMDD | 10 + lot
@@ -368,6 +455,7 @@ const SIG = {
   appts:    ['mrn','patient','date','time','event','status'],
   audit:    ['scanhere','auditor2','date'],
   daily:    ['auditornamefirstandlast','scanhere','duplicateentry'],
+  benefits: ['mrn','soharstatus','sohardate','imported'],   // Benefits tab (tblBenefits), written by "Import Sohar benefits"
 };
 const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
 const snapMatch = (vals, snap) => snap.every((s, c) => s === null || same(vals[c], s));
@@ -531,6 +619,35 @@ function OfficeStore(){
     },
     add: (k, changes) => addMany(k, [changes]),
     addMany,
+    // Sohar benefits → Benefits tab (tblBenefits). rows are BEN_COLS arrays of text. Creates the sheet and table the first time
+    // (plain cells, then tables.add); after that, rows are updated in place and the table only grows, so no rows are deleted.
+    async upsertBenefits(rows){
+      if (!rows.length) return { updated: 0, added: 0 };
+      return Excel.run(async ctx => {
+        const W = BEN_COLS.length, txt = n => Array.from({ length: n }, () => Array(W).fill('@'));
+        const t = ctx.workbook.tables.getItemOrNullObject(BEN_TABLE); await ctx.sync();
+        if (t.isNullObject){
+          let ws = ctx.workbook.worksheets.getItemOrNullObject(BEN_SHEET); await ctx.sync();
+          if (ws.isNullObject) ws = ctx.workbook.worksheets.add(BEN_SHEET);
+          else { const u = ws.getUsedRangeOrNullObject(true); await ctx.sync(); if (!u.isNullObject) throw new Error(`Stopped: the "${BEN_SHEET}" sheet already has data but no ${BEN_TABLE} table. Rename that sheet, then import again.`); }
+          ws.visibility = Excel.SheetVisibility.visible;
+          const hdr = ws.getRange('A1').getResizedRange(0, W - 1); hdr.numberFormat = txt(1); hdr.values = [BEN_COLS]; await ctx.sync();
+          for (let s = 0; s < rows.length; s += CH){ const part = rows.slice(s, s + CH); const r = ws.getRange('A2').getOffsetRange(s, 0).getResizedRange(part.length - 1, W - 1); r.numberFormat = txt(part.length); r.values = part; await ctx.sync(); }
+          const all = ws.getRange('A1').getResizedRange(rows.length, W - 1);
+          const nt = ws.tables.add(all, true); nt.name = BEN_TABLE; all.format.autofitColumns(); await ctx.sync();
+          return { updated: 0, added: rows.length };
+        }
+        const h = t.getHeaderRowRange(); h.load('values');
+        const d = await readBody(ctx, t, { full: true });
+        const hn = h.values[0].map(norm), idx = BEN_COLS.map(c => hn.indexOf(norm(c))), c0 = idx[0];
+        if (idx.some((c, i) => c !== c0 + i)) throw new Error(`Stopped: the ${BEN_TABLE} table should have these columns, in this order: ${BEN_COLS.join(', ')}.`);
+        const m = mergeBenefits(d.values.map(v => v.slice(c0, c0 + W)), rows);
+        let b = d.b;
+        if (m.values.length > d.rowCount){ t.resize(t.getRange().getResizedRange(m.values.length - d.rowCount, 0)); await ctx.sync(); b = t.getDataBodyRange(); b.load('rowCount'); await ctx.sync(); }
+        for (let s = 0; s < m.values.length; s += CH){ const part = m.values.slice(s, s + CH); const r = b.getCell(s, c0).getResizedRange(part.length - 1, W - 1); r.numberFormat = txt(part.length); r.values = part; await ctx.sync(); }
+        return { updated: m.updated, added: m.added };
+      });
+    },
     // Replace the Appt List (NextGen) rows: MRN…Status (M:R) from the top of the table down; the formula columns after them (S:T) are left alone.
     async replaceAppts(rows){
       return Excel.run(async ctx => {
@@ -659,10 +776,12 @@ function DemoStore(){
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = {};
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
+  { const bd = isoOf(T - 3), b = (mrn, name, pay, cp, co, dr, ds, orr, os, st) => [String(mrn), name, '', pay, 'PPO', 'In network', 'Individual', '2026-01-01', '2026-12-31', cp, co, '500', dr, ds, '4000', orr, os, '', st, bd, 'Verification', bd + ' 09:00'];   // fake Sohar benefits
+    t.benefits = [BEN_COLS, [b(900101, 'ALDBEN', 'Aetna', '30', '20%', '100', 'Approaching', '2500', 'Not met', 'complete.eligible'), b(900102, 'BROCAM', 'Cigna', '0', '10%', '0', 'Met', '800', 'Approaching', 'complete.eligible'), b(900104, 'DUNEMI', 'Blue Shield', '', '', '', '', '', '', 'complete.ineligible (INACTIVE)')], new Set(), null]; }
   return {
     live: false,
     async load(){
-      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count' }[k], h, v.map(r => r.slice()), F(v, fs));
+      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
         besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
     },
@@ -679,6 +798,7 @@ function DemoStore(){
       calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
     },
     async addMany(k, list){ for (const ch of list) await this.add(k, ch); },
+    async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
@@ -739,6 +859,7 @@ function derive(){
     k.partialOpen = !k.disposed && k.recv > 0 && k.remaining > 0 && k.remaining < k.recv;
     K.push(k);
   });
+  S.ben = benMap(S.tables.benefits);
   Object.assign(S, { P, A, K, byMrn }); S._ind = null;
 }
 S.win = defaultWindow();
@@ -1312,6 +1433,7 @@ function render(){
         ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
         ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
+        <button class="btn sm hdrc" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab" aria-label="Import Sohar benefits">⇪<span class="hl"> Import Sohar benefits</span></button>
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
@@ -1570,6 +1692,49 @@ async function apptReplace(){
   catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); }
   finally { busy(false); }
   await reload();
+}
+// ---------- import: Sohar Eligibility final tracker file → Benefits tab (tblBenefits); the Master Patient Tracker isn't touched ----------
+function benMap(t){
+  const m = new Map(); if (!t) return m;
+  t.values.forEach((_, r) => { const o = {}; for (const k of Object.keys(t.cols)) o[k] = t.get(r, k); const k = benKey(o.mrn); if (k && !m.has(k)) m.set(k, o); });
+  return m;
+}
+const benOf = mrn => S.ben?.get(benKey(mrn)) || null;
+const benStatus = o => String(o?.soharstatus ?? '').trim() || 'no status';
+function benHTML(mrn){
+  const o = benOf(mrn); if (!o) return '';
+  const tip = [o.soharpayer, o.plan, o.network, o.coveragelevel].map(v => String(v ?? '').trim()).filter(Boolean).join(' · ');
+  return `<div class="small" style="margin:0 0 6px" title="${esc(tip)}"><b>Benefits</b> ${esc(benLine(o) || 'no amounts')}${benElig(o.soharstatus) ? '' : ` <span class="chip bad">Not eligible: ${esc(benStatus(o))}</span>`}</div>`;
+}
+const benFlag = mrn => { const o = benOf(mrn); return o && !benElig(o.soharstatus) ? `<span class="chip bad" title="Sohar status: ${esc(benStatus(o))}">Sohar: not eligible</span>` : ''; };
+const nowText = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+async function readBenFile(f){
+  let parsed = null;
+  try {
+    if (/\.csv$/i.test(f.name) || /csv/i.test(f.type)) parsed = parseBenefits(parseCSV(await f.text()));
+    else {
+      if (!(await loadXLSX())) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      for (const n of wb.SheetNames){ parsed = parseBenefits(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })); if (parsed) break; }
+    }
+  } catch (e){ console.error(e); return toast('bad', 'That file couldn’t be read. Use the Final tracker file from the Sohar Eligibility add-in, unchanged.'); }
+  if (!parsed) return toast('bad', 'This doesn’t look like the Sohar final tracker file (no MRN and Deductible Remaining / OOP Remaining columns).');
+  const plan = planBenefits(parsed.rows, S.P); S.benUp = plan;
+  const had = S.ben?.size || 0, n = plan.matched.length;
+  openModal(`<h2>Import Sohar benefits?</h2>
+    <div class="small muted">${esc(f.name)}${parsed.exported ? ` · exported ${esc(parsed.exported)}` : ''}</div>
+    <div class="msg info" style="margin-top:8px"><div>${plan.lines} rows for ${plan.people} patients (latest Sohar check kept for each). <b>${n} ${n === 1 ? 'matches a patient' : 'match patients'} on the Master Patient Tracker</b>${n ? ' and will be written to the Benefits tab' : ''}.</div></div>
+    ${plan.notElig.length ? `<div class="msg warn" style="margin-top:8px"><div><b>${plan.notElig.length} not eligible in Sohar:</b><div class="small">${plan.notElig.map(x => `${esc(x.p.name)} (MRN ${esc(x.row.mrn)}): ${esc(x.row.soharstatus || 'no status')}`).join('<br>')}</div></div></div>` : ''}
+    ${plan.eskMissing.length ? `<div class="msg warn" style="margin-top:8px"><div><b>${plan.eskMissing.length} tagged ESK but not on the Master Patient Tracker</b> (not imported): <span class="small">MRN ${plan.eskMissing.map(esc).join(', ')}</span></div></div>` : ''}
+    ${plan.skipped ? `<div class="small muted" style="margin-top:8px">${plan.skipped} other patient${plan.skipped === 1 ? '' : 's'} (not ESK, not on the tracker) skipped.</div>` : ''}
+    ${parsed.hasService ? '' : '<div class="small muted" style="margin-top:8px">This file has no Service column, so patients who aren’t on the tracker can’t be checked for ESK. Export a fresh Final tracker file from Sohar Eligibility to see them.</div>'}
+    <div class="small" style="margin-top:8px">The Benefits tab (table ${BEN_TABLE}) is created if it isn’t there yet${had ? `; it has ${had} patients now` : ''}. Rows for these MRNs are replaced and other rows are kept. The Master Patient Tracker isn’t changed.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="benApply" ${n ? '' : 'disabled'}>Import ${n}</button></div>`);
+}
+async function benApply(){
+  const plan = S.benUp; if (!plan || !plan.matched.length) return; closeModal();
+  const now = nowText(), rows = plan.matched.map(x => benRowOut(x.row, x.p, now));
+  if (await write('Writing benefits…', () => S.store.upsertBenefits(rows), `Benefits saved for ${rows.length} patient${rows.length === 1 ? '' : 's'} on the ${BEN_SHEET} tab.`)) S.benUp = null;
 }
 // Most recent audit: today's in-app daily audit, or the latest date on the SN Audit tab.
 function lastAudit(){
@@ -1847,7 +2012,7 @@ function itemHTML(i){
   return `<div class="item appt3 st-${st}">
     <div class="am">
       <div class="r1"><span class="time">${fmtT(a.time)}</span><span class="name">${esc(nm(a.mrn))}</span>${a.isStart ? '<span class="pill start">Start</span>' : `<span class="muted">${a.isEFU ? 'EFU' : esc(a.event)}</span>`}${i.needsMadrs && a.active ? '<span class="mpill" title="Needs MADRS">MADRS</span>' : ''}<button class="linkbtn" data-act="patient" data-m="${esc(a.mrn)}">Details</button></div>
-      <div class="r2 small"><span class="muted">MRN ${esc(a.mrn)}</span>${p ? (p.coverage ? `<span class="muted">${esc(p.coverage)}</span>` : '<span class="warnText">MD/NP not set</span>') : ''}${a.active && !i.needsSched ? `<span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span>` : ''}</div>
+      <div class="r2 small"><span class="muted">MRN ${esc(a.mrn)}</span>${benFlag(a.mrn)}${p ?(p.coverage ? `<span class="muted">${esc(p.coverage)}</span>` : '<span class="warnText">MD/NP not set</span>') : ''}${a.active && !i.needsSched ? `<span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span>` : ''}</div>
       <div class="r3">${SAFE(i.inf.pharm)}${status}<span class="mono sn">${i.inf.mg ?? '?'} mg</span>${k ? `<span class="mono sn">SN ${esc(k.serial)}</span>` : ''}</div>
       ${k || au ? `<div class="r2 small">${k ? `<span class="muted">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</div>` : ''}
       <div class="r4 notebox">${notes.map((n, idx) => `<span class="note">${esc(n.t)}<span class="nby">${esc(n.by || '')} ${fmtD(fromIso(n.at))}</span><button class="x" data-act="noteDel" data-m="${esc(a.mrn)}" data-i="${idx}" aria-label="Remove note">×</button></span>`).join('')}
@@ -2423,7 +2588,7 @@ function openPatient(mrn){
   const p = S.byMrn.get(mrn); const T = todaySerial();
   const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
   const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
-  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${madrsFlag(p)}${medChip(mrn)}</div>` : ''}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
+  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${madrsFlag(p)}${medChip(mrn)}</div>` : ''}${benHTML(mrn)}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
     <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
     <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
     ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
@@ -2630,6 +2795,8 @@ const ACT = {
   view: el => { S.view = el.dataset.v; render(); },
   refresh: () => reload(),
   upAppt: () => $('#apptFile').click(),
+  upBen: () => $('#benFile').click(),
+  benApply: () => benApply(),
   apptReplace: () => apptReplace(),
   apptCancel: el => setCancelled(el.dataset.k, true),
   apptUncancel: el => setCancelled(el.dataset.k, false),
@@ -2788,6 +2955,7 @@ document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.da
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
+  if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
   if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = ['weeks', 'back'].includes(el.dataset.accv) ? +el.value : el.value; render(); }
@@ -2899,6 +3067,7 @@ function RemoteStore(){
     update: (k, r, snap, ch) => call('update', [k, r, snap, ch]),
     add: (k, ch) => call('add', [k, ch]),
     addMany: (k, list) => call('addMany', [k, list]),
+    upsertBenefits: rows => call('upsertBenefits', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
@@ -2919,6 +3088,7 @@ function openFull(){
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
+      if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
       try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
