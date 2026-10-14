@@ -85,5 +85,13 @@
         <bt:String id="Button.Tooltip" DefaultValue="Open the ESK Tracker panel for today's schedule, pulls, receiving and ordering."/>
       </bt:LongStrings>
     </Resources>
+    <WebApplicationInfo>
+      <Id>__SSO_ID__</Id>
+      <Resource>api://__HOSTNAME__/__SSO_ID__</Resource>
+      <Scopes>
+        <Scope>openid</Scope>
+        <Scope>profile</Scope>
+      </Scopes>
+    </WebApplicationInfo>
   </VersionOverrides>
 </OfficeApp>
