@@ -328,6 +328,23 @@ function parseScan(raw){
 const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60 };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
+// Your name defaults to the signed-in Microsoft account (Office single sign-on). Needs the Entra app registration's
+// client ID here and in the downloaded manifest; while it's blank, or if sign-on fails, the name typed in Settings is used.
+const SSO_APP_ID = '';
+async function msName(){
+  if (!SSO_APP_ID || S.mode === 'dialog' || !window.Office?.auth?.getAccessToken) return '';   // sign-on isn't available inside dialogs; the pane sets the name
+  try {
+    const tok = await Office.auth.getAccessToken({ allowSignInPrompt: false, allowConsentPrompt: true });
+    const b64 = tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))));   // name only; the token isn't kept
+    return String(claims.name || '').trim().replace(/^([^,]+),\s*(.+)$/, '$2 $1');   // "Last, First" → "First Last"
+  } catch (e){ console.warn('Microsoft sign-on unavailable', e); return ''; }
+}
+async function useMsName(){
+  const n = await msName(); S.msName = n; S.msTried = true;
+  if (n && (!CFG.me || CFG.meSrc === 'ms') && CFG.me !== n){ CFG.me = n; CFG.meSrc = 'ms'; saveCfg(); }
+  render();
+}
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
 applyTheme();
 
@@ -389,21 +406,22 @@ function OfficeStore(){
     throw err;
   }
   // Read a table body in chunks; stops after 2 chunks with no hand-entered data (the prefilled blank rows at the bottom).
+  const chunk = (b, s) => { const r = b.getCell(s, 0).getResizedRange(Math.min(CH, b.rowCount - s) - 1, b.columnCount - 1); r.load('values,formulas'); return r; };
   async function readBody(ctx, t, opts = {}){
     let b = opts.b;   // body range with rowCount/columnCount already loaded, when the caller batched it
     if (!b){ b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync(); }
-    const n = b.rowCount, cols = b.columnCount, values = [], formulas = [];
+    const n = b.rowCount, values = [], formulas = [];
     let empty = 0;
     for (let s = 0; s < n; s += CH){
       const cnt = Math.min(CH, n - s);
-      const r = b.getCell(s, 0).getResizedRange(cnt - 1, cols - 1); r.load('values,formulas'); await ctx.sync();
+      const r = chunk(b, s); await ctx.sync();
       let any = false;
       for (let i = 0; i < cnt; i++){ values.push(r.values[i]); formulas.push(r.formulas[i]); if (hasManual(r.values[i], r.formulas[i])) any = true; }
       if (opts.full) continue;
       empty = any ? 0 : empty + 1;
       if (empty >= 2) break;
     }
-    return { b, values, formulas, rowCount:n, cols };
+    return { b, values, formulas, rowCount:n, cols: b.columnCount };
   }
   function rowRange(b, row, cols){ return b.getCell(row, 0).getResizedRange(0, cols - 1); }
   async function writeCells(ctx, b, row, fRow, changes){
@@ -415,6 +433,29 @@ function OfficeStore(){
       else cell.values = [[v]];
     }
     await ctx.sync();
+  }
+  // Fill the next empty rows, one change list per row; the table is read once for the whole batch.
+  async function addMany(k, list){
+    if (!list.length) return;
+    return Excel.run(async ctx => {
+      const t = ctx.workbook.tables.getItem(names[k]);
+      const d = await readBody(ctx, t, { full:true });
+      let last = -1, b = d.b;
+      d.values.forEach((v, i) => { if (hasManual(v, d.formulas[i])) last = i; });
+      for (const changes of list){
+        let row = ++last, fRow;
+        if (row >= b.rowCount){
+          t.rows.add(null); await ctx.sync();
+          b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+          row = b.rowCount - 1;
+          const prev = rowRange(b, row - 1, b.columnCount); prev.load('formulasR1C1'); const cur = rowRange(b, row, b.columnCount); cur.load('formulasR1C1'); await ctx.sync();
+          prev.formulasR1C1[0].forEach((f, c) => { const cf = cur.formulasR1C1[0][c]; if ((cf === '' || cf == null) && isF(f)) b.getCell(row, c).formulasR1C1 = [[f]]; });
+          await ctx.sync();
+          const nr = rowRange(b, row, b.columnCount); nr.load('formulas'); await ctx.sync(); fRow = nr.formulas[0];
+        } else fRow = d.formulas[row];
+        await writeCells(ctx, b, row, fRow, changes);
+      }
+    });
   }
   return {
     live: true,
@@ -459,25 +500,35 @@ function OfficeStore(){
         await writeCells(ctx, b, row, fRow, changes);
       });
     },
-    async add(k, changes){
+    // Many row updates in one Excel.run: items = [{ r, snap, changes }]. Rows that moved are found with one full read;
+    // rows that changed underneath (no snapshot match) or hold a formula are skipped. Returns the items written.
+    async updateMany(k, items){
+      if (!items.length) return [];
       return Excel.run(async ctx => {
         const t = ctx.workbook.tables.getItem(names[k]);
-        let d = await readBody(ctx, t, { full:true });
-        let last = -1;
-        d.values.forEach((v, i) => { if (hasManual(v, d.formulas[i])) last = i; });
-        let row = last + 1, b = d.b, fRow;
-        if (row >= d.rowCount){
-          t.rows.add(null); await ctx.sync();
-          b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
-          row = b.rowCount - 1;
-          const prev = rowRange(b, row - 1, b.columnCount); prev.load('formulasR1C1'); const cur = rowRange(b, row, b.columnCount); cur.load('formulasR1C1'); await ctx.sync();
-          prev.formulasR1C1[0].forEach((f, c) => { const cf = cur.formulasR1C1[0][c]; if ((cf === '' || cf == null) && isF(f)) b.getCell(row, c).formulasR1C1 = [[f]]; });
-          await ctx.sync();
-          const nr = rowRange(b, row, b.columnCount); nr.load('formulas'); await ctx.sync(); fRow = nr.formulas[0];
-        } else fRow = d.formulas[row];
-        await writeCells(ctx, b, row, fRow, changes);
+        const b = t.getDataBodyRange(); b.load('rowCount,columnCount'); await ctx.sync();
+        const rgs = items.map(x => { if (x.r >= b.rowCount) return null; const rg = rowRange(b, x.r, b.columnCount); rg.load('values,formulas'); return rg; });
+        await ctx.sync();
+        let full = null; const hits = [];
+        for (let i = 0; i < items.length; i++){
+          const x = items[i], rg = rgs[i];
+          if (rg && snapMatch(rg.values[0], x.snap)){ hits.push({ x, row: x.r, fRow: rg.formulas[0] }); continue; }
+          full = full || await readBody(ctx, t, { b, full:true });
+          const row = full.values.findIndex(v => snapMatch(v, x.snap)); if (row >= 0) hits.push({ x, row, fRow: full.formulas[row] });
+        }
+        const cells = [];
+        for (const h of hits) if (!h.x.changes.some(([c]) => isF(h.fRow[c]))) for (const [c, v] of h.x.changes){ const cell = b.getCell(h.row, c); cell.load('numberFormat'); cells.push([cell, v, h]); }
+        await ctx.sync();
+        for (const [cell, v] of cells){
+          if (v && typeof v === 'object' && 'date' in v){ cell.values = [[v.date]]; if (/general/i.test(String(cell.numberFormat[0][0]))) cell.numberFormat = [['m/d/yyyy']]; }
+          else cell.values = [[v]];
+        }
+        await ctx.sync();
+        return [...new Set(cells.map(c => c[2].x))];
       });
     },
+    add: (k, changes) => addMany(k, [changes]),
+    addMany,
     // Replace the Appt List (NextGen) rows: MRN…Status (M:R) from the top of the table down; the formula columns after them (S:T) are left alone.
     async replaceAppts(rows){
       return Excel.run(async ctx => {
@@ -625,6 +676,7 @@ function DemoStore(){
       for (const [c, v] of changes){ if (fs.has(c)) throw new Error('Stopped: formula column.'); vals[row][c] = (v && typeof v === 'object') ? v.date : v; }
       calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
     },
+    async addMany(k, list){ for (const ch of list) await this.add(k, ch); },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
@@ -1165,10 +1217,10 @@ async function syncOrderStatus(){
     const want = orderStatusText(p.mrn, fm), cur = String(t.get(p.r, 'orderstatus') ?? '').trim();
     if (want !== cur) ch.push([p, want]);
   }
-  for (const [p, want] of ch){
-    try { await S.store.update('patients', p.r, t.snap(p.r), [[c, want]]); t.values[p.r][c] = want; }
-    catch (e){ console.error(e); toast('bad', `Order Status for ${esc(p.name)} wasn’t updated: ${esc(e.message || String(e))}`); break; }
-  }
+  if (!ch.length) return;
+  try { const done = await S.store.updateMany('patients', ch.map(([p, want]) => ({ r: p.r, snap: t.snap(p.r), changes: [[c, want]], p, want }))); done.forEach(x => { t.values[x.p.r][c] = x.want; }); }
+  catch (e){ console.error(e); toast('bad', `Order Status wasn’t updated: ${esc(e.message || String(e))}`); }
+  finally { S._selfWriteAt = Date.now(); }   // the watcher ignores the change events from this write
 }
 function defaultWindow(){ const T = todaySerial(); const d = dowOf(T); let add = (1 - d + 7) % 7; if (add === 0) add = 7; return { from: T, to: T + add + 4 }; } // today → Friday of next week
 function genoaModel(from, to){
@@ -1234,10 +1286,10 @@ const colLetterFor = (k, c) => colLetter((TABLE_OFFSET[k] ?? 0) + c);
 const mrnVal = m => /^\d+$/.test(m) ? Number(m) : m;
 function pharmText(code){ const want = code === 'BESSE' ? 'Besse' : code === 'GENOA' ? 'Genoa' : code; const refv = (S.ref.pharmacy || []).find(v => pharmOf(v) === code); return refv || want; }
 async function write(label, fn, okText){
-  if (label) busy(label);
+  if (label) busy(label); S._writing = true;
   try { await fn(); await reload(true); if (label) toast('ok', okText || 'Saved to the workbook.'); return true; }
   catch (e){ console.error(e); try { await reload(true); } catch {} toast('bad', esc(e.message || String(e))); return false; }
-  finally { S._selfWriteAt = Date.now(); if (label) busy(false); }   // the watcher ignores table change events from this write
+  finally { S._writing = false; S._selfWriteAt = Date.now(); if (label) busy(false); }   // the watcher ignores table change events from this write
 }
 
 // ---------- rendering ----------
@@ -1263,7 +1315,7 @@ function render(){
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
     <main>${S.full ? `<div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open — it connects the full-screen window to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button><button class="btn" data-act="fullWin">Reopen in new window</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
-  if (!CFG.me && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
+  if (!CFG.me && S.msTried && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
 function badges(){
@@ -2042,7 +2094,7 @@ async function genoaOrder(){
   if (!CFG.me) return openSettings();
   const T = todaySerial();
   const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
-    for (const r of rows){ const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText(r.inf.pharm), dateordered: { date: T }, comments: nm(r.a.mrn) }); await S.store.add('kits', out); }   // add() re-reads the table each time; write() reloads once at the end
+    await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText(r.inf.pharm), dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
   }, `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered.`);
   if (ok){ S.genoaSel.clear(); render(); }
 }
@@ -2086,7 +2138,7 @@ async function saveBesse(){
   if (S.logLines !== false) for (const mg of [56, 84]) for (let n = 0; n < m.rows[mg].order; n++) lines.push(changesFor('kits', { loggingpct: CFG.me, pharmacy: pharmText('BESSE'), dateordered: { date: S.orderDate }, comments: `Besse ${mg} mg order` }).out);
   if (lines.length && !CFG.me) return openSettings();
   if (!cells.length && !lines.length) return toast('info', 'Nothing to record.');
-  await write('Recording order…', async () => { if (cells.length) await S.store.setCells(S.besseSheet, cells); for (const l of lines) await S.store.add('kits', l); },
+  await write('Recording order…', async () => { if (cells.length) await S.store.setCells(S.besseSheet, cells); await S.store.addMany('kits', lines); },
     `Order recorded${cells.length ? ' on the Besse Order tab' : ''}${histNote}${lines.length ? `; ${lines.length} kit${lines.length > 1 ? 's' : ''} now in transit` : ''}.`);
 }
 // ---------- emails ----------
@@ -2349,7 +2401,7 @@ async function audFill(){
   if (!A.a1) return toast('warn', 'Enter Auditor 1 first.');
   const scans = m.rows.filter(r => !r.dup); const T = todaySerial();
   const ok = await write(`Adding ${scans.length} scans to the Weekly Audit…`, async () => {
-    for (const r of scans){ const { out } = changesFor('audit', { date: { date: T }, auditornamefirstandlast: A.a1, auditor2: A.a2, scanhere: cleanScan(r.sc.raw) }); await S.store.add('audit', out); }
+    await S.store.addMany('audit', scans.map(r => changesFor('audit', { date: { date: T }, auditornamefirstandlast: A.a1, auditor2: A.a2, scanhere: cleanScan(r.sc.raw) }).out));
   }, `Added ${scans.length} scans to the SN Audit tab.`);
   if (ok){ A.filled = true; await saveAudit(); render(); }
 }
@@ -2525,7 +2577,7 @@ async function saveRow(tkey, r){
 function openSettings(){
   openModal(`<h2>Settings</h2><div class="small muted">Saved on this computer only.</div>
     <div class="form2">
-      <div><label class="lbl" for="sMe">Your name (Logging PCT / technician)</label><input id="sMe" class="fld" data-cfg="me" list="dlMe" value="${esc(CFG.me)}"></div>
+      <div><label class="lbl" for="sMe">Your name (Logging PCT / technician)</label><input id="sMe" class="fld" data-cfg="me" list="dlMe" value="${esc(CFG.me)}">${S.msName ? `<div class="small muted">${CFG.meSrc === 'ms' ? 'From your Microsoft account.' : `Your Microsoft account says ${esc(S.msName)}. Clear this box to use it.`}</div>` : ''}</div>
       <div><label class="lbl" for="sSup">Supervising physician (default)</label><input id="sSup" class="fld" data-cfg="sup" list="dlSup2" value="${esc(CFG.sup)}"></div>
       <div><label class="lbl" for="sPm">Practice manager (default)</label><input id="sPm" class="fld" data-cfg="pm" list="dlPm2" value="${esc(CFG.pm)}"></div>
       <div><label class="lbl" for="sClinic">Clinic code</label><input id="sClinic" class="fld" data-cfg="clinic" value="${esc(CFG.clinic)}"></div>
@@ -2683,6 +2735,7 @@ const ACT = {
   saveRow: el => saveRow(el.dataset.t, +el.dataset.r),
   cfgSave: async () => {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
+    if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; const sw = $('#sFullWin'); if (sw) CFG.fullWin = sw.value === '1'; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
@@ -2761,10 +2814,22 @@ setInterval(() => {
 
 // ---------- load ----------
 let _loading = null, _again = false;
-async function reload(quiet){
-  if (_loading){ _again = true; return _loading; } // one read at a time; changes during a read queue one more
+const REFRESH_MS = 20000;   // workbook changes refresh the panel at most once per 20 s
+async function reload(quiet, fromWatch){
+  if (_loading){ if (!fromWatch) _again = true; return _loading; } // one read at a time; a save during a read queues one more, a workbook change is skipped
   _loading = reload1(quiet);
   try { await _loading; } finally { _loading = null; if (_again){ _again = false; setTimeout(() => reload(true), 400); } }
+}
+// Table change events: ignore our own writes; otherwise refresh at most once per REFRESH_MS, skipping the cycle if a read is
+// already running. A form or busy overlay pushes it to the next cycle. The full-screen dialog refreshes as soon as the pane relays a change.
+function onWorkbookChange(){
+  if (S._w || S._writing || Date.now() - (S._selfWriteAt || 0) < 3000) return;
+  S._w = setTimeout(() => {
+    S._w = null;
+    if (DLG && S.notifyDialog) return S.notifyDialog();
+    if (!$('#modal').hidden || !$('#busy').hidden) return onWorkbookChange();
+    reload(true, true);
+  }, S.store.remote ? 500 : REFRESH_MS);
 }
 async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
@@ -2773,7 +2838,8 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render(); syncOrderStatus();
+    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2790,7 +2856,8 @@ function notInExcelHTML(){
 }
 function downloadManifest(){
   const base = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, ''); const host = new URL(base).origin;
-  const x = MANIFEST.replaceAll('__BASE__', base.replace(/\/$/, '')).replaceAll('__HOST__', host);
+  let x = MANIFEST.replaceAll('__BASE__', base.replace(/\/$/, '')).replaceAll('__HOST__', host);
+  x = SSO_APP_ID ? x.replaceAll('__SSO_ID__', SSO_APP_ID).replaceAll('__HOSTNAME__', new URL(base).host) : x.replace(/\s*<WebApplicationInfo>[\s\S]*?<\/WebApplicationInfo>/, '');   // sign-on only once the app is registered
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type:'application/xml' })); a.download = 'esk-tracker-manifest.xml'; a.click();
 }
 const MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
@@ -2880,6 +2947,14 @@ const MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
         <bt:String id="Button.Tooltip" DefaultValue="Open the ESK Tracker panel for today's schedule, pulls, receiving and ordering."/>
       </bt:LongStrings>
     </Resources>
+    <WebApplicationInfo>
+      <Id>__SSO_ID__</Id>
+      <Resource>api://__HOSTNAME__/__SSO_ID__</Resource>
+      <Scopes>
+        <Scope>openid</Scope>
+        <Scope>profile</Scope>
+      </Scopes>
+    </WebApplicationInfo>
   </VersionOverrides>
 </OfficeApp>
 `;
@@ -2912,6 +2987,7 @@ function RemoteStore(){
     async load(){ const d = await call('load'); docs = d.docs || {}; return hydrate(d); },
     update: (k, r, snap, ch) => call('update', [k, r, snap, ch]),
     add: (k, ch) => call('add', [k, ch]),
+    addMany: (k, list) => call('addMany', [k, list]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
@@ -2936,8 +3012,9 @@ function openFull(win){
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       const { rid, op, args } = m;
-      try { if (!['load','update','add','setCells','setDoc','clearCells','replaceAppts'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else res = await S.store[op](...(args || [])); reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
+      finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
     DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; reload(true); });
@@ -2948,12 +3025,12 @@ function openFull(win){
 (function boot(){
   const demo = /[?&]demo\b/.test(location.search);
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
-  const start = store => { S.store = store; render(); reload(true).then(() => store.watch?.(() => { clearTimeout(S._w); S._w = setTimeout(() => { if (Date.now() - (S._selfWriteAt || 0) < 3000) return; if (DLG && S.notifyDialog){ S.notifyDialog(); return; } if ($('#modal').hidden && $('#busy').hidden) reload(true); }, 1500); })); };
+  const start = store => { S.store = store; useMsName(); return reload(true).then(() => store.watch?.(onWorkbookChange)); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
   if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); if (location.hash === '#dash') setTimeout(closeModal, 1500); if (location.hash === '#access') setTimeout(() => { closeModal(); S.view = 'access'; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up, #dash closes the first-run settings
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()); if (S.canFull && CFG.autoFull) setTimeout(() => openFull(!!CFG.fullWin), 600); } else $('#app').innerHTML = notInExcelHTML(); });
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded) openFull(!!CFG.fullWin); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>
