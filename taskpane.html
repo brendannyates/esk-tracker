@@ -33,7 +33,15 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1p
 @media (max-width:460px){.brand .mlogo{height:26px}.brand .bsep{display:none}.brand small{display:none}}
 .brand > span:not(.bsep){white-space:nowrap}
 .brand small{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:480px){.hdrc .hl{display:none}}
+@media(max-width:600px){.hdrc .hl{display:none}.btn.hdrc{min-width:32px;padding:4px 8px}}
+@media(max-width:520px){
+  .bar{gap:5px;padding:8px 8px 5px} .iconbtn{min-width:30px;height:30px;border-radius:8px}
+  .btn{min-height:32px;padding:5px 10px;font-size:13px} .btn.sm{min-height:28px;padding:3px 8px;font-size:12px;border-radius:8px}
+  nav.tabs{gap:2px;padding:0 6px 6px} nav.tabs button{flex:1 1 auto;padding:6px 6px;font-size:12.5px;min-height:30px}
+  .card h2{flex-wrap:wrap;row-gap:4px} .snz{gap:6px}
+}
+@media(max-width:420px){ .brand .mlogo,.brand .bsep{display:none}
+}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
 .iconbtn:hover{border-color:var(--accent)}
 nav.tabs{display:flex;gap:4px;padding:0 8px 8px;overflow-x:auto;scrollbar-width:none}
@@ -166,6 +174,7 @@ details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--mu
 .dayblock .bh span{color:var(--muted);font-size:12px}
 .srow{background:var(--surface);border-radius:10px;padding:8px 10px;margin-top:8px}
 .srow .name{font-weight:700} .srow .meta{color:var(--muted);font-size:12px;margin-left:6px} .srow .line{margin-top:4px}
+.srow .head{display:flex;align-items:baseline;gap:4px 6px;flex-wrap:wrap} .srow .head .meta{flex:1 1 auto} .snz{display:inline-flex;align-items:baseline;gap:8px;margin-left:auto;font-size:12px;white-space:nowrap} .snz .linkbtn{padding:0;font-size:12px} .snzfoot{margin-top:8px} .todos li .snz{margin-left:6px}
 .asec{border-radius:12px;padding:10px 12px;margin-top:10px}
 .asec.red{background:var(--bad-soft)} .asec.blue{background:var(--info-soft)} .asec.amber{background:var(--warn-soft)} .asec.gray{background:var(--surface2)} .asec.madrs{background:var(--bad-soft);border:1.5px solid var(--bad)} .asec.madrs h3{display:flex;align-items:center;gap:8px}
 .asec h3{margin:0 0 6px;color:inherit;text-transform:none;letter-spacing:0;font-size:14px}
@@ -206,6 +215,8 @@ label.lbl{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px;font-
 .item .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .msg{border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:flex-start}
+.msg.fresh{display:block}
+.mplist{display:grid;gap:2px;margin:10px 0;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 8px} .mprow{display:flex;align-items:center;gap:8px;padding:4px 0}
 .msg.ok{background:var(--ok-soft);color:var(--ok)} .msg.bad{background:var(--bad-soft);color:var(--bad)} .msg.warn{background:var(--warn-soft);color:var(--warn)} .msg.info{background:var(--info-soft);color:var(--info)}
 .msg b{color:inherit}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
@@ -641,13 +652,15 @@ const S = {
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
 
+// Merged provider names (Access › Merge names): alias, lowercased → the name to show. Saved with the workbook (eskProvAlias).
+const canonProv = v => { const s = String(v ?? '').trim().replace(/\s+/g, ' '); return (S.provAlias || {})[s.toLowerCase()] || s; };
 function derive(){
   const T = todaySerial();
   const P = [], A = [], K = [], byMrn = new Map();
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: canonProv(tp.get(r,'renderingprovider')), protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -657,7 +670,7 @@ function derive(){
     let key = `${mrn}|${date}|${time ?? ''}`; if (keys.has(key)) key += '#' + r; keys.add(key);
     const hold = /^\s*hold/i.test(ev);
     const marked = !!(S.cancel || {})[key];   // cancelled in the tracker before the next NextGen list shows it
-    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: String(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider') ?? '').trim(),
+    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: canonProv(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider')),
       cancelled: marked || /cancel/i.test(st), active: !marked && !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
   });
   const tk = S.tables.kits; const ids = new Map();
@@ -870,18 +883,20 @@ function startsHTML(){
   </div>`;
 }
 function schedHTML(){
-  const g = schedGaps(); const T = todaySerial();
+  const g = schedGaps(); const T = todaySerial(); const idD = x => `due|${x.mrn}`, idX = x => `sched|${x.mrn}|${x.a.date}`;
+  const nSnz = snzCount([...g.B.map(idD), ...g.days.filter(d => d.d !== T).flatMap(d => d.list.map(idX))]); g.B = g.B.filter(x => !hidden(idD(x))); for (const d of g.days) if (d.d !== T) d.list = d.list.filter(x => !hidden(idX(x)));
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
-    return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
+    return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span>${snzBtns(idX(x))}</div>
     <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, x.np)}</div>`; };
   const sortDone = l => l.slice().sort((a, b) => taskDone(a.mrn, a.ns, a.np) - taskDone(b.mrn, b.ns, b.np));
   const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
   return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
     <div class="small muted">Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}.</div>
     ${g.B.length ? `<div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
-      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : ''}</div>` : ''}
+      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span>${snzBtns(idD(x))}</div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : ''}</div>` : ''}
     ${today ? `<div class="dayblock today"><div class="bh"><b>Today</b><span>${today.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></div><div class="small muted">On each patient’s appointment card, under To do.</div></div>` : ''}
     ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`).join('')}
+    ${snzFoot(nSnz)}
   </div>`;
 }
 const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -930,7 +945,7 @@ async function reSave(){
 const ASSIGN_DAYS = 14;
 function assignModel(){
   const T = todaySerial(), end = T + ASSIGN_DAYS;
-  const appts = S.A.filter(a => { if (!a.active || a.date < T || a.date > end) return false; const inf = apptInfo(a); return inf.pharm === 'BESSE' && inf.mg && !S.K.some(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date); })
+  const appts = S.A.filter(a => { if (!a.active || a.date < T || a.date > end) return false; const inf = apptInfo(a); return inf.pharm === 'BESSE' && inf.mg && pendingAppt(a); })
     .sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
   const labeled = new Map();
   for (const k of S.K) if (besseOwner(k) && k.available){ const key = k.mrn + '|' + k.recv; labeled.set(key, (labeled.get(key) || 0) + 1); }
@@ -1084,6 +1099,29 @@ function keptHTML(k){
     <div class="small muted" style="margin-top:8px">Every ESK visit in the past ${k.weeks} weeks, by start hour. Kept rate = kept ÷ (kept + no-show + cancelled or rescheduled). Visits cancelled in NextGen aren’t in the appointment report, so the rate mostly reflects no-shows. Visits still showing “Expected” are left out. Least booked includes open hours with nothing kept.</div></div>`;
 }
 const fmtN = n => (Math.round(n * 10) / 10).toString();
+// ---------- merge provider names (Master Patient Tracker + appointment list spell one provider several ways) ----------
+function rawProvNames(){
+  const m = new Map(); const add = v => { const s = String(v ?? '').trim().replace(/\s+/g, ' '); if (s) m.set(s, (m.get(s) || 0) + 1); };
+  const tp = S.tables.patients; if (tp) tp.values.forEach((_, r) => add(tp.get(r, 'renderingprovider')));
+  const ta = S.tables.appts; if (ta) ta.values.forEach((_, r) => add(ta.get(r, 'rendering') ?? ta.get(r, 'renderingprovider') ?? ta.get(r, 'provider')));
+  return [...m].sort((a, b) => a[0].localeCompare(b[0]));
+}
+function openMergeProv(){ S.mpSel = new Set(); S.mpTo = ''; renderMergeProv(); }
+function renderMergeProv(){
+  const A = S.provAlias || {}; const sel = S.mpSel || new Set();
+  openModal(`<h2>Merge provider names</h2><div class="small muted">Tick the spellings that are the same provider, choose the name to show, then Merge. Saved with the workbook for everyone; the sheets themselves aren’t changed.</div>
+    <div class="mplist">${rawProvNames().map(([n, c]) => { const to = A[n.toLowerCase()]; return `<label class="mprow small"><input type="checkbox" data-mp="${esc(n)}" ${sel.has(n) ? 'checked' : ''} ${to ? 'disabled' : ''}><span class="grow">${esc(n)} <span class="muted">· ${c} row${c > 1 ? 's' : ''}</span></span>${to ? `<span class="chip">→ ${esc(to)}</span><button class="linkbtn" data-act="mpUn" data-n="${esc(n)}">Unmerge</button>` : ''}</label>`; }).join('') || '<div class="muted small">No provider names found.</div>'}</div>
+    <label class="lbl" for="mpTo">Show as</label><input id="mpTo" class="fld" list="dlMp" value="${esc(S.mpTo || [...sel][0] || '')}" placeholder="Pick or type the name to keep">${datalist('dlMp', [...sel])}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Done</button><button class="btn primary" data-act="mpSave" ${sel.size < 2 ? 'disabled' : ''}>Merge ${sel.size >= 2 ? sel.size + ' names' : ''}</button></div>`);
+}
+async function mpPersist(){ await S.store.setDoc('eskProvAlias', S.provAlias); derive(); render(); renderMergeProv(); }
+async function mpSave(){
+  const to = String($('#mpTo')?.value || '').trim().replace(/\s+/g, ' '); if (!to) return toast('warn', 'Choose the name to show.');
+  const A = S.provAlias = S.provAlias || {}; const sel = [...(S.mpSel || [])];
+  for (const [k, v] of Object.entries(A)) if (sel.some(n => n.toLowerCase() === v.toLowerCase())) A[k] = to;   // re-point earlier merges into these names
+  for (const n of sel) if (n.toLowerCase() !== to.toLowerCase()) A[n.toLowerCase()] = to; else delete A[n.toLowerCase()];
+  S.mpSel = new Set(); S.mpTo = ''; await mpPersist(); toast('ok', `Merged into ${esc(to)}.`);
+}
 function barsHTML(title, sub, groups){
   const max = Math.max(1, ...groups.map(g => Math.max(g.need, g.booked)));
   return `<div class="card"><h2>${title}</h2>${sub ? `<div class="small muted" style="margin:-4px 0 8px">${sub}</div>` : ''}
@@ -1111,7 +1149,7 @@ function accessHTML(){
     ${m.protocol.length ? `<tr class="tot"><td>Total</td><td class="num">${t.n}</td><td class="num">${fmtN(t.need)}</td><td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td><td class="num">${t.n > t.unknown ? fmtN(t.need / (t.n - t.unknown)) : '—'}</td></tr>` : ''}</tbody></table></div></div>
   <div class="cols">
     <div>${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}</div>
-    <div>${barsHTML('By provider', 'Rendering provider', m.provider)}${barsHTML('By pharmacy', 'Specialty pharmacy on file', m.pharm)}</div></div>
+    <div>${barsHTML('By provider <span class="sp"></span><button class="btn sm" data-act="mergeProv" title="Combine spellings of the same provider">Merge names…</button>', 'Rendering provider', m.provider)}${barsHTML('By pharmacy', 'Specialty pharmacy on file', m.pharm)}</div></div>
   <div class="card"><h2>Appointment volume needed: provider × credential <span class="small muted" style="font-weight:500">visits needed / week</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Provider</th>${creds.map(c => `<th class="num">${c}</th>`).join('')}<th class="num">Total</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th></tr></thead><tbody>
     ${provs.map(pv => { const o = m.provCred.get(pv); const g = m.provider.find(x => x.k === pv); return `<tr><td class="lbl">${esc(pv)}</td>${creds.map(c => cellNP(o[c])).join('')}${cellNP({ need: g.need, n: g.n }, true)}<td class="num">${fmtN(g.booked)}</td><td class="num ${g.short > 0.25 ? 'warnText' : 'muted'}">${g.short > 0.25 ? fmtN(g.short) : '0'}</td></tr>`; }).join('') || `<tr><td colspan="7" class="muted">No patients match.</td></tr>`}
     ${provs.length ? `<tr class="tot"><td>Total</td>${creds.map(c => cellNP(m.cred.find(x => x.k === c) || null)).join('')}${cellNP({ need: t.need, n: t.n })}<td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td></tr>` : ''}</tbody></table></div></div>
@@ -1129,7 +1167,7 @@ function weeksFor(od){ const d = dowOf(od); let add = (1 - d + 7) % 7; if (add =
 function besseModel(){
   const w = weeksFor(S.orderDate); const rows = { 56:{ w1:0, w2:0 }, 84:{ w1:0, w2:0 } }; const list = [], review = [];
   for (const a of S.A){
-    if (!a.active || a.date < w[0][0] || a.date > w[1][1]) continue;
+    if (!a.active || a.date < w[0][0] || a.date > w[1][1] || !pendingAppt(a)) continue;
     const wk = a.date <= w[0][1] ? 1 : a.date >= w[1][0] ? 2 : 0; if (!wk) continue;
     const inf = apptInfo(a);
     if (inf.pharm !== 'BESSE'){ if (!inf.pharm) review.push({ a, why:'Not on the patient tracker — pharmacy unknown' }); continue; }
@@ -1258,9 +1296,9 @@ function render(){
     ${freshHTML()}
     <header class="top">
       <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
-        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button><button class="btn sm" data-act="fullWin" title="Open in its own window — move it or put it on another monitor">⧉ New window</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm hdrc" data-act="full" title="Open full screen over Excel" aria-label="Full screen">⛶<span class="hl"> Full screen</span></button><button class="btn sm hdrc" data-act="fullWin" title="Open in its own window — move it or put it on another monitor" aria-label="New window">⧉<span class="hl"> New window</span></button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm hdrc" data-act="exitFull" title="Exit full screen" aria-label="Exit full screen">⤢<span class="hl"> Exit full screen</span></button>' : ''}
         <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
-        ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
+        ${S.store.live ? '<button class="btn sm hdrc" data-act="upAppt" title="Upload the 1 ESK Ordering - B export" aria-label="Upload appt list">⇪<span class="hl"> Upload appt list</span></button>' : ''}
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
@@ -1301,7 +1339,7 @@ function rangeModel(from, to){
     if (!a.active) r.st = 'off';
     else if (r.adminKit) r.st = 'done';
     else if (r.pulledKit) r.st = 'pulled';
-    else if (a.date < T) r.st = 'past';
+    else if (!pendingAppt(a)) r.st = 'past';   // before today, or today after its time: never prompt to order
     else if (inf.pharm === 'BESSE'){ const i = pickBesse(pool, a.mrn, inf.mg, a.date); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
     else if (PS(inf.pharm)){ const l = per.get(a.mrn) || []; const i = l.findIndex(k => (!inf.mg || k.recv === inf.mg) && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = l.splice(i, 1)[0]; r.st = 'avail'; } else { const o = open.get(a.mrn) || []; if (o.length){ r.kit = o.shift(); r.st = 'ordered'; } else r.st = 'need'; } }
     else r.st = 'unknown';
@@ -1348,6 +1386,21 @@ function weekHTML(){
     <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
   </div>`;
 }
+// ---------- snooze (3 hours at a time) / dismiss, shared with the workbook (eskSnooze: id → { until ms | 0 = dismissed, by, at }) ----------
+const SNOOZE_MS = 3 * 60 * 60 * 1000;
+const snzGet = id => { const s = (S.snooze || {})[id]; return s && (!s.until || s.until > Date.now()) ? s : null; };
+const hidden = id => !S.showSnz && !!snzGet(id);
+async function snoozeSet(id, kind){
+  S.snooze = S.snooze || {}; const now = Date.now();
+  if (kind) S.snooze[id] = { until: kind === 'dismiss' ? 0 : Math.max(now, S.snooze[id]?.until || 0) + SNOOZE_MS, by: CFG.me || '', at: new Date(now).toISOString() }; else delete S.snooze[id];
+  for (const [k, v] of Object.entries(S.snooze)) if (now - Date.parse(v.at) > 30 * 864e5) delete S.snooze[k];   // keep it small
+  render(); await S.store.setDoc('eskSnooze', S.snooze);
+  if (kind) toast('info', `${kind === 'dismiss' ? 'Dismissed' : `Snoozed until ${new Date(S.snooze[id].until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}. <button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Undo</button>`);
+}
+// Snooze/dismiss controls; when shown via "Show snoozed", a Restore link instead.
+const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">${s.until ? 'snoozed to ' + new Date(s.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'dismissed'}</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="snz" data-id="${esc(id)}" title="Hide for 3 hours (tap again to add 3 more)">⏰ 3h</button><button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss">✕</button>`}</span>`; };
+const snzCount = ids => ids.filter(id => snzGet(id)).length;
+const snzFoot = n => n ? `<div class="small muted snzfoot">${n} snoozed or dismissed · <button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show'}</button></div>` : '';
 function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
 function actionModel(){
   const T = todaySerial(); const end = bizDaysAhead(T, 3);
@@ -1395,19 +1448,23 @@ async function madrsRemSent(){
 function actionHTML(){
   const m = actionModel(); const T = todaySerial();
   const when = a => `${a.date === T ? 'Today' : fmtD(a.date, 'dow')} ${fmtT(a.time)}`;
+  const idM = c => `madrs|${c}|${T}`, idO = r => `order|${r.a.key}`, idS = x => `smeds|${x.mrn}|${x.t.at}`, idT = x => `transit|${x.r.kit.id}`, idR = x => `reas|${x.k.id}`;
+  const nSnz = snzCount([...[...madrsByClin(m.madrs).keys()].map(idM), ...m.order.map(idO), ...m.schedMeds.map(idS), ...m.transit.map(idT), ...m.reassign.map(idR)]);
+  m.madrs = m.madrs.filter(x => !hidden(idM(x.by))); m.order = m.order.filter(r => !hidden(idO(r))); m.schedMeds = m.schedMeds.filter(x => !hidden(idS(x))); m.transit = m.transit.filter(x => !hidden(idT(x))); m.reassign = m.reassign.filter(x => !hidden(idR(x)));
   const remSent = m.madrs.length && m.madrs.every(x => madrsRemGet(x.i.a.mrn));
   const total = m.transit.length + m.order.length + m.schedMeds.length + (m.madrs.length && !remSent ? 1 : 0);
   const byClin = madrsByClin(m.madrs); const nToday = m.madrs.filter(x => x.today).length;
   return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
     <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days). Each patient’s schedule-out, protocol and MADRS to-dos are on their appointment card.</div>
     ${m.madrs.length ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
-      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span><span class="grow"></span>${remSent ? '' : `<button class="btn sm" data-act="madrsRemMail" data-c="${esc(c)}">✉ Email</button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
+      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
       <div class="row small" style="margin-top:8px">${remSent ? `<span class="chip ok">Reminder sent ✓ ${esc(madrsRemGet(m.madrs[0].i.a.mrn).by)}</span><button class="linkbtn" data-act="madrsRemSent">Undo</button>` : `<button class="btn sm primary" data-act="madrsRemSent">Mark sent</button><button class="linkbtn" data-act="madrsRemCopy">Copy all instead</button><span class="muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email + practice leader not set (Settings)</span>'}</span>`}</div></div>` : ''}
-    ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
-    ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
+    ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span>${snzBtns(idS(x))}</div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span>${snzBtns(idO(r))}</div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
+    ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span>${snzBtns(idT(x))}</div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
     ${!m.madrs.length && !m.order.length && !m.schedMeds.length && !m.transit.length ? '<div class="asec gray small" style="margin-top:10px">All clear: nothing to order or chase for the next 3 business days, and no MADRS due today.</div>' : ''}
+    ${snzFoot(nSnz)}
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
-      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
+      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span>${snzBtns(idR(x))}</div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
       ${m.expired.length ? `<div class="srow"><div class="line small">${m.expired.length} expired kit${m.expired.length > 1 ? 's' : ''} waiting for disposal.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Open Stock</button></div></div>` : ''}
     </details>
@@ -1432,7 +1489,7 @@ function todayHTML(){
     ${startsHTML()}
     ${schedHTML()}
   </div><div>
-    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="bays" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker &amp; bays</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
+    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm hdrc" data-act="bays" ${act.length ? '' : 'disabled'} title="Vitals Tracker &amp; bays" aria-label="Vitals Tracker and bays">🖨<span class="hl"> Vitals Tracker &amp; bays</span></button><button class="btn sm hdrc" data-act="copyPull" ${act.length ? '' : 'disabled'} title="Copy med list" aria-label="Copy med list">⧉<span class="hl"> Copy med list</span></button></h2>${toolbarHTML()}
       ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
         return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
       ${(() => { const live = items.filter(i => !i.a.cancelled), shown = filterSort(live, itemState); return live.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
@@ -1463,7 +1520,7 @@ async function noteApptList(){
 function freshHTML(){
   if (!S.store.live) return '';
   const on = fromIso(S.apptList?.on); if ((on != null && on >= todaySerial()) || S.freshHidden === (S.apptList?.on || 'none')) return '';
-  return `<div class="msg warn noprint" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
+  return `<div class="msg warn noprint fresh" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
     <details style="margin-top:4px"><summary>How to run the report</summary><ol style="margin:6px 0 0 18px;padding:0">
       <li>Navigate to NextGen PM.</li>
       <li>Locate the “Reports” menu option on the top-left.</li>
@@ -1771,14 +1828,15 @@ function checklistHTML(i){
 function actionBullets(i){
   const a = i.a, p = i.p, m = esc(a.mrn), T = todaySerial(); const k = i.adminKit || i.suggest; const L = [];
   if (i.needsSched){ const sd = taskGet(a.mrn, 'sched');
-    L.push(sd ? `<li class="done">Scheduled out <span class="muted">${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button></li>`
-      : `<li class="warn"><b>Schedule out</b> <span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span><button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button></li>`); }
-  if (i.needsProto) L.push(`<li class="bad"><b>New protocol + consent</b> <span class="muted">${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn" data-act="consent" data-m="${m}">Print consent</button><button class="linkbtn" data-act="protoRenew" data-m="${m}">Renewed…</button></li>`);
-  if (i.needsMadrs) L.push(`<li class="bad"><span class="mpill">MADRS</span> <b>Needs MADRS</b> <span class="muted">auth ${p.authExp < T ? 'expired' : 'exp'} ${fmtD(p.authExp)}</span><button class="linkbtn" data-act="madrsDo" data-m="${m}">Collected…</button></li>`);
-  if (i.inf.mg === 56 && !a.isStart) L.push('<li class="warn">56 mg — verify the dose</li>');
-  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); if (adj) L.push(`<li class="bad">Back-to-back with ${fmtD(adj.date, 'dow')}</li>`);
-  if (S._re?.has(k?.id)) L.push('<li class="warn">Re-assign this kit</li>');
-  return `<div class="todos"><div class="ckh"><b>To do</b></div>${L.length ? `<ul>${L.join('')}</ul>` : '<div class="small okText">Nothing due ✓</div>'}</div>`;
+    L.push(['sched', sd ? `<li class="done">Scheduled out <span class="muted">${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button></li>`
+      : `<li class="warn"><b>Schedule out</b> <span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span><button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button></li>`]); }
+  if (i.needsProto) L.push(['proto', `<li class="bad"><b>New protocol + consent</b> <span class="muted">${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn" data-act="consent" data-m="${m}">Print consent</button><button class="linkbtn" data-act="protoRenew" data-m="${m}">Renewed…</button></li>`]);
+  if (i.needsMadrs) L.push(['madrs', `<li class="bad"><span class="mpill">MADRS</span> <b>Needs MADRS</b> <span class="muted">auth ${p.authExp < T ? 'expired' : 'exp'} ${fmtD(p.authExp)}</span><button class="linkbtn" data-act="madrsDo" data-m="${m}">Collected…</button></li>`]);
+  if (i.inf.mg === 56 && !a.isStart) L.push(['dose', '<li class="warn">56 mg — verify the dose</li>']);
+  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); if (adj) L.push(['b2b', `<li class="bad">Back-to-back with ${fmtD(adj.date, 'dow')}</li>`]);
+  if (S._re?.has(k?.id)) L.push(['reas', '<li class="warn">Re-assign this kit</li>']);
+  const id = kind => `todo|${a.mrn}|${kind}|${a.date}`; const V = L.filter(([kind]) => !hidden(id(kind))); const n = snzCount(L.map(([kind]) => id(kind)));
+  return `<div class="todos"><div class="ckh"><b>To do</b></div>${V.length ? `<ul>${V.map(([kind, h]) => h.replace(/<\/li>$/, `${snzBtns(id(kind))}</li>`)).join('')}</ul>` : '<div class="small okText">Nothing due ✓</div>'}${snzFoot(n)}</div>`;
 }
 // Appointment notes / alerts (saved with the workbook, per patient)
 const notesFor = mrn => (S.notes || {})[mrn] || [];
@@ -2385,7 +2443,7 @@ function openPatient(mrn){
 const CONSENT_REASON = 'Major Depressive Disorder (MDD)';
 function apptProviders(){
   const t = S.tables.appts; const c = t && ['rendering', 'renderingprovider', 'provider'].map(k => t.cols[k]).find(x => x != null); if (c == null) return [];
-  return [...new Set(t.values.map(r => String(r[c] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(t.values.map(r => canonProv(r[c])).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 function openConsent(mrn){
   const provs = apptProviders();
@@ -2538,7 +2596,7 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sCc">Always cc on order &amp; follow-up emails</label><input id="sCc" class="fld" data-cfg="cc" value="${esc(CFG.cc || '')}" placeholder="name@mymhs.com; name2@mymhs.com"></div>
       <div><label class="lbl" for="sHelp">Help email (cc on MADRS reminders)</label><input id="sHelp" class="fld" data-cfg="helpEmail" value="${esc(CFG.helpEmail || '')}" placeholder="team help address"></div>
       <div><label class="lbl" for="sLead">Practice leader email (cc on MADRS reminders)</label><input id="sLead" class="fld" data-cfg="leadEmail" value="${esc(CFG.leadEmail || '')}" placeholder="name@mymhs.com"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the appointment list">${esc(CFG.provEmails || '')}</textarea></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders; merge spellings on Access › By provider)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the appointment list">${esc(CFG.provEmails || '')}</textarea></div>
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
@@ -2630,6 +2688,13 @@ const ACT = {
   madrsRemCopy: () => madrsRemCopy(),
   madrsRemSent: () => madrsRemSent(),
   madrsRemMail: el => madrsRemMail(el.dataset.c),
+  mergeProv: () => openMergeProv(),
+  mpSave: () => mpSave(),
+  mpUn: el => { delete (S.provAlias || {})[el.dataset.n.toLowerCase()]; mpPersist(); },
+  snz: el => snoozeSet(el.dataset.id, 'snooze'),
+  dis: el => snoozeSet(el.dataset.id, 'dismiss'),
+  unsnz: el => snoozeSet(el.dataset.id, null),
+  snzShow: () => { S.showSnz = !S.showSnz; render(); },
   noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
   protoSave: el => protoSave(el.dataset.m),
@@ -2748,6 +2813,7 @@ document.addEventListener('change', e => {
   if (el.dataset.flag){ S[el.dataset.flag] = el.checked; render(); }
   if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); if (S.tables.daily && (S.dailyDay === isoOf(todaySerial()) || !dailyRows().length)) writeDailyHeader(); render(); }
   if (el.dataset.win){ const v = fromIso(el.value); if (v != null){ S.win[el.dataset.win] = v; if (S.win.to < S.win.from) S.win.to = S.win.from; render(); } }
+  if (el.dataset.mp != null){ S.mpTo = $('#mpTo')?.value || ''; S.mpSel = S.mpSel || new Set(); el.checked ? S.mpSel.add(el.dataset.mp) : S.mpSel.delete(el.dataset.mp); if (!S.mpSel.has(S.mpTo)) S.mpTo = ''; renderMergeProv(); return; }
   if ('gall' in el.dataset){ genoaModel().rows.filter(r => r.cover === 'need').forEach(r => el.checked ? S.genoaSel.add(r.a.key) : S.genoaSel.delete(r.a.key)); render(); }
   if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; renderAdmin(); }
@@ -2757,6 +2823,7 @@ document.addEventListener('change', e => {
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
+  if (S.loaded && $('#modal').hidden && Object.values(S.snooze || {}).some(v => v.until && v.until <= Date.now() && v.until > Date.now() - 20000)) render();   // a snooze just ran out
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); } }
@@ -2776,7 +2843,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render(); syncOrderStatus();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render(); syncOrderStatus();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -2897,7 +2964,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
