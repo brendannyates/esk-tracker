@@ -329,7 +329,43 @@ function parseScan(raw){
 // ---------- settings (this device only; no patient data) ----------
 const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60 };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
-function saveCfg(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
+function saveLocal(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
+function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
+
+// ---------- user profiles: a backup of everyone's Settings on the hidden "ESK User Settings" sheet ----------
+// One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
+// on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
+const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup'];
+function parseProfiles(values){
+  const out = [];
+  (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
+  return out;
+}
+const profKeyNew = () => S.msAcct || 'name:' + CFG.me.trim().toLowerCase();
+function profFor(){
+  const L = S.profiles || [];
+  return (CFG.profKey && L.find(p => p.key === CFG.profKey)) || (S.msAcct && L.find(p => p.acct === S.msAcct)) || (!CFG.profKey && CFG.me && L.find(p => p.key === 'name:' + CFG.me.trim().toLowerCase())) || null;
+}
+function cfgFromProfile(p){ const c = { ...p.cfg }; delete c.profKey; delete c.profAt; Object.assign(CFG, c, { profKey: p.key, profAt: p.at }); saveLocal(); }
+// after every read: take the sheet's copy when it's newer, push ours when it's newer or missing
+function applyProfiles(){
+  if (!S.store?.live || !S.profiles) return;
+  const p = profFor();
+  if (p){ if (p.at > (CFG.profAt || '')) cfgFromProfile(p); else if ((CFG.profAt || '') > p.at) saveProfileSoon(); return; }
+  if (CFG.me){ CFG.profAt = CFG.profAt || new Date().toISOString(); saveLocal(); saveProfileSoon(); return; }   // set up before profiles existed
+  if (!S._seeded){ S._seeded = true; const last = S.profiles.slice().sort((a, b) => b.at.localeCompare(a.at))[0];   // new person: team fields from the latest profile
+    if (last){ for (const [k, v] of Object.entries(last.cfg)) if (!PERSONAL_CFG.includes(k) && k !== 'profKey' && k !== 'profAt' && (CFG[k] === DEF[k] || CFG[k] == null)) CFG[k] = v; saveLocal(); } }
+}
+function saveProfileSoon(){ clearTimeout(S._profT); S._profT = setTimeout(saveProfile, 1500); }
+async function saveProfile(){
+  if (!S.store?.live || !CFG.me) return;
+  CFG.profKey = CFG.profKey || profKeyNew(); CFG.profAt = CFG.profAt || new Date().toISOString(); saveLocal();
+  const cfg = { ...CFG }; delete cfg.profKey; delete cfg.profAt;
+  const p = { key: CFG.profKey, name: CFG.me, acct: S.msAcct || (profFor()?.acct ?? ''), at: CFG.profAt, cfg };
+  try { await S.store.saveProfile(p); S.profiles = [...(S.profiles || []).filter(x => x.key !== p.key), p]; }
+  catch (e){ console.error(e); if (!S._profWarned){ S._profWarned = true; toast('warn', `Settings are saved on this computer, but the backup on the ${esc(PROF_SHEET)} sheet failed: ${esc(e.message || String(e))}`); } }
+}
 // Your name defaults to the signed-in Microsoft account (Office single sign-on). Needs the Entra app registration's
 // client ID here and in the downloaded manifest; while it's blank, or if sign-on fails, the name typed in Settings is used.
 const SSO_APP_ID = '';
@@ -338,14 +374,15 @@ async function msName(){
   try {
     const tok = await Office.auth.getAccessToken({ allowSignInPrompt: false, allowConsentPrompt: true });
     const b64 = tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))));   // name only; the token isn't kept
+    const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0))));   // name and account only; the token isn't kept
+    S.msAcct = String(claims.preferred_username || claims.upn || '').trim().toLowerCase();
     return String(claims.name || '').trim().replace(/^([^,]+),\s*(.+)$/, '$2 $1');   // "Last, First" → "First Last"
   } catch (e){ console.warn('Microsoft sign-on unavailable', e); return ''; }
 }
 async function useMsName(){
   const n = await msName(); S.msName = n; S.msTried = true;
-  if (n && (!CFG.me || CFG.meSrc === 'ms') && CFG.me !== n){ CFG.me = n; CFG.meSrc = 'ms'; saveCfg(); }
-  render();
+  if (n && (!CFG.me || CFG.meSrc === 'ms') && CFG.me !== n){ CFG.me = n; CFG.meSrc = 'ms'; saveLocal(); }   // not stamped: a saved profile for this account still wins
+  applyProfiles(); render();
 }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
 applyTheme();
@@ -472,9 +509,11 @@ function OfficeStore(){
         for (const x of Object.values(found)){ x.b = x.t.getDataBodyRange(); x.b.load('rowCount,columnCount'); }
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
-        let hr = null, rr = null, br = null;
+        const pw = wss.items.find(w => w.name === PROF_SHEET);
+        let hr = null, rr = null, br = null, pr = null;
         if (found.daily){ hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); }
         if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
+        if (pw){ pr = pw.getRange('A1:E500'); pr.load('values'); }
         if (bo){ br = bo.getRange('A1:Z200'); br.load('values'); besseSheet = bo.name; }
         await ctx.sync();
         const tables = {};
@@ -484,8 +523,23 @@ function OfficeStore(){
           tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
         }
         const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr };
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [] };
       }));
+    },
+    // Write one person's row on the hidden profiles sheet, creating the sheet the first time. Plain cells, not a table,
+    // so it never sets off the table watcher.
+    async saveProfile(p){
+      return Excel.run(async ctx => {
+        let ws = ctx.workbook.worksheets.getItemOrNullObject(PROF_SHEET); await ctx.sync();
+        if (ws.isNullObject){ ws = ctx.workbook.worksheets.add(PROF_SHEET); ws.getRange('A1:E1').values = [PROF_HDR]; ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+        const keys = ws.getRange('A1:A500'); keys.load('values'); await ctx.sync();
+        let row = keys.values.findIndex((v, i) => i > 0 && String(v[0]) === p.key);
+        if (row < 0) row = keys.values.findIndex((v, i) => i > 0 && v[0] === '');
+        if (row < 0) throw new Error('the sheet is full (499 profiles)');
+        const r = ws.getRange(`A${row + 1}:E${row + 1}`); r.numberFormat = [['@', '@', '@', '@', '@']];   // text: Excel won't turn the timestamp into a date or a name into a formula
+        r.values = [[p.key, p.name, p.acct, p.at, JSON.stringify(p.cfg)]];
+        await ctx.sync();
+      });
     },
     async update(k, r, snap, changes){
       return Excel.run(async ctx => {
@@ -1317,7 +1371,7 @@ function render(){
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
     </header>
     <main>${S.full ? `<div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open — it connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
-  if (!CFG.me && S.msTried && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }
+  if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }   // live: after the first read, so saved profiles are known
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
 function badges(){
@@ -2584,7 +2638,10 @@ async function saveRow(tkey, r){
 
 // ---------- settings ----------
 function openSettings(){
-  openModal(`<h2>Settings</h2><div class="small muted">Saved on this computer only.</div>
+  const saved = S.store?.live && !CFG.me ? (S.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
+  openModal(`<h2>Settings</h2><div class="small muted">${S.store?.live ? `Saved on this computer and backed up in this workbook (hidden “${esc(PROF_SHEET)}” sheet), so you only enter them once.` : 'Saved on this computer only.'}</div>
+    ${saved.length ? `<div class="msg info" style="margin:8px 0"><div><b>Set up before?</b> Pick your name to restore your settings.
+      <div class="row" style="margin-top:6px"><select id="sProf" class="fld" style="width:auto">${saved.map(p => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join('')}</select><button class="btn primary sm" data-act="profRestore">Restore</button></div></div></div>` : ''}
     <div class="form2">
       <div><label class="lbl" for="sMe">Your name (Logging PCT / technician)</label><input id="sMe" class="fld" data-cfg="me" list="dlMe" value="${esc(CFG.me)}">${S.msName ? `<div class="small muted">${CFG.meSrc === 'ms' ? 'From your Microsoft account.' : `Your Microsoft account says ${esc(S.msName)}. Clear this box to use it.`}</div>` : ''}</div>
       <div><label class="lbl" for="sSup">Supervising physician (default)</label><input id="sSup" class="fld" data-cfg="sup" list="dlSup2" value="${esc(CFG.sup)}"></div>
@@ -2748,6 +2805,7 @@ const ACT = {
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
+  profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
   demo: () => { location.search = '?demo=1'; },
   dlManifest: () => downloadManifest(),
 };
@@ -2843,7 +2901,7 @@ async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
     const d = await S.store.load();
-    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null;
+    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles();
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
@@ -2880,12 +2938,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [] };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -2902,6 +2960,7 @@ function RemoteStore(){
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
+    saveProfile: p => call('saveProfile', [p]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
     watch(cb){ onChanged = cb; },
@@ -2920,7 +2979,7 @@ function openFull(){
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       const { rid, op, args } = m;
-      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
