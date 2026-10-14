@@ -16,8 +16,10 @@
     var w = document.getElementById('cWait'); if (w) w.hidden = filled;
   }
 
+  var viaPost = false;   // true when the panel framed this page itself (full-screen view / demo) and sent the fields by postMessage
   function closeWin() {
     fill(null);
+    if (viaPost && window.parent !== window) { window.parent.postMessage({ ev: 'consentClose' }, location.origin); return; }
     if (window.Office && Office.context && Office.context.ui && Office.context.ui.messageParent) {
       try { Office.context.ui.messageParent(JSON.stringify({ ev: 'consentClose' })); return; } catch (e) { /* not a dialog */ }
     }
@@ -56,8 +58,8 @@
       } catch (e) { /* not opened as a dialog */ }
     });
   }
-  // Opened with window.open from the full-screen window or demo
-  window.addEventListener('message', function (e) { if (e.origin === location.origin) onData(e.data); });
-  if (window.opener) { try { window.opener.postMessage({ ev: 'consentReady' }, location.origin); } catch (e) { /* opener gone */ } }
+  // Framed by the panel's own overlay (full-screen view or demo): same-origin postMessage both ways
+  window.addEventListener('message', function (e) { if (e.origin === location.origin && e.source === window.parent) { viaPost = true; onData(e.data); } });
+  if (window.parent !== window) { try { window.parent.postMessage({ ev: 'consentReady' }, location.origin); } catch (e) { /* parent on another origin (Office dialog): ignored */ } }
   window.addEventListener('pagehide', function () { fill(null); });
 })();
