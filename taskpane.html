@@ -1016,7 +1016,7 @@ function todayModel(day){
     let i = -1;
     if (it.inf.pharm === 'BESSE'){ const bp = pool.filter(k => k.pharm === 'BESSE'); const j = pickBesse(bp, it.a.mrn, it.inf.mg, day); i = j >= 0 ? pool.indexOf(bp[j]) : -1; }
     else if (PS(it.inf.pharm)) i = pool.findIndex(k => k.pharm !== 'BESSE' && k.mrn === it.a.mrn && k.recv === it.inf.mg);
-    if (i >= 0){ it.suggest = pool[i]; pool.splice(i, 1); } else it.noKit = true;
+    if (i >= 0){ it.suggest = pool[i]; pool.splice(i, 1); } else if (PS(it.inf.pharm)) it.noKit = true;   // only specialty-pharmacy visits can be short; Besse comes from clinic stock
   }
   return items;
 }
@@ -1063,18 +1063,19 @@ function schedGaps(){
   const count = days.reduce((n, g) => n + g.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length, 0) + B.filter(x => !taskGet(x.mrn, 'sched')).length;
   return { days, B, lim, count };
 }
-// Meds for NEW visits: kits beyond what already-booked visits will use.
+// Meds for NEW visits: kits beyond what already-booked visits will use. Specialty pharmacy only: Besse is clinic stock,
+// ordered weekly and re-assignable to sooner visits (FIFO), so it is never flagged per patient.
 function medOutlook(mrn){
-  const p = S.byMrn.get(mrn); if (!p) return null; const T = todaySerial();
+  const p = S.byMrn.get(mrn); if (!p || !PS(p.pharm)) return null; const T = todaySerial();
   const booked = S.A.filter(a => a.mrn === mrn && a.active && a.date >= T && !S.K.some(k => k.mrn === mrn && k.administered && k.adminDate === a.date)).length;
-  if (PS(p.pharm)){ const oh = S.K.filter(k => k.mrn === mrn && k.available && k.pharm !== 'BESSE').length; const oo = S.K.filter(k => k.mrn === mrn && k.openOrder).length; const spare = oh + oo - booked; return { kind: 'ps', oh, oo, booked, spare, need: spare <= 0 }; }
-  if (p.pharm === 'BESSE'){ const mg = p.mg || 84; const lab = S.K.filter(k => besseOwner(k) === mrn && k.available).length; const stock = S.K.filter(k => k.pharm === 'BESSE' && !k.mrn && k.available && k.recv === mg).length; return { kind: 'besse', lab, stock, mg, booked, need: lab + stock <= 0 }; }
-  return null;
+  const oh = S.K.filter(k => k.mrn === mrn && k.available && k.pharm !== 'BESSE').length; const oo = S.K.filter(k => k.mrn === mrn && k.openOrder).length; const spare = oh + oo - booked;
+  return { kind: 'ps', oh, oo, booked, spare, need: spare <= 0 };
 }
+// A specialty-pharmacy order needs a scheduled visit: before scheduling it's a heads-up, once marked scheduled it's an order.
 function medChip(mrn){
   const o = medOutlook(mrn); if (!o) return '';
-  if (o.kind === 'ps') return o.need ? `<span class="chip bad">No meds on hand for new visits${o.oo ? ` (${o.oo} on order, ${o.booked} booked)` : ''}</span>` : `<span class="small muted">meds: ${o.spare} spare kit${o.spare > 1 ? 's' : ''}</span>`;
-  return o.need ? `<span class="chip bad">No Besse ${o.mg} mg stock</span>` : `<span class="small muted">meds: ${o.lab ? `${o.lab} labeled kit${o.lab > 1 ? 's' : ''}` : `Besse stock ${o.stock}`}</span>`;
+  if (!o.need) return `<span class="small muted">meds: ${o.spare} spare kit${o.spare > 1 ? 's' : ''}</span>`;
+  return taskGet(mrn, 'sched') ? `<span class="chip bad">Order meds for the new visits${o.oo ? ` (${o.oo} on order, ${o.booked} booked)` : ''}</span>` : `<span class="chip warn" title="Meds can only be ordered for a scheduled visit">No spare meds · order once scheduled</span>`;
 }
 function taskGet(mrn, kind){ const t = (S.tasks || {})[`${mrn}|${kind}`]; if (!t) return null; const d = fromIso(t.at); return d != null && d >= todaySerial() - 14 ? t : null; }
 async function taskSet(mrn, kind, on){
@@ -1839,13 +1840,13 @@ function rangeModel(from, to){
     else if (r.adminKit) r.st = 'done';
     else if (r.pulledKit) r.st = 'pulled';
     else if (!pendingAppt(a)) r.st = 'past';   // before today, or today after its time: never prompt to order
-    else if (inf.pharm === 'BESSE'){ const i = pickBesse(pool, a.mrn, inf.mg, a.date); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
+    else if (inf.pharm === 'BESSE'){ const i = pickBesse(pool, a.mrn, inf.mg, a.date); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'bstock'; }   // Besse is clinic stock, ordered weekly and re-assignable (FIFO): never flagged per visit
     else if (PS(inf.pharm)){ const l = per.get(a.mrn) || []; const i = l.findIndex(k => (!inf.mg || k.recv === inf.mg) && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = l.splice(i, 1)[0]; r.st = 'avail'; } else { const o = open.get(a.mrn) || []; if (o.length){ r.kit = o.shift(); r.st = 'ordered'; } else r.st = 'need'; } }
     else r.st = 'unknown';
     return r;
   });
 }
-const ST_LABEL = { done:['ok','Given'], pulled:['info','Pulled'], avail:['ok','Kit on hand'], ordered:['info','On order'], need:['bad','Needs med'], off:['','Not active'], past:['warn','Not logged'], unknown:['warn','Pharmacy unknown'], todo:['warn','To pull'], bad:['bad','No kit'] };
+const ST_LABEL = { bstock:['','Besse stock'], done:['ok','Given'], pulled:['info','Pulled'], avail:['ok','Kit on hand'], ordered:['info','On order'], need:['bad','Needs med'], off:['','Not active'], past:['warn','Not logged'], unknown:['warn','Pharmacy unknown'], todo:['warn','To pull'], bad:['bad','No kit'] };
 function filterSort(list, stOf){
   const q = S.fQ.trim().toLowerCase();
   let out = list.filter(x => (S.fPh === 'all' || x.inf.pharm === S.fPh) && (!q || nm(x.a.mrn).toLowerCase().includes(q) || x.a.mrn.includes(q)));
@@ -1878,7 +1879,7 @@ function weekHTML(){
       <div class="grow" style="text-align:center"><b>${fmtD(from, 'dow')} – ${fmtD(to, 'dow')}</b></div>
       <button class="btn sm" data-act="day" data-d="7" aria-label="Next week">▶</button>${from !== T ? '<button class="btn sm" data-act="day" data-d="0">This week</button>' : ''}
       <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n" style="color:var(--ok)">${cnt('avail') + cnt('pulled') + cnt('done')}</div><div class="l">med covered</div></div><div class="stat"><div class="n" style="color:var(--info)">${cnt('ordered')}</div><div class="l">covered by an order</div></div><div class="stat"><div class="n" style="color:var(--bad)">${cnt('need')}</div><div class="l">need a med</div></div><div class="stat"><div class="n" style="color:var(--warn)">${new Set(act.filter(r => r.needsSched).map(r => r.a.mrn)).size}</div><div class="l">need scheduling</div></div></div>
+    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n" style="color:var(--ok)">${cnt('avail') + cnt('pulled') + cnt('done') + cnt('bstock')}</div><div class="l">med covered</div></div><div class="stat"><div class="n" style="color:var(--info)">${cnt('ordered')}</div><div class="l">covered by an order</div></div><div class="stat"><div class="n" style="color:var(--bad)">${cnt('need')}</div><div class="l">need a med</div></div><div class="stat"><div class="n" style="color:var(--warn)">${new Set(act.filter(r => r.needsSched).map(r => r.a.mrn)).size}</div><div class="l">need scheduling</div></div></div>
     ${toolbarHTML()}
   </div>
   <div class="card">${list.length ? groups.map(g => `${g.d != null ? `<div class="dayhead"><b>${g.d === T ? 'Today' : DAYNAME[dowOf(g.d)]}</b><span>${fmtD(g.d, 'full')} · ${g.rows.filter(r => r.a.active).length} appts</span><span class="grow"></span>${g.d >= T ? `<button class="linkbtn" data-act="gotoDay" data-d="${g.d}">Open day</button>` : ''}</div>` : ''}
@@ -1910,7 +1911,7 @@ function actionModel(){
   const madrs = []; const seen = new Set();
   for (const a of S.A.filter(a => a.active && a.date >= T && a.date <= T + MADRS_AHEAD).sort((x, y) => x.date - y.date || (x.time ?? 0) - (y.time ?? 0))){
     const p = S.byMrn.get(a.mrn); if (seen.has(a.mrn) || !needsMadrs(p)) continue; seen.add(a.mrn);
-    madrs.push({ i: { a, p }, by: a.rendering || p.provider || 'Clinician not set', today: a.date === T }); }
+    madrs.push({ i: { a, p }, by: p.provider || a.rendering || 'Clinician not set', today: a.date === T }); }   // the patient's rendering clinician (Master Patient Tracker) does the MADRS, not whoever the ESK visit is booked under
   return { end, transit, order, madrs, schedMeds: scheduledNeedingMeds(), reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
 }
 // MADRS reminder email to each rendering clinician (cc help + practice leader): one per day, marked sent by the PCT
@@ -1925,7 +1926,36 @@ function provEmail(name){
   const hit = L.find(([k]) => k === n) || L.find(([k]) => k && (n.includes(k) || k.includes(n))) || L.find(([k]) => { const last = n.replace(/,.*$/, '').split(/\s+/).pop(); return last.length > 2 && k.includes(last); });
   return hit ? hit[1] : '';
 }
-const madrsCc = () => [...new Set(splitEmails([CFG.helpEmail, CFG.leadEmail].filter(Boolean).join(';')))];
+// Suggested address when none is saved: first initial + last name @mymhs.com (more tenured providers use @mindfulhealthsolutions.com).
+// The tracker often has only a last name, so a fuller spelling from the appointment list is borrowed for the first initial.
+const EMAIL_DOMAINS = ['mymhs.com', 'mindfulhealthsolutions.com'];
+const CRED_RE = /\b(md|do|np|pmhnp|pmhnp-bc|fnp|fnp-c|aprn|arnp|pa|pa-c|phd|psyd|dnp|rn|lcsw|bc|dr)\b\.?/gi;
+function nameParts(name){   // "Last, First" or "First Last[, credentials]"
+  const clean = s => String(s || '').replace(CRED_RE, ' ').replace(/[^A-Za-z,'\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const split = s => { s = clean(s); if (!s) return null; if (s.includes(',')){ const [l, f] = s.split(',').map(x => x.trim()); if (f) return { first: f.split(' ')[0], last: l.split(' ').pop() }; s = l; } const w = s.split(' '); return w.length > 1 ? { first: w[0], last: w[w.length - 1] } : { first: '', last: w[0] }; };
+  const base = split(name); if (!base) return null; if (base.first) return base;
+  const fuller = [...new Set(S.A.map(a => a.rendering).filter(Boolean))].map(split).find(x => x && x.first && x.last.toLowerCase() === base.last.toLowerCase());
+  return fuller || base;
+}
+function provEmailGuess(name){
+  const n = nameParts(name); if (!n || !n.first || !n.last) return null;
+  const local = (n.first[0] + n.last).toLowerCase().replace(/[^a-z]/g, '');
+  return local.length > 2 ? EMAIL_DOMAINS.map(d => `${local}@${d}`) : null;
+}
+// The address to use: saved in Settings, else the @mymhs.com suggestion
+const provTo = name => provEmail(name) || provEmailGuess(name)?.[0] || '';
+async function provEmailSave(name, email){
+  const L = String(CFG.provEmails || '').split(/\r?\n/).filter(l => l.trim() && !l.toLowerCase().startsWith(String(name).toLowerCase() + ' ='));
+  CFG.provEmails = [...L, `${name} = ${email}`].join('\n'); saveCfg(); render(); toast('ok', `Saved ${esc(email)} for ${esc(name)}.`);
+}
+// Settings: one line per provider with patients on the tracker and no saved email, using the suggestion
+function provEmailFill(){
+  const ta = $('#sProv'); if (!ta) return; const have = ta.value; const names = [...new Set(S.P.filter(p => /^(active|pending|paused)/i.test(p.status)).map(p => p.provider).filter(Boolean))].sort();
+  const keep = CFG.provEmails; CFG.provEmails = have; const add = names.filter(n => !provEmail(n)).map(n => { const g = provEmailGuess(n); return g ? `${n} = ${g[0]}` : null; }).filter(Boolean); CFG.provEmails = keep;
+  if (!add.length) return toast('info', 'Every provider with patients already has an email (or no first name to build one from).');
+  ta.value = [have.trim(), ...add].filter(Boolean).join('\n'); toast('ok', `Added ${add.length} suggested email${add.length > 1 ? 's' : ''} (@mymhs.com). Change any tenured provider to @mindfulhealthsolutions.com, then Save.`);
+}
+const madrsCc =() => [...new Set(splitEmails([CFG.helpEmail, CFG.leadEmail].filter(Boolean).join(';')))];
 const madrsWhen = (a, T) => `${a.date === T ? 'Today' : DAYNAME[dowOf(a.date)]} ${fmtD(a.date, 'full')} ${fmtT(a.time)}`;
 function madrsRemText(clin){
   const T = todaySerial(); const by = madrsByClin(actionModel().madrs.filter(x => !clin || x.by === clin));
@@ -1933,7 +1963,7 @@ function madrsRemText(clin){
 }
 async function madrsRemCopy(){ await copyText(madrsRemText()); toast('ok', 'Reminder copied. Paste it into Teams or Outlook, then tap Mark sent.'); }
 function madrsRemMail(clin){
-  const to = provEmail(clin); const cc = madrsCc().filter(x => x.toLowerCase() !== to.toLowerCase());
+  const to = provTo(clin); const cc = madrsCc().filter(x => x.toLowerCase() !== to.toLowerCase());
   const subj = `MADRS due — ESK patients (${fmtD(todaySerial(), 'full')})`;
   const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(to)}?${cc.length ? 'cc=' + cc.map(encodeURIComponent).join(';') + '&' : ''}subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(madrsRemText(clin))}`;
   a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
@@ -1959,7 +1989,7 @@ function actionHTML(){
       ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}</span></div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)}</div>`).join('')}</div>`).join('')}
       <div class="row small" style="margin-top:8px"><button class="linkbtn" data-act="madrsRemSent">Undo — not sent</button></div></details>`; })() : ''}
     ${m.madrs.length && !remSent ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
-      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
+      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : (() => { const g = provEmailGuess(c); return g ? ` · <span class="muted" title="Suggested from the name — confirm or switch">to ${esc(g[0])}?</span> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[0])}">✓ correct</button> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[1])}">use @${EMAIL_DOMAINS[1]}</button>` : ' · <span class="warnText">no email in Settings</span>'; })()}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
       <div class="row small" style="margin-top:8px">${remSent ? `<span class="chip ok">Reminder sent ✓ ${esc(madrsRemGet(m.madrs[0].i.a.mrn).by)}</span><button class="linkbtn" data-act="madrsRemSent">Undo</button>` : `<button class="btn sm primary" data-act="madrsRemSent">Mark sent</button><button class="linkbtn" data-act="madrsRemCopy">Copy all instead</button><span class="muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email + practice leader not set (Settings)</span>'}</span>`}</div></div>` : ''}
     ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span>${snzBtns(idS(x))}</div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span>${snzBtns(idO(r))}</div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
     ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span>${snzBtns(idT(x))}</div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
@@ -2141,7 +2171,7 @@ function auditStatus(k){
 const SAFE = ph => `<span class="pill safe ${ph === 'BESSE' ? 'besse' : ph === 'GENOA' ? 'genoa' : 'other'}">${ph === 'BESSE' ? 'Besse' : ph === 'GENOA' ? 'Genoa' : ph === 'OTHER' ? 'Other specialty' : 'Pharmacy ?'}</span>`;
 function itemState(i){
   if (!i.a.active) return 'off'; if (i.adminKit) return 'done';
-  if (!i.suggest) return 'bad';
+  if (!i.suggest) return i.inf.pharm === 'BESSE' ? 'onhand' : 'bad';
   return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
 }
 // ---------- in-clinic visit: start time, vitals/discharge timers, check-out, Tx report draft, rescue meds ----------
@@ -2437,6 +2467,7 @@ function itemHTML(i){
   else if (i.adminKit) status = '<span class="pill ok">Given ✓</span>';
   else if (k) status = `<span class="pill ${au.cls === 'warn' ? 'warn' : 'ok'}">${au.cls === 'warn' ? 'Confirm on hand' : 'On hand'}</span>`;
   else if (!i.inf.pharm) status = '<span class="pill warn">Not on tracker</span>';
+  else if (i.inf.pharm === 'BESSE') status = '<span class="pill" title="Pull from Besse stock (oldest first)">Besse stock</span>';
   else status = '<span class="pill bad">No kit on hand</span>';
   const prov = a.rendering || p?.provider || '';
   return `<div class="item appt3 st-${st}">
@@ -2461,7 +2492,7 @@ function vitalsDoc(day){
   const block = it => {
     const k = it ? (it.adminKit || it.pulledKit || it.suggest) : null;
     const pt = it ? `<div class="tm">${fmtT(it.a.time)}</div><div class="pn">${esc(nm(it.a.mrn))}</div><div>MRN ${esc(it.a.mrn)}</div>${it.needsMadrs ? '<div style="margin-top:3px"><span class="mp">MADRS</span></div>' : ''}` : '';
-    const med = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : 'No kit on hand — check inventory';
+    const med = !it ? '' : k ? `${k.recv} mg ${PH_LABEL[k.pharm]} · SN ${esc(k.serial)} · Received ${fmtD(k.received, 'full')}` : it.inf.pharm === 'BESSE' ? 'Besse stock — pull oldest first' : 'No kit on hand — check inventory';
     const acts = !it ? [] : [it.needsMadrs ? `<b class="madrs"><span class="mp">MADRS</span> Needs MADRS (auth ${it.p.authExp < todaySerial() ? 'expired' : 'exp'} ${fmtD(it.p.authExp)})</b>` : null, it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
     const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
     const vv = it ? visitGet(it.a.key) : null;
@@ -3192,7 +3223,7 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sCc">Always cc on order &amp; follow-up emails</label><input id="sCc" class="fld" data-cfg="cc" value="${esc(CFG.cc || '')}" placeholder="name@mymhs.com; name2@mymhs.com"></div>
       <div><label class="lbl" for="sHelp">Help email (cc on MADRS reminders)</label><input id="sHelp" class="fld" data-cfg="helpEmail" value="${esc(CFG.helpEmail || '')}" placeholder="team help address"></div>
       <div><label class="lbl" for="sLead">Practice leader email (cc on MADRS reminders)</label><input id="sLead" class="fld" data-cfg="leadEmail" value="${esc(CFG.leadEmail || '')}" placeholder="name@mymhs.com"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders; merge spellings on Access › By provider)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the appointment list">${esc(CFG.provEmails || '')}</textarea></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders; merge spellings on Access › By provider)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the Master Patient Tracker">${esc(CFG.provEmails || '')}</textarea><div class="row small" style="margin-top:4px;gap:8px"><button class="btn sm" data-act="provEmailFill">Fill suggested emails</button><span class="muted">First initial + last name @mymhs.com; tenured providers are usually @mindfulhealthsolutions.com. Without a saved email, reminders use the @mymhs.com suggestion.</span></div></div>
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
@@ -3274,6 +3305,8 @@ const ACT = {
   vit: el => openVit(el.dataset.k, el.dataset.w),
   vitSave: async el => { const bp = ($('#vtBp')?.value || '').trim(), hr = ($('#vtHr')?.value || '').trim(), o2 = ($('#vtO2')?.value || '').trim(); if (!bp && !hr && !o2) return toast('warn', 'Enter at least one reading.'); const at = fromHHMM($('#vtAt')?.value) ?? nowMin(); closeModal(); await vitSave(el.dataset.k, el.dataset.w, { bp, hr, o2, at }); },
   vitClear: async el => { closeModal(); await vitSave(el.dataset.k, el.dataset.w, null); },
+  provEmailSave: el => provEmailSave(el.dataset.n, el.dataset.e),
+  provEmailFill: () => provEmailFill(),
   rxAdd: el => { coAutosave(); S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { coAutosave(); S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   coReset: () => { S.coEdit = null; coRefresh(); },
