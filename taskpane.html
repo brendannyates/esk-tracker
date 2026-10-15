@@ -1875,21 +1875,20 @@ function weekHTML(){
     <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
   </div>`;
 }
-// ---------- snooze (3 hours at a time) / dismiss, shared with the workbook (eskSnooze: id → { until ms | 0 = dismissed, by, at }) ----------
-const SNOOZE_MS = 3 * 60 * 60 * 1000;
-const snzGet = id => { const s = (S.snooze || {})[id]; return s && (!s.until || s.until > Date.now()) ? s : null; };
+// ---------- dismiss, shared with the workbook (eskSnooze: id → { until: 0, by, at }). No snoozing in ESK; old timed snoozes are ignored. ----------
+const snzGet = id => { const s = (S.snooze || {})[id]; return s && !s.until ? s : null; };
 const hidden = id => !S.showSnz && !!snzGet(id);
 async function snoozeSet(id, kind){
   S.snooze = S.snooze || {}; const now = Date.now();
-  if (kind) S.snooze[id] = { until: kind === 'dismiss' ? 0 : Math.max(now, S.snooze[id]?.until || 0) + SNOOZE_MS, by: CFG.me || '', at: new Date(now).toISOString() }; else delete S.snooze[id];
-  for (const [k, v] of Object.entries(S.snooze)) if (now - Date.parse(v.at) > 30 * 864e5) delete S.snooze[k];   // keep it small
+  if (kind === 'dismiss') S.snooze[id] = { until: 0, by: CFG.me || '', at: new Date(now).toISOString() }; else delete S.snooze[id];
+  for (const [k, v] of Object.entries(S.snooze)) if (v.until || now - Date.parse(v.at) > 30 * 864e5) delete S.snooze[k];   // keep it small; drop old snoozes
   render(); await S.store.setDoc('eskSnooze', S.snooze);
-  if (kind) toast('info', `${kind === 'dismiss' ? 'Dismissed' : `Snoozed until ${new Date(S.snooze[id].until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}. <button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Undo</button>`);
+  if (kind === 'dismiss') toast('info', `Dismissed. <button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Undo</button>`);
 }
-// Snooze/dismiss controls; when shown via "Show snoozed", a Restore link instead.
-const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">${s.until ? 'snoozed to ' + new Date(s.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'dismissed'}</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="snz" data-id="${esc(id)}" title="Hide for 3 hours (tap again to add 3 more)">⏰ 3h</button><button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss">✕</button>`}</span>`; };
+// Dismiss control; when shown via "Show", a Restore link instead.
+const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">dismissed</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss">✕</button>`}</span>`; };
 const snzCount = ids => ids.filter(id => snzGet(id)).length;
-const snzFoot = n => n ? `<div class="small muted snzfoot">${n} snoozed or dismissed · <button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show'}</button></div>` : '';
+const snzFoot = n => n ? `<div class="small muted snzfoot">${n} dismissed ·<button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show'}</button></div>` : '';
 function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
 function actionModel(){
   const T = todaySerial(); const end = bizDaysAhead(T, 3);
@@ -3242,7 +3241,6 @@ const ACT = {
   capSave: () => capSave(),
   accExport: () => openAccExport(),
   accXlsx: () => accXlsx(),
-  snz: el => snoozeSet(el.dataset.id, 'snooze'),
   dis: el => snoozeSet(el.dataset.id, 'dismiss'),
   unsnz: el => snoozeSet(el.dataset.id, null),
   snzShow: () => { S.showSnz = !S.showSnz; render(); },
@@ -3379,7 +3377,6 @@ document.addEventListener('change', e => {
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
-  if (S.loaded && $('#modal').hidden && Object.values(S.snooze || {}).some(v => v.until && v.until <= Date.now() && v.until > Date.now() - 20000)) render();   // a snooze just ran out
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); } }
