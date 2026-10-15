@@ -33,7 +33,15 @@ header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1p
 @media (max-width:460px){.brand .mlogo{height:26px}.brand .bsep{display:none}.brand small{display:none}}
 .brand > span:not(.bsep){white-space:nowrap}
 .brand small{font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:480px){.hdrc .hl{display:none}}
+@media(max-width:600px){.hdrc .hl{display:none}.btn.hdrc{min-width:32px;padding:4px 8px}}
+@media(max-width:520px){
+  .bar{gap:5px;padding:8px 8px 5px} .iconbtn{min-width:30px;height:30px;border-radius:8px}
+  .btn{min-height:32px;padding:5px 10px;font-size:13px} .btn.sm{min-height:28px;padding:3px 8px;font-size:12px;border-radius:8px}
+  nav.tabs{gap:2px;padding:0 6px 6px} nav.tabs button{flex:1 1 auto;padding:6px 6px;font-size:12.5px;min-height:30px}
+  .card h2{flex-wrap:wrap;row-gap:4px} .snz{gap:6px}
+}
+@media(max-width:420px){ .brand .mlogo,.brand .bsep{display:none}
+}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:36px;height:36px;display:grid;place-items:center;cursor:pointer}
 .iconbtn:hover{border-color:var(--accent)}
 nav.tabs{display:flex;gap:4px;padding:0 8px 8px;overflow-x:auto;scrollbar-width:none}
@@ -166,6 +174,7 @@ details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--mu
 .dayblock .bh span{color:var(--muted);font-size:12px}
 .srow{background:var(--surface);border-radius:10px;padding:8px 10px;margin-top:8px}
 .srow .name{font-weight:700} .srow .meta{color:var(--muted);font-size:12px;margin-left:6px} .srow .line{margin-top:4px}
+.srow .head{display:flex;align-items:baseline;gap:4px 6px;flex-wrap:wrap} .srow .head .meta{flex:1 1 auto} .snz{display:inline-flex;align-items:baseline;gap:8px;margin-left:auto;font-size:12px;white-space:nowrap} .snz .linkbtn{padding:0;font-size:12px} .snzfoot{margin-top:8px} .todos li .snz{margin-left:6px}
 .asec{border-radius:12px;padding:10px 12px;margin-top:10px}
 .asec.red{background:var(--bad-soft)} .asec.blue{background:var(--info-soft)} .asec.amber{background:var(--warn-soft)} .asec.gray{background:var(--surface2)} .asec.madrs{background:var(--bad-soft);border:1.5px solid var(--bad)} .asec.madrs h3{display:flex;align-items:center;gap:8px}
 .asec h3{margin:0 0 6px;color:inherit;text-transform:none;letter-spacing:0;font-size:14px}
@@ -206,6 +215,8 @@ label.lbl{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px;font-
 .item .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .msg{border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:flex-start}
+.msg.fresh{display:block}
+.mplist{display:grid;gap:2px;margin:10px 0;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 8px} .mprow{display:flex;align-items:center;gap:8px;padding:4px 0}
 .msg.ok{background:var(--ok-soft);color:var(--ok)} .msg.bad{background:var(--bad-soft);color:var(--bad)} .msg.warn{background:var(--warn-soft);color:var(--warn)} .msg.info{background:var(--info-soft);color:var(--info)}
 .msg b{color:inherit}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
@@ -722,6 +733,32 @@ function OfficeStore(){
         if (had > rows.length){ b.getCell(rows.length, c0).getResizedRange(had - rows.length - 1, W - 1).clear(Excel.ClearApplyTo.contents); await ctx.sync(); }
       });
     },
+    // Clean list for one Master Patient Tracker column (Access › Merge): write `values` under `refHeader` on the REF sheet (that column is
+    // found by its header, or added after the last one) and point the column's dropdown at it. The cells themselves are rewritten with updateMany.
+    async setDropdown(colHeader, refHeader, values, stop){
+      return Excel.run(async ctx => {
+        const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
+        let ws = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
+        if (!ws){ ws = wss.add('REF'); ws.getRange('B2').values = [['Pharmacy']]; ws.getRange('C2').values = [['Dose']]; await ctx.sync(); }
+        const u = ws.getUsedRange(true); u.load('values,rowIndex,columnIndex'); await ctx.sync();
+        let hr = u.values.findIndex(r => r.some(v => norm(v) === 'pharmacy') && r.some(v => norm(v) === 'dose')); if (hr < 0) hr = 0;
+        const H = u.values[hr]; let c = H.findIndex(v => norm(v) === norm(refHeader));
+        if (c < 0){ let last = -1; H.forEach((v, i) => { if (String(v ?? '').trim()) last = i; }); c = last + 1; }
+        const row0 = u.rowIndex + hr, col = u.columnIndex + c, oldLen = Math.max(0, u.values.length - hr - 1);
+        ws.getCell(row0, col).values = [[refHeader]];
+        if (oldLen) ws.getCell(row0 + 1, col).getResizedRange(oldLen - 1, 0).clear(Excel.ClearApplyTo.contents);
+        if (values.length){ const r = ws.getCell(row0 + 1, col).getResizedRange(values.length - 1, 0); r.numberFormat = values.map(() => ['@']); r.values = values.map(v => [v]); }
+        await ctx.sync();
+        const L = colLetter(col), sheet = `'${ws.name.replace(/'/g, "''")}'`, src = `=${sheet}!$${L}$${row0 + 2}:$${L}$${row0 + 1 + Math.max(1, values.length)}`;
+        const t = ctx.workbook.tables.getItem(names.patients); const h = t.getHeaderRowRange(); h.load('values'); await ctx.sync();
+        const ci = h.values[0].findIndex(v => norm(v) === norm(colHeader)); if (ci < 0) throw new Error(`Stopped: no ${colHeader} column on the Master Patient Tracker.`);
+        const dv = t.columns.getItemAt(ci).getDataBodyRange().dataValidation; dv.clear();
+        dv.rule = { list: { inCellDropDown: true, source: src } };
+        dv.errorAlert = { showAlert: true, style: stop ? 'Stop' : 'Warning', title: colHeader.trim(), message: `Pick from the list (REF ${refHeader}). To add a new one, add it in the ESK Tracker under Access › Merge.` };
+        await ctx.sync();
+        return { source: src };
+      });
+    },
     // Clear hand-entered cells: cells = [[row, col, expectedValue]]. Stops if any cell changed or holds a formula.
     async clearCells(k, cells){
       return Excel.run(async ctx => {
@@ -765,17 +802,23 @@ function DemoStore(){
     [900109,'IRWJAN','Active','BESSE',84,'1x per week',2,''],[900110,'JONKAI','Active','GENOA',84,'1x per 2 weeks',2,''],
     [900111,'KIMLEO','Discontinued','BESSE',84,'1x per week',0,''],[900112,'LOPMIA','Active','BESSE',84,'1x per week',0,''],
     [900113,'MOONED','Active','GENOA',56,'2x per week',3,''],
+    // every-3-week and monthly patients, mostly booked into the same weeks (p[8] = weeks offset), with a few spellings to merge
+    [900114,'NASOLI','Active','BESSE',84,'1x every 3 weeks',9,'',0],[900115,'ORTPAZ','Active','BESSE',84,'1x per 3 weeks',9,'',0],
+    [900116,'PRIQUI','Active','BESSE',84,'1x every 3 weeks',9,'',0],[900117,'QUARAY','Active','GENOA',84,'1X every 3 weeks ',9,'',0],
+    [900118,'RIVSAM','Active','BESSE',84,'1x every 3 weeks',9,'',1],[900119,'SOTTEO','Paused','BESSE',84,'1x every 3 weeks',0,'',0],
+    [900120,'TANUMA','Active','BESSE',84,'1x per 4 weeks',8,'',0],[900121,'UPTVAL','Active','BESSE',84,'Monthly',8,'',0],
+    [900122,'VEGWIL','Active','GENOA',84,'1x per 4 weeks',8,'',2],[900123,'WARXEN','Did Not Start','BESSE',56,'2x per week',0,''],
   ];
-  const step = f => f.includes('2x') ? 3.5 : f.includes('2 weeks') ? 14 : f.includes('4 weeks') ? 28 : 7;
+  const step = f => { const s = f.toLowerCase(); return s.includes('2x') ? 3.5 : s.includes('2 weeks') ? 14 : s.includes('3 weeks') ? 21 : s.includes('4 weeks') || s.includes('month') ? 28 : 7; };
   const appts = []; const times = [9*60, 9*60+30, 10*60, 10*60+30, 13*60, 13*60+30, 14*60, 15*60];
   // find this week's Monday so demo "today" always has appointments on weekdays
   const base = dowOf(T) === 0 ? T+1 : dowOf(T) === 6 ? T+2 : T;
   pts.forEach((p, i) => {
     const [mrn, , st, , mg, freq, weeksAhead] = p;
-    if (st === 'Discontinued') { appts.push([mrn, base-30, times[i%8], 'Esketamine Follow Up', 'Kept']); return; }
-    const s = step(freq);
+    if (st === 'Discontinued' || st === 'Did Not Start') { appts.push([mrn, base-30, times[i%8], 'Esketamine Follow Up', 'Kept']); return; }
+    const s = step(freq), off = (p[8] || 0) * 7 + (i % 3);
     for (let k = -3; k <= 12; k++){
-      let d = Math.round(base + k*s); if (dowOf(d) === 0) d += 1; if (dowOf(d) === 6) d += 2;
+      let d = Math.round(base + off + k*s); if (dowOf(d) === 0) d += 1; if (dowOf(d) === 6) d += 2;
       if (d < base - 21) continue;
       const isStart = st === 'Pending Start' && d >= base && !appts.some(x => x[0] === mrn && /Start/.test(x[3]));
       if (d >= base && (d - base) > weeksAhead * 7) break;
@@ -816,7 +859,7 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+[20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)]; if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; if (i === 6) r[21] = T - 5; if (i === 9) r[21] = T - 40; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A.'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+([20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)] ?? 30 + pts.indexOf(p)); if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; if (i === 6) r[21] = T - 5; if (i === 9) r[21] = T - 40; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
@@ -829,6 +872,7 @@ function DemoStore(){
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = {};
+  const ref = { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] };
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
   { const bd = isoOf(T - 3), b = (mrn, name, pay, cp, co, dr, ds, orr, os, st) => [String(mrn), name, '', pay, 'PPO', 'In network', 'Individual', '2026-01-01', '2026-12-31', cp, co, '500', dr, ds, '4000', orr, os, '', st, bd, 'Verification', bd + ' 09:00'];   // fake Sohar benefits
     t.benefits = [BEN_COLS, [b(900101, 'ALDBEN', 'Aetna', '30', '20%', '100', 'Approaching', '2500', 'Not met', 'complete.eligible'), b(900102, 'BROCAM', 'Cigna', '0', '10%', '0', 'Met', '800', 'Approaching', 'complete.eligible'), b(900104, 'DUNEMI', 'Blue Shield', '', '', '', '', '', '', 'complete.ineligible (INACTIVE)')], new Set(), null]; }
@@ -836,7 +880,7 @@ function DemoStore(){
     live: false,
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
-      return { tables, ref: { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] },
+      return { tables, ref: JSON.parse(JSON.stringify(ref)),
         besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
     },
     async update(k, r, snap, changes){
@@ -852,6 +896,8 @@ function DemoStore(){
       calc && calc(vals[row]); ptCalc(); await new Promise(r => setTimeout(r, 150));
     },
     async addMany(k, list){ for (const ch of list) await this.add(k, ch); },
+    async updateMany(k, items){ const done = []; for (const x of items){ try { await this.update(k, x.r, x.snap, x.changes); done.push(x); } catch {} } return done; },
+    async setDropdown(colHeader, refHeader, values){ ref[norm(refHeader)] = values.slice(); await new Promise(r => setTimeout(r, 150)); return { source: `REF › ${refHeader}` }; },
     async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
@@ -869,13 +915,17 @@ const S = {
   todayMsg:null, genoaSel:new Set(), ov:{}, loadedAt:null,
 };
 
+// Merged provider names (Access › Merge names): alias, lowercased → the name to show. Saved with the workbook (eskProvAlias).
+const canonProv = v => { const s = String(v ?? '').trim().replace(/\s+/g, ' '); return (S.provAlias || {})[s.toLowerCase()] || s; };
+// Merged Tx Frequency spellings (Access › Merge), same shape (eskFreqAlias).
+const canonFreq = v => { const s = String(v ?? '').trim().replace(/\s+/g, ' '); return (S.freqAlias || {})[s.toLowerCase()] || s; };
 function derive(){
   const T = todaySerial();
   const P = [], A = [], K = [], byMrn = new Map();
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: tp.get(r,'txfrequency') ?? '', prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: tp.get(r,'renderingprovider') ?? '', protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: canonFreq(tp.get(r,'txfrequency')), prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: canonProv(tp.get(r,'renderingprovider')), protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -885,7 +935,7 @@ function derive(){
     let key = `${mrn}|${date}|${time ?? ''}`; if (keys.has(key)) key += '#' + r; keys.add(key);
     const hold = /^\s*hold/i.test(ev);
     const marked = !!(S.cancel || {})[key];   // cancelled in the tracker before the next NextGen list shows it
-    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: String(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider') ?? '').trim(),
+    A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: canonProv(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider')),
       cancelled: marked || /cancel/i.test(st), active: !marked && !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
   });
   const tk = S.tables.kits; const ids = new Map();
@@ -990,7 +1040,7 @@ function reassignModel(){
   }
   return out;
 }
-const FREQ_DAYS = f => { const s = String(f || '').toLowerCase(); if (/2x/.test(s)) return 3.5; if (/4 weeks|monthly/.test(s)) return 28; if (/3 weeks/.test(s)) return 21; if (/2 weeks|eow/.test(s)) return 14; if (/week/.test(s)) return 7; return 7; };
+const FREQ_DAYS = f => { const r = freqRate(f); return r ? 7 / r : 7; };   // days between visits (Access › Merge frequencies can set labels it can't read)
 function lastKept(mrn){ let m = null; for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && (m == null || a.date > m)) m = a.date; for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && (m == null || k.adminDate > m)) m = k.adminDate; return m; }
 function schedGaps(){
   const T = todaySerial(), end = T + 6, lim = T + CFG.schedDays;
@@ -1099,18 +1149,20 @@ function startsHTML(){
   </div>`;
 }
 function schedHTML(){
-  const g = schedGaps(); const T = todaySerial();
+  const g = schedGaps(); const T = todaySerial(); const idD = x => `due|${x.mrn}`, idX = x => `sched|${x.mrn}|${x.a.date}`;
+  const nSnz = snzCount([...g.B.map(idD), ...g.days.filter(d => d.d !== T).flatMap(d => d.list.map(idX))]); g.B = g.B.filter(x => !hidden(idD(x))); for (const d of g.days) if (d.d !== T) d.list = d.list.filter(x => !hidden(idX(x)));
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
-    return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span></div>
+    return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span>${snzBtns(idX(x))}</div>
     <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, x.np)}</div>`; };
   const sortDone = l => l.slice().sort((a, b) => taskDone(a.mrn, a.ns, a.np) - taskDone(b.mrn, b.ns, b.np));
   const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
   return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
     <div class="small muted">Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}.</div>
     ${g.B.length ? `<div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
-      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span></div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : ''}</div>` : ''}
+      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span>${snzBtns(idD(x))}</div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : ''}</div>` : ''}
     ${today ? `<div class="dayblock today"><div class="bh"><b>Today</b><span>${today.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></div><div class="small muted">On each patient’s appointment card, under To do.</div></div>` : ''}
     ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`).join('')}
+    ${snzFoot(nSnz)}
   </div>`;
 }
 const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -1159,7 +1211,7 @@ async function reSave(){
 const ASSIGN_DAYS = 14;
 function assignModel(){
   const T = todaySerial(), end = T + ASSIGN_DAYS;
-  const appts = S.A.filter(a => { if (!a.active || a.date < T || a.date > end) return false; const inf = apptInfo(a); return inf.pharm === 'BESSE' && inf.mg && !S.K.some(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date); })
+  const appts = S.A.filter(a => { if (!a.active || a.date < T || a.date > end) return false; const inf = apptInfo(a); return inf.pharm === 'BESSE' && inf.mg && pendingAppt(a); })
     .sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
   const labeled = new Map();
   for (const k of S.K) if (besseOwner(k) && k.available){ const key = k.mrn + '|' + k.recv; labeled.set(key, (labeled.get(key) || 0) + 1); }
@@ -1217,7 +1269,8 @@ async function asgSave(){
 const isCurrent = p => /^(active|pending)/i.test(p.status);
 const freqLabel = p => String(p.freq || '').trim() || 'Not set';
 const doseLabel = p => p.mg ? `${p.mg} mg` : 'Not set';
-const credLabel = p => p.coverage || 'Not set';
+// Coverage Options as one of MD Only / MD & NP (other spellings fold in); anything else shows as typed
+const credLabel = p => { const s = p.coverage || ''; if (!s) return 'Not set'; if (/only/i.test(s) && /md|physician|doctor/i.test(s)) return 'MD Only'; if (/md|physician/i.test(s) && /np|nurse|both|&|and/i.test(s)) return 'MD & NP'; return s; };
 function expRows(){
   const F = S.exp; const T = todaySerial();
   const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
@@ -1254,29 +1307,106 @@ function expDoc(){ const rows = expRows(); let g = null;
   <table><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => { let x = ''; if (S.exp.group !== 'none' && r.g !== g){ g = r.g; x = `<tr class="g"><td colspan="${EXP_HEAD.length}">${esc(g)} · ${rows.filter(y => y.g === g).length}</td></tr>`; } return x + `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`; }).join('')}</table></body></html>`; }
 function downloadText(name, text, type){ try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); return true; } catch { return false; } }
 
-// ---------- access analysis: weekly visit demand vs what's booked ----------
-const FREQ_RATE = f => { const s = String(f || '').toLowerCase(); if (/2x/.test(s)) return 2; if (/3x/.test(s)) return 3; if (/eow|every other|2 weeks/.test(s)) return 0.5; if (/3 weeks/.test(s)) return 1 / 3; if (/month|4 weeks/.test(s)) return 0.25; if (/1x|weekly|week/.test(s)) return 1; return null; };
+// ---------- access analysis: visit demand vs what's booked, provider panels vs template, cadence overlap, chair capacity ----------
+// The same model fits any chair-based modality (ESK now, IV ketamine later); MODALITY labels the export.
+const MODALITY = 'ESK';
+// Visits per week from a Tx Frequency label: "2x per week" 2, "1x every 3 weeks" / "q3w" 1/3, EOW 0.5, monthly 0.25. eskFreqRate overrides labels it can't read.
+function parseRate(f){
+  const s = String(f || '').toLowerCase().trim(); if (!s) return null;
+  if (/\beow\b|every other/.test(s)) return 0.5;
+  if (/month/.test(s)) return 0.25;
+  const q = s.match(/\bq\s*(\d+)\s*w/); if (q) return +q[1] ? 1 / +q[1] : null;
+  const x = s.match(/(\d+)\s*x\b/), w = s.match(/(\d+)\s*(?:weeks?|wks?)\b/);
+  if (!x && !/week|wk/.test(s)) return null;
+  const per = w ? +w[1] : 1; return per ? (x ? +x[1] : 1) / per : null;
+}
+const freqRate = f => { const o = (S.freqRate || {})[String(f || '').trim().toLowerCase()]; return o != null && o !== '' ? +o : parseRate(f); };
+const FREQ_RATE = freqRate;
+const RATE_LABEL = r => r == null ? 'Not set' : r >= 1 ? `${fmtN(r)}x per week` : Math.abs(1 / r - Math.round(1 / r)) < 0.05 ? `Every ${Math.round(1 / r)} weeks` : `${fmtN(r)} per week`;
+const stKey = p => String(p.status || '').trim().toLowerCase() || 'not set';
+// Status checkboxes: every status on the tracker or the REF list except Discontinued. Active, Paused and Pending Start start ticked.
+function accStatuses(){
+  const m = new Map(); const add = v => { const s = String(v ?? '').trim(); const k = s.toLowerCase() || 'not set'; if (/discontinu/.test(k) || m.has(k)) return; m.set(k, s || 'Not set'); };
+  (S.ref.status || []).forEach(add); S.P.forEach(p => add(p.status));
+  return [...m].map(([k, l]) => ({ k, l, n: S.P.filter(p => stKey(p) === k).length }));
+}
+const accDefaultSt = () => new Set(accStatuses().map(x => x.k).filter(k => /^(active|paused|pending)/.test(k)));
+// Templates & chairs (eskCapacity): ESK slots each provider's template holds per weekday × AM/PM, plus the clinic's chairs.
+const CAP0 = { chairs: 0, visitMin: 120, amMin: 240, pmMin: 240 };
+const capOf = () => ({ ...CAP0, ...(S.cap || {}), tmpl: (S.cap || {}).tmpl || {} });
+const BLOCKS = [1, 2, 3, 4, 5].flatMap(d => ['AM', 'PM'].map(h => `${d}|${h}`));
+const blockLabel = k => { const [d, h] = k.split('|'); return `${DN5[+d]} ${h}`; };
+const chairBlock = (c, h) => (+c.chairs || 0) * Math.floor((h === 'AM' ? +c.amMin : +c.pmMin) / Math.max(30, +c.visitMin || 120));
+const provCredOf = n => (S.provCred || {})[String(n || '').toLowerCase()] || '';
+const tmplOf = (c, n) => { const k = Object.keys(c.tmpl).find(x => x.toLowerCase() === String(n).toLowerCase()); return k ? c.tmpl[k] : {}; };
+const tmplSum = t => BLOCKS.reduce((s, b) => s + (+t[b] || 0), 0);
+const wkStart = d => d - dowOf(d);   // weeks run Sunday to Saturday
+const slotOf = a => { const d = dowOf(a.date); return d >= 1 && d <= 5 ? `${d}|${(a.time ?? 0) < 720 ? 'AM' : 'PM'}` : null; };
+const modeOf = pairs => { const m = new Map(); let best = null, n = 0; for (const [v, w] of pairs){ if (v == null) continue; const c = (m.get(v) || 0) + w; m.set(v, c); if (c > n){ n = c; best = v; } } return best; };
 function accessModel(){
-  const F = S.acc || (S.acc = { status: 'current', weeks: 4, ph: 'all' }); const T = todaySerial(); const end = T + F.weeks * 7;
-  const P = S.P.filter(p => (F.status === 'active' ? /^active/i.test(p.status) : isCurrent(p)) && (F.ph === 'all' || p.pharm === F.ph));
+  const F = S.acc || (S.acc = { weeks: 4, ph: 'all', horizon: 12 }); if (!F.st) F.st = accDefaultSt(); if (!F.horizon) F.horizon = 12;
+  const T = todaySerial(), end = T + F.weeks * 7, W0 = wkStart(T), H = F.horizon, cap = capOf();
+  const P = S.P.filter(p => F.st.has(stKey(p)) && (F.ph === 'all' || p.pharm === F.ph));
   const byMrn = new Map(P.map(p => [p.mrn, p]));
-  const booked = new Map(); const slots = {}; const provSlots = new Map();
-  for (const a of S.A){ if (!a.active || a.date < T || a.date >= end || !byMrn.has(a.mrn)) continue; booked.set(a.mrn, (booked.get(a.mrn) || 0) + 1);
-    const d = dowOf(a.date); if (d >= 1 && d <= 5){ const k = `${d}|${(a.time ?? 0) < 720 ? 'AM' : 'PM'}`; slots[k] = (slots[k] || 0) + 1;
-      const pk = byMrn.get(a.mrn).provider || 'Not set'; const ps = provSlots.get(pk) || {}; ps[k] = (ps[k] || 0) + 1; provSlots.set(pk, ps); } }
+  const booked = new Map(), slots = {}, provSlots = new Map(), apM = new Map(), bookedWk = Array(H).fill(0);
+  for (const a of S.A){ if (!a.active || !byMrn.has(a.mrn)) continue;
+    if (a.date >= T - 84 && a.date < W0 + H * 7){ if (!apM.has(a.mrn)) apM.set(a.mrn, []); apM.get(a.mrn).push(a); }
+    if (a.date < T) continue;
+    const w = (wkStart(a.date) - W0) / 7; if (w < H) bookedWk[w]++;
+    if (a.date >= end) continue; booked.set(a.mrn, (booked.get(a.mrn) || 0) + 1);
+    const k = slotOf(a); if (k){ slots[k] = (slots[k] || 0) + 1; const pk = byMrn.get(a.mrn).provider || 'Not set'; const ps = provSlots.get(pk) || {}; ps[k] = (ps[k] || 0) + 1; provSlots.set(pk, ps); } }
   const ind = new Set((S._ind || (S._ind = inductionModel())).map(x => x.p.mrn));
-  const rows = P.map(p => ({ p, ind: ind.has(p.mrn), need: ind.has(p.mrn) ? 2 : FREQ_RATE(p.freq), booked: (booked.get(p.mrn) || 0) / F.weeks }));
-  const by = (keyf, order) => { const m = new Map(); for (const r of rows){ const k = keyf(r.p); const g = m.get(k) || { k, need: 0, booked: 0, n: 0, unknown: 0, noBook: 0, short: 0 }; g.n++; if (r.need == null) g.unknown++; else { g.need += r.need; g.short += Math.max(0, r.need - r.booked); } g.booked += r.booked; if (!r.booked) g.noBook++; m.set(k, g); } const L = [...m.values()]; return order ? L.sort(order) : L.sort((a, b) => b.need - a.need || a.k.localeCompare(b.k)); };
-  const protocol = by(p => ind.has(p.mrn) ? 'Start · 56 → 84 mg · 2x per week' : `${doseLabel(p)} · ${freqLabel(p)}`, (a, b) => b.n - a.n || b.need - a.need || a.k.localeCompare(b.k));
-  const provider = by(p => p.provider || 'Not set');
-  const cred = by(credLabel, (a, b) => ['MD Only', 'MD & NP', 'Not set'].indexOf(a.k) - ['MD Only', 'MD & NP', 'Not set'].indexOf(b.k));
+  // phase = which week of the cycle (0 = this week) an every-N-week patient's visits land in, from recent and booked visits (booked count double)
+  const rows = P.map(p => { const rate = freqRate(p.freq), isInd = ind.has(p.mrn), k = rate && rate < 1 ? Math.round(1 / rate) : 1;
+    const ap = (apM.get(p.mrn) || []).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+    const phase = k > 1 ? modeOf(ap.filter(a => a.date >= T - k * 14).map(a => [((((wkStart(a.date) - W0) / 7) % k) + k) % k, a.date >= T ? 2 : 1])) : null;
+    return { p, ind: isInd, rate, k, need: isInd ? 2 : rate, booked: (booked.get(p.mrn) || 0) / F.weeks, phase, slot: modeOf(ap.map(a => [slotOf(a), a.date >= T ? 2 : 1])), next: ap.find(a => a.date >= T) || null, cred: credLabel(p), prov: p.provider || 'Not set' }; });
+  const by = (keyf, order) => { const m = new Map(); for (const r of rows){ const k = keyf(r); const g = m.get(k) || { k, need: 0, booked: 0, n: 0, unknown: 0, noBook: 0, short: 0 }; g.n++; if (r.need == null) g.unknown++; else { g.need += r.need; g.short += Math.max(0, r.need - r.booked); } g.booked += r.booked; if (!r.booked) g.noBook++; m.set(k, g); } const L = [...m.values()]; return order ? L.sort(order) : L.sort((a, b) => b.need - a.need || a.k.localeCompare(b.k)); };
+  const fqOf = r => r.ind ? 'Start (first 6 visits) · 2x per week' : RATE_LABEL(r.rate);
+  const fqRank = k => /^Start/.test(k) ? 99 : k === 'Not set' ? -1 : (rows.find(r => !r.ind && fqOf(r) === k)?.rate ?? 0);
+  const protocol = by(fqOf, (a, b) => fqRank(b.k) - fqRank(a.k) || b.n - a.n || a.k.localeCompare(b.k));
+  const provider = by(r => r.prov);
+  const CO = ['MD Only', 'MD & NP', 'Not set'], cred = by(r => r.cred, (a, b) => (CO.indexOf(a.k) + 9) % 9 - (CO.indexOf(b.k) + 9) % 9 || a.k.localeCompare(b.k));
   const PHO = ['Besse', 'Genoa', 'Other specialty', 'Not set'];
-  const pharm = by(p => ({ BESSE: 'Besse', GENOA: 'Genoa', OTHER: 'Other specialty' })[p.pharm] || 'Not set', (a, b) => PHO.indexOf(a.k) - PHO.indexOf(b.k));
-  const provCred = new Map(); for (const r of rows){ const k = r.p.provider || 'Not set'; const c = credLabel(r.p); const o = provCred.get(k) || {}; const x = o[c] || (o[c] = { need: 0, n: 0 }); x.need += r.need || 0; x.n++; provCred.set(k, o); }
-  const template = provider.map(g => { const ps = provSlots.get(g.k) || {}; const days = new Set(Object.keys(ps).map(k => k.split('|')[0])).size;
-    return { k: g.k, n: g.n, need: g.need, days, perDay: g.need / (days || 5) }; });
-  const tot = { short: rows.reduce((s, r) => s + (r.need == null ? 0 : Math.max(0, r.need - r.booked)), 0), n: rows.length, need: rows.reduce((s, r) => s + (r.need || 0), 0), booked: rows.reduce((s, r) => s + r.booked, 0), unknown: rows.filter(r => r.need == null).length, pending: P.filter(p => /^pending/i.test(p.status)).length, mdOnly: rows.filter(r => credLabel(r.p) === 'MD Only').reduce((s, r) => s + (r.need || 0), 0) };
-  return { F, rows, protocol, provider, cred, pharm, provCred, template, slots, tot, kept: keptModel(F.back || 12) };
+  const pharm = by(r => ({ BESSE: 'Besse', GENOA: 'Genoa', OTHER: 'Other specialty' })[r.p.pharm] || 'Not set', (a, b) => PHO.indexOf(a.k) - PHO.indexOf(b.k));
+  // cadence overlap: per every-N-week group, how many land in each week of the cycle, and the fewest moves that spread them evenly
+  const cadence = [...new Set(rows.filter(r => !r.ind && r.k > 1).map(r => r.k))].sort((a, b) => a - b).map(k => {
+    const R = rows.filter(r => !r.ind && r.k === k), counts = Array(k).fill(0); R.forEach(r => { if (r.phase != null) counts[r.phase]++; });
+    const phased = R.filter(r => r.phase != null), c = counts.slice(), moves = [];
+    const pool = phased.slice().sort((a, b) => (b.next ? b.next.date : 1e9) - (a.next ? a.next.date : 1e9));   // not booked yet, then booked furthest out: easiest to move
+    for (let g = 0; g < 500; g++){ const hi = c.indexOf(Math.max(...c)), lo = c.indexOf(Math.min(...c)); if (c[hi] - c[lo] <= 1) break;
+      const r = pool.find(x => x.phase === hi && !moves.some(m => m.r === x)); if (!r) break;
+      let shift = (lo - hi + k) % k; if (shift > k / 2) shift -= k;
+      const to = r.next ? wkStart(r.next.date + shift * 7) : W0 + lo * 7;
+      moves.push({ r, from: hi, to: lo, shift, toWeek: to < W0 ? to + k * 7 : to }); c[hi]--; c[lo]++; }
+    return { k, label: RATE_LABEL(1 / k), n: R.length, phased: phased.length, unphased: R.length - phased.length, counts, after: c, ideal: phased.length / k, peak: Math.max(0, ...counts), peakAt: counts.indexOf(Math.max(0, ...counts)), moves };
+  });
+  // week-by-week projection: weekly / 2x patients every week; every-N-week patients in their phase week (1/N a week when there's nothing to go by); starts 2 a week for 3 weeks
+  const wkNeed = (r, w) => { if (r.ind && w < 3) return 2; if (r.rate == null) return 0; if (r.k === 1) return r.rate; return r.phase == null ? 1 / r.k : (w % r.k === r.phase ? 1 : 0); };
+  const tmplWk = Object.values(cap.tmpl).reduce((s, t) => s + tmplSum(t), 0), chairWk = BLOCKS.reduce((s, b) => s + chairBlock(cap, b.split('|')[1]), 0);
+  const groups = protocol.map(g => g.k).filter(k => k !== 'Not set');
+  const weeks = Array.from({ length: H }, (_, w) => { const g = {}; let tot = 0; for (const r of rows){ const v = wkNeed(r, w); if (!v) continue; const k = fqOf(r); g[k] = (g[k] || 0) + v; tot += v; } return { w, start: W0 + w * 7, g, tot, booked: bookedWk[w] }; });
+  const wt = weeks.map(x => x.tot), wkStats = { peak: Math.max(0, ...wt), low: wt.length ? Math.min(...wt) : 0, mean: wt.reduce((s, v) => s + v, 0) / (wt.length || 1) };
+  // average need by weekday × AM/PM: each patient's usual slot (most of their recent and booked visits) × their visits per week
+  const dp = {}; BLOCKS.forEach(b => { dp[b] = { need: 0, n: 0, booked: (slots[b] || 0) / F.weeks, tmpl: 0, chairs: chairBlock(cap, b.split('|')[1]) }; }); let dpUn = 0, dpUnN = 0;
+  for (const r of rows){ const v = r.ind ? 2 : r.rate || 0; if (r.slot && dp[r.slot]){ dp[r.slot].need += v; dp[r.slot].n++; } else { dpUn += v; dpUnN++; } }
+  for (const t of Object.values(cap.tmpl)) for (const b of BLOCKS) dp[b].tmpl += +t[b] || 0;
+  // provider panels against their template as written
+  const names = [...new Set([...rows.map(r => r.prov), ...Object.keys(cap.tmpl).filter(n => tmplSum(cap.tmpl[n]))])].sort((a, b) => (a === 'Not set') - (b === 'Not set') || a.localeCompare(b));
+  const panels = names.map(n => { const R = rows.filter(r => r.prov === n), t = tmplOf(cap, n), tmpl = tmplSum(t), need = R.reduce((s, r) => s + (r.need || 0), 0);
+    const part = f => { const X = R.filter(f); return { n: X.length, need: X.reduce((s, r) => s + (r.need || 0), 0) }; };
+    const pc = n === 'Not set' ? '' : provCredOf(n), days = new Set(Object.keys(provSlots.get(n) || {}).map(k => k.split('|')[0])).size;
+    return { k: n, cred: pc, n: R.length, need, booked: R.reduce((s, r) => s + r.booked, 0), mdOnly: part(r => r.cred === 'MD Only'), flex: part(r => r.cred === 'MD & NP'), unset: part(r => r.cred !== 'MD Only' && r.cred !== 'MD & NP'), tmpl, t, spare: tmpl - need, days, perDay: need / (days || 5), mismatch: pc === 'NP' ? R.filter(r => r.cred === 'MD Only') : [] }; });
+  const md = panels.filter(x => x.cred === 'MD'), np = panels.filter(x => x.cred === 'NP'), sum = (L, f) => L.reduce((s, x) => s + f(x), 0);
+  const cs = { mdSupply: sum(md, x => x.tmpl), npSupply: sum(np, x => x.tmpl), mdNeed: sum(md, x => x.need), npNeed: sum(np, x => x.need),
+    mdOnlyNeed: sum(rows, r => r.cred === 'MD Only' ? r.need || 0 : 0), flexNeed: sum(rows, r => r.cred === 'MD & NP' ? r.need || 0 : 0), unsetNeed: sum(rows, r => r.cred !== 'MD Only' && r.cred !== 'MD & NP' ? r.need || 0 : 0),
+    mdSpare: sum(md, x => Math.max(0, x.spare)), npSpare: sum(np, x => Math.max(0, x.spare)), mdOver: sum(md, x => Math.max(0, -x.spare)), npOver: sum(np, x => Math.max(0, -x.spare)),
+    flexOnMdOver: sum(md.filter(x => x.spare < 0), x => Math.min(-x.spare, x.flex.need)), mismatch: panels.flatMap(x => x.mismatch), noCred: panels.filter(x => !x.cred && x.k !== 'Not set').map(x => x.k) };
+  cs.toNp = Math.min(cs.flexOnMdOver, cs.npSpare);   // MD over template: MD & NP patients who could move to an NP with room
+  cs.toMd = Math.min(cs.npOver, cs.mdSpare);         // NP over template: patients who could move to an MD with room
+  cs.mdHeadroom = cs.mdSupply - cs.mdOnlyNeed;       // MD template left once every MD Only patient is seen
+  const tot = { short: sum(rows, r => r.need == null ? 0 : Math.max(0, r.need - r.booked)), n: rows.length, need: sum(rows, r => r.need || 0), booked: sum(rows, r => r.booked), unknown: rows.filter(r => r.need == null).length, pending: P.filter(p => /^pending/i.test(p.status)).length, mdOnly: cs.mdOnlyNeed };
+  return { F, T, W0, H, cap, rows, protocol, provider, cred, pharm, cadence, weeks, groups, wkStats, tmplWk, chairWk, dp, dpUn, dpUnN, panels, cs, slots, tot, kept: keptModel(F.back || 12), fqOf };
 }
 // Kept rate by weekday × hour over the past N weeks, across every ESK visit (not just the filtered patients).
 // The NextGen report leaves out visits cancelled in NextGen, so the rate is kept ÷ (kept + no-show + cancelled/rescheduled in the tracker).
@@ -1310,6 +1440,65 @@ function keptHTML(k){
     <div class="small muted" style="margin-top:8px">Every ESK visit in the past ${k.weeks} weeks, by start hour. Kept rate = kept ÷ (kept + no-show + cancelled or rescheduled). Visits cancelled in NextGen aren’t in the appointment report, so the rate mostly reflects no-shows. Visits still showing “Expected” are left out. Least booked includes open hours with nothing kept.</div></div>`;
 }
 const fmtN = n => (Math.round(n * 10) / 10).toString();
+
+// ---------- merge spellings (provider names, Tx Frequency): saved as aliases, then written back to the Master Patient Tracker and its dropdown ----------
+function rawNames(pick, refList){
+  const m = new Map(); const add = (v, n) => { const s = String(v ?? '').trim().replace(/\s+/g, ' '); if (s) m.set(s, (m.get(s) || 0) + n); };
+  pick(add); (refList || []).forEach(v => add(v, 0));
+  return [...m].sort((a, b) => a[0].localeCompare(b[0]));
+}
+const rawProvNames = () => rawNames(add => { const tp = S.tables.patients, ta = S.tables.appts; if (tp) tp.values.forEach((_, r) => add(tp.get(r, 'renderingprovider'), 1)); if (ta) ta.values.forEach((_, r) => add(ta.get(r, 'rendering') ?? ta.get(r, 'renderingprovider') ?? ta.get(r, 'provider'), 1)); }, S.ref.renderingprovider);
+const rawFreqNames = () => rawNames(add => { const tp = S.tables.patients; if (tp) tp.values.forEach((_, r) => add(tp.get(r, 'txfrequency'), 1)); }, S.ref.treatmentfrequency);
+const MERGE = {
+  prov: { title: 'Merge provider names', what: 'spellings of the same provider', state: 'provAlias', doc: 'eskProvAlias', col: 'renderingprovider', refHeader: 'Rendering Provider', stop: false, raw: rawProvNames, canon: v => canonProv(v), order: (a, b) => a.localeCompare(b) },
+  freq: { title: 'Merge Tx Frequency spellings', what: 'spellings of the same frequency', state: 'freqAlias', doc: 'eskFreqAlias', col: 'txfrequency', refHeader: 'Treatment Frequency', stop: true, raw: rawFreqNames, canon: v => canonFreq(v), order: (a, b) => (freqRate(b) ?? -1) - (freqRate(a) ?? -1) || a.localeCompare(b) },
+};
+function openMerge(kind){ S.mpKind = kind; S.mpSel = new Set(); S.mpTo = ''; renderMerge(); }
+const openMergeProv = () => openMerge('prov');
+function renderMerge(){
+  const M = MERGE[S.mpKind || 'prov'], A = S[M.state] || {}, sel = S.mpSel || new Set(), fq = S.mpKind === 'freq';
+  const rateCell = n => { const r = freqRate(n), o = (S.freqRate || {})[n.toLowerCase()];
+    return `<select class="fld" data-frate="${esc(n)}" style="width:auto;padding:2px 6px;font-size:12px" title="Visits per week">${[['', r == null || o != null ? 'Can’t read · set →' : `Reads as ${RATE_LABEL(r)}`], ['3', '3x per week'], ['2', '2x per week'], ['1', '1x per week'], ['0.5', 'Every 2 weeks'], [String(1 / 3), 'Every 3 weeks'], ['0.25', 'Every 4 weeks'], [String(1 / 6), 'Every 6 weeks'], ['0.125', 'Every 8 weeks']].map(([v, l]) => `<option value="${v}" ${(o != null ? String(o) === v : v === '') ? 'selected' : ''}>${l}</option>`).join('')}</select>`; };
+  openModal(`<h2>${M.title}</h2><div class="small muted">Tick the ${M.what}, choose the one to keep, then Merge. Merges are saved with the workbook for everyone. <b>Write to the tracker</b> then rewrites the Master Patient Tracker cells to the kept names and sets that column’s dropdown to the clean list.</div>
+    <div class="mplist">${M.raw().map(([n, c]) => { const to = A[n.toLowerCase()] !== n ? A[n.toLowerCase()] : null; return `<label class="mprow small"><input type="checkbox" data-mp="${esc(n)}" ${sel.has(n) ? 'checked' : ''} ${to ? 'disabled' : ''}><span class="grow">${esc(n)} <span class="muted">· ${c ? `${c} row${c > 1 ? 's' : ''}` : 'REF list only'}</span></span>${to ? `<span class="chip">→ ${esc(to)}</span><button class="linkbtn" data-act="mpUn" data-n="${esc(n)}">Unmerge</button>` : fq ? rateCell(n) : ''}</label>`; }).join('') || '<div class="muted small">Nothing found.</div>'}</div>
+    <label class="lbl" for="mpTo">Keep as</label><input id="mpTo" class="fld" list="dlMp" value="${esc(S.mpTo || [...sel][0] || '')}" placeholder="Pick or type the name to keep">${datalist('dlMp', [...sel])}
+    <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Done</button>${S.store.live ? `<button class="btn" data-act="mpApply">Write to the tracker…</button>` : `<button class="btn" data-act="mpApply">Write to the tracker (demo)…</button>`}<button class="btn primary" data-act="mpSave" ${sel.size < 2 ? 'disabled' : ''}>Merge ${sel.size >= 2 ? sel.size + ' names' : ''}</button></div>`);
+}
+const renderMergeProv = renderMerge;
+async function mpPersist(){ const M = MERGE[S.mpKind || 'prov']; await S.store.setDoc(M.doc, S[M.state]); derive(); render(); renderMerge(); }
+async function mpSave(){
+  const to = String($('#mpTo')?.value || '').trim().replace(/\s+/g, ' '); if (!to) return toast('warn', 'Choose the name to keep.');
+  const M = MERGE[S.mpKind || 'prov'], A = S[M.state] = S[M.state] || {}, sel = [...(S.mpSel || [])];
+  for (const [k, v] of Object.entries(A)) if (sel.some(n => n.toLowerCase() === v.toLowerCase())) A[k] = to;   // re-point earlier merges into these names
+  for (const n of sel) A[n.toLowerCase()] = to;   // includes the kept name's own key, so spellings that differ only by case fold in too
+  S.mpSel = new Set(); S.mpTo = ''; await mpPersist(); toast('ok', `Merged into ${esc(to)}.`);
+}
+// What "Write to the tracker" changes: Master Patient Tracker cells that aren't the kept spelling, and the clean list for the dropdown.
+function mpPlan(kind){
+  const M = MERGE[kind], t = S.tables.patients, c = t?.cols[M.col]; if (c == null) return null;
+  const items = []; t.values.forEach((_, r) => { const raw = t.get(r, M.col); if (raw == null || t.isFormula(r, c)) return; const s = String(raw), want = M.canon(s); if (want && want !== s) items.push({ r, snap: t.snap(r), changes: [[c, want]], from: s, to: want }); });
+  const list = [...new Set(M.raw().map(([n]) => M.canon(n)).filter(Boolean))].sort(M.order);
+  return { M, t, c, items, list };
+}
+function openMpApply(){
+  const kind = S.mpKind || 'prov', x = mpPlan(kind); if (!x) return toast('bad', 'That column isn’t on the Master Patient Tracker.');
+  const L = colLetterFor('patients', x.c), hdr = x.t.headers[x.c].trim(), grp = {}; x.items.forEach(i => { const k = `${i.from} → ${i.to}`; grp[k] = (grp[k] || 0) + 1; });
+  S.mpPlan = x;
+  openModal(`<h2>Write ${esc(hdr)} to the tracker</h2>
+    <div class="writes"><b>Will write to the workbook:</b>
+      <div><code>${esc(L)}</code> ${esc(hdr)}: ${x.items.length ? `${x.items.length} cell${x.items.length > 1 ? 's' : ''} rewritten` : 'no cells to change'}</div>
+      ${Object.entries(grp).map(([k, n]) => `<div class="small" style="margin-left:14px">${esc(k)} · ${n}</div>`).join('')}
+      <div><code>REF</code> “${esc(x.M.refHeader)}” column replaced with ${x.list.length} name${x.list.length === 1 ? '' : 's'}: <span class="small">${x.list.map(esc).join(' · ')}</span></div>
+      <div><code>${esc(L)}</code> dropdown set to that REF list (${x.M.stop ? 'other entries are refused' : 'other entries ask “continue?” so a new provider can still be typed'})</div></div>
+    <div class="small muted" style="margin-top:8px">Rows changed by someone else since the last refresh, or holding a formula, are skipped. The merges stay saved, so names on the appointment list keep lining up.${kind === 'freq' ? ' If another tab counts these spellings (an older Access sheet, say), check its labels match the kept names.' : ''}</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="mergeBack">Back</button><button class="btn primary" data-act="mpWrite">Write to the workbook</button></div>`);
+}
+async function mpWrite(){
+  const x = S.mpPlan; if (!x) return; let done = [];
+  const ok = await write('Writing to the Master Patient Tracker…', async () => { if (x.items.length) done = await S.store.updateMany('patients', x.items.map(({ r, snap, changes }) => ({ r, snap, changes }))); await S.store.setDropdown(x.t.headers[x.c], x.M.refHeader, x.list, x.M.stop); },
+    () => `${x.t.headers[x.c].trim()}: ${x.items.length ? `${(done || []).length} of ${x.items.length} cells rewritten` : 'cells already clean'}; dropdown now lists ${x.list.length}.`);
+  if (ok){ S.mpPlan = null; renderMerge(); }
+}
 function barsHTML(title, sub, groups){
   const max = Math.max(1, ...groups.map(g => Math.max(g.need, g.booked)));
   return `<div class="card"><h2>${title}</h2>${sub ? `<div class="small muted" style="margin:-4px 0 8px">${sub}</div>` : ''}
@@ -1320,34 +1509,145 @@ function barsHTML(title, sub, groups){
       <div class="vtrack"><div class="vbar s2" style="width:${(g.booked / max * 100).toFixed(1)}%"></div><span class="vval">${fmtN(g.booked)}</span></div>
       <div class="vgap ${gap > 0.25 ? 'warnText' : 'muted'}">${gap > 0.25 ? `${fmtN(gap)} unbooked/wk` : 'covered'}${g.noBook ? ` · ${g.noBook} with nothing booked` : ''}${g.unknown ? ` · ${g.unknown} freq not set` : ''}</div></div>`; }).join('') || '<div class="muted small">No patients match.</div>'}</div></div>`;
 }
+
+// ---------- templates & chairs editor (eskCapacity, eskProvCred) ----------
+function capProviders(){ const c = capOf(); return [...new Set([...S.P.map(p => p.provider).filter(Boolean), ...Object.keys(c.tmpl), ...Object.keys(S.provCred || {}).map(k => S.P.find(p => (p.provider || '').toLowerCase() === k)?.provider).filter(Boolean)])].sort((a, b) => a.localeCompare(b)); }
+function openCap(){
+  const c = capOf(), provs = capProviders(), num = (k, v, w) => `<input type="number" min="0" step="1" class="fld" data-cap="${k}" value="${esc(v ?? '')}" style="width:${w || 70}px">`;
+  openModal(`<h2>Templates &amp; chairs</h2><div class="small muted">Each provider’s credential, and how many ${MODALITY} slots their template holds in each half day, as written. Saved with the workbook for everyone.</div>
+    <div class="row small" style="flex-wrap:wrap;gap:10px;margin:10px 0"><label>Chairs ${num('chairs', c.chairs)}</label><label>Visit length (min, chair time) ${num('visitMin', c.visitMin, 80)}</label><label>AM block (min) ${num('amMin', c.amMin, 80)}</label><label>PM block (min) ${num('pmMin', c.pmMin, 80)}</label></div>
+    <div class="small muted" style="margin:-4px 0 8px">Chair capacity per half day = chairs × whole visits that fit in the block (now ${chairBlock(c, 'AM')} AM / ${chairBlock(c, 'PM')} PM).</div>
+    <div class="tw" style="max-height:52vh;overflow:auto"><table class="t small"><thead><tr><th>Provider</th><th>Credential</th>${BLOCKS.map(b => `<th class="num">${blockLabel(b).replace(' ', '<br>')}</th>`).join('')}<th class="num">/ wk</th></tr></thead><tbody>
+      ${provs.map((n, i) => { const t = tmplOf(c, n), pc = provCredOf(n); return `<tr data-capr="${i}" data-n="${esc(n)}"><td class="lbl">${esc(n)}</td><td><select class="fld" data-pc style="width:auto;padding:2px 6px">${[['', '—'], ['MD', 'MD'], ['NP', 'NP']].map(([v, l]) => `<option value="${v}" ${pc === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>${BLOCKS.map(b => `<td><input type="number" min="0" step="1" class="fld" data-tb="${b}" value="${+t[b] || ''}" style="width:48px;padding:2px 4px"></td>`).join('')}<td class="num">${tmplSum(t) || '·'}</td></tr>`; }).join('') || `<tr><td colspan="13" class="muted">No providers on the tracker yet.</td></tr>`}</tbody></table></div>
+    <div class="small muted" style="margin-top:6px">A provider not listed? Add them on the Master Patient Tracker (or merge spellings first so each provider appears once).</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="capSave">Save</button></div>`, true);
+}
+async function capSave(){
+  const c = capOf(), cap = { chairs: 0, visitMin: 120, amMin: 240, pmMin: 240, tmpl: {} };
+  document.querySelectorAll('[data-cap]').forEach(el => { const v = Number(el.value); cap[el.dataset.cap] = isNaN(v) || v < 0 ? CAP0[el.dataset.cap] : v; });
+  const cred = { ...(S.provCred || {}) };
+  document.querySelectorAll('tr[data-capr]').forEach(tr => { const n = tr.dataset.n, t = {}; tr.querySelectorAll('[data-tb]').forEach(el => { const v = Math.max(0, Math.round(Number(el.value) || 0)); if (v) t[el.dataset.tb] = v; }); if (Object.keys(t).length) cap.tmpl[n] = t;
+    const pc = tr.querySelector('[data-pc]')?.value || ''; if (pc) cred[n.toLowerCase()] = pc; else delete cred[n.toLowerCase()]; });
+  for (const [n, t] of Object.entries(c.tmpl)) if (!document.querySelector(`tr[data-capr][data-n="${CSS.escape(n)}"]`)) cap.tmpl[n] = t;   // keep templates for providers not shown
+  S.cap = cap; S.provCred = cred; busy('Saving…');
+  try { await S.store.setDoc('eskCapacity', cap); await S.store.setDoc('eskProvCred', cred); toast('ok', 'Templates and chairs saved.'); }
+  catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); }
+  closeModal(); render();
+}
+
+// ---------- access tab ----------
 function accessHTML(){
-  const m = accessModel(); const F = m.F; const t = m.tot;
+  const m = accessModel(); const F = m.F; const t = m.tot, cs = m.cs, cap = m.cap;
   const tile = (n, l, cls) => `<div class="stat"><div class="n" ${cls ? `style="color:var(--${cls})"` : ''}>${n}</div><div class="l">${l}</div></div>`;
-  const creds = ['MD Only', 'MD & NP', 'Not set']; const provs = [...m.provCred.keys()].sort();
-  const maxSlot = Math.max(1, ...Object.values(m.slots));
-  const cellNP = (x, bold) => x && x.n ? `<td class="num">${bold ? '<b>' : ''}${fmtN(x.need)}/wk${bold ? '</b>' : ''}<div class="muted" style="font-size:11px">${x.n} pt${x.n === 1 ? '' : 's'}</div></td>` : '<td class="num muted">·</td>';
-  return `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><b>Access analysis</b><span class="grow"></span>
-      <select class="fld" data-accv="status" style="width:auto">${[['current', 'Active + Pending Start'], ['active', 'Active only']].map(([v, l]) => `<option value="${v}" ${F.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+  const heat = (v, max) => `background:color-mix(in srgb, #2a78d6 ${Math.round(Math.min(1, v / Math.max(1e-9, max)) * 70)}%, transparent)`;
+  const sts = accStatuses(), wk = d => fmtD(d), hasT = m.tmplWk > 0, hasC = m.chairWk > 0;
+  const capNum = Math.min(hasT ? m.tmplWk : Infinity, hasC ? m.chairWk : Infinity);
+  const head = `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><b>Access analysis</b><span class="grow"></span>
       <select class="fld" data-accv="ph" style="width:auto">${[['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']].map(([v, l]) => `<option value="${v}" ${F.ph === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select class="fld" data-accv="weeks" style="width:auto">${[2, 4, 8].map(w => `<option value="${w}" ${+F.weeks === w ? 'selected' : ''}>Booked: next ${w} weeks</option>`).join('')}</select></div>
-    <div class="stats" style="margin-top:10px">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(t.pending, 'pending starts')}</div>
-    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, EOW = 0.5, monthly = 0.25); patients in their first 6 start visits count as 2 a week. Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} no frequency set and count as 0 needed.</span>` : ''}</div></div>
-  <div class="card"><h2>By protocol <span class="small muted" style="font-weight:500">dose · Tx frequency</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Protocol</th><th class="num">Patients</th><th class="num">Visits needed / wk</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th><th class="num">Avg slots / wk per patient</th></tr></thead><tbody>
+    <div class="row small" style="flex-wrap:wrap;gap:4px 12px;margin-top:8px"><b>Statuses</b>${sts.map(s => `<label class="opt"><input type="checkbox" data-accst="${esc(s.k)}" ${F.st.has(s.k) ? 'checked' : ''}> ${esc(s.l)} <span class="muted">${s.n}</span></label>`).join('')}<span class="muted">· Discontinued is never counted</span></div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><button class="btn sm" data-act="mergeProv">Merge providers…</button><button class="btn sm" data-act="mergeFreq">Merge frequencies…</button><button class="btn sm" data-act="capEdit">Templates &amp; chairs…</button><span class="grow"></span><button class="btn sm primary" data-act="accExport">⇩ Export for template tool…</button></div>
+    <div class="stats" style="margin-top:10px">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(hasT ? m.tmplWk : '—', 'template slots / week')}${tile(hasC ? m.chairWk : '—', 'chair capacity / week')}${tile(fmtN(m.wkStats.peak), 'busiest week (projected)', capNum < m.wkStats.peak ? 'bad' : '')}</div>
+    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, every 2 weeks = 0.5, every 3 = 0.33, every 4 / monthly = 0.25); patients in their first 6 start visits count as 2 a week. Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. Weeks run Sunday to Saturday. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} a frequency the panel can’t read and count as 0 — fix it under Merge frequencies.</span>` : ''}</div></div>`;
+  const freq = `<div class="card"><h2>By frequency <span class="small muted" style="font-weight:500">Tx frequency, any dose</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Frequency</th><th class="num">Patients</th><th class="num">Visits needed / wk</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th><th class="num">Avg slots / wk per patient</th></tr></thead><tbody>
     ${m.protocol.map(g => `<tr><td class="lbl">${esc(g.k)}${g.unknown ? ` <span class="warnText small">· ${g.unknown} freq not set</span>` : ''}</td><td class="num"><b>${g.n}</b></td><td class="num">${fmtN(g.need)}</td><td class="num">${fmtN(g.booked)}</td><td class="num ${g.short > 0.25 ? 'warnText' : 'muted'}">${g.short > 0.25 ? fmtN(g.short) : '0'}</td><td class="num">${g.n > g.unknown ? fmtN(g.need / (g.n - g.unknown)) : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No patients match.</td></tr>`}
-    ${m.protocol.length ? `<tr class="tot"><td>Total</td><td class="num">${t.n}</td><td class="num">${fmtN(t.need)}</td><td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td><td class="num">${t.n > t.unknown ? fmtN(t.need / (t.n - t.unknown)) : '—'}</td></tr>` : ''}</tbody></table></div></div>
+    ${m.protocol.length ? `<tr class="tot"><td>Total</td><td class="num">${t.n}</td><td class="num">${fmtN(t.need)}</td><td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td><td class="num">${t.n > t.unknown ? fmtN(t.need / (t.n - t.unknown)) : '—'}</td></tr>` : ''}</tbody></table></div></div>`;
+  const cad = `<div class="card"><h2>Cadence overlap <span class="small muted" style="font-weight:500">which week of the cycle each every-N-week group lands in</span></h2>
+    ${m.cadence.length ? m.cadence.map(g => { const mx = Math.max(1, ...g.counts), even = Math.ceil(g.ideal);
+      return `<div style="margin:10px 0 4px"><b>${esc(g.label)}</b> <span class="muted small">· ${g.n} patient${g.n === 1 ? '' : 's'}</span></div>
+      <div class="tw"><table class="t small heat"><thead><tr><th></th>${g.counts.map((_, j) => `<th class="num">Week of ${wk(m.W0 + j * 7)}${j ? '' : '<div class="muted" style="font-size:11px">this week</div>'}</th>`).join('')}</tr></thead><tbody>
+        <tr><th>Now</th>${g.counts.map(v => `<td class="num ${v > even + 1 ? 'warnText' : ''}" style="${heat(v, mx)}"><b>${v}</b></td>`).join('')}</tr>
+        <tr><th>Evened out</th>${g.after.map(v => `<td class="num">${v}</td>`).join('')}</tr></tbody></table></div>
+      <div class="small" style="margin-top:4px">${g.phased ? (g.moves.length ? `<span class="warnText"><b>${g.peak} of ${g.phased}</b> land in the week of ${wk(m.W0 + g.peakAt * 7)} (and every ${g.k} weeks after); even is about ${even} a week.</span> Moving <b>${g.moves.length}</b> evens it out.` : `<span class="okText">Spread evenly</span> — about ${even} a week.`) : 'No visits to place yet.'}${g.unphased ? ` <span class="muted">${g.unphased} with no recent or booked visit, counted as 1/${g.k} a week.</span>` : ''}</div>
+      ${g.moves.length ? `<details class="small" style="margin-top:4px"><summary>Suggested moves (${g.moves.length})</summary><div class="tw"><table class="t small wrap"><thead><tr><th>Patient</th><th>Provider</th><th>Next visit</th><th>Move</th></tr></thead><tbody>${g.moves.map(x => `<tr data-act="patient" data-m="${esc(x.r.p.mrn)}" style="cursor:pointer"><td><b>${esc(x.r.p.name)}</b></td><td>${esc(x.r.prov)}</td><td>${x.r.next ? fmtD(x.r.next.date, 'dow') : '<span class="muted">not booked</span>'}</td><td>${Math.abs(x.shift)} week${Math.abs(x.shift) > 1 ? 's' : ''} ${x.shift > 0 ? 'later' : 'earlier'} → week of ${wk(x.toWeek)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`; }).join('')
+      : '<div class="muted small">No every-2-week-or-longer patients in this filter.</div>'}
+    <div class="small muted" style="margin-top:8px">Week of the cycle comes from each patient’s booked visits (and their visits over the last two cycles when nothing is booked). Patients who share a cycle week all come back together, which is what makes access feel random: offsetting a few of them flattens the busy weeks without changing anyone’s frequency. Suggested moves start with patients not booked yet, then those booked furthest out.</div></div>`;
+  const gs = m.groups, maxW = Math.max(1, ...m.weeks.map(x => x.tot));
+  const fc = `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><h2 style="margin:0">Weekly load <span class="small muted" style="font-weight:500">projected visits per week by frequency group</span></h2><span class="grow"></span>
+      <select class="fld" data-accv="horizon" style="width:auto">${[8, 12, 16, 26].map(w => `<option value="${w}" ${m.H === w ? 'selected' : ''}>Next ${w} weeks</option>`).join('')}</select></div>
+    <div class="row small" style="flex-wrap:wrap;gap:6px;margin:8px 0"><span class="chip">Busiest ${fmtN(m.wkStats.peak)}</span><span class="chip">Quietest ${fmtN(m.wkStats.low)}</span><span class="chip">Average ${fmtN(m.wkStats.mean)}</span>${hasT ? `<span class="chip ${m.wkStats.peak > m.tmplWk ? 'bad' : 'ok'}">Template ${m.tmplWk}/wk</span>` : ''}${hasC ? `<span class="chip ${m.wkStats.peak > m.chairWk ? 'bad' : 'ok'}">Chairs ${m.chairWk}/wk</span>` : ''}</div>
+    <div class="tw"><table class="t small heat wrap"><thead><tr><th>Week of</th>${gs.map(g => `<th class="num">${esc(g.replace(' · 2x per week', ''))}</th>`).join('')}<th class="num">Projected</th><th class="num">Booked now</th></tr></thead><tbody>
+      ${m.weeks.map(x => { const over = (hasT && x.tot > m.tmplWk) || (hasC && x.tot > m.chairWk); return `<tr><th>${wk(x.start)}</th>${gs.map(g => `<td class="num">${x.g[g] ? fmtN(x.g[g]) : '<span class="muted">·</span>'}</td>`).join('')}<td class="num ${over ? 'warnText' : ''}" style="${heat(x.tot, maxW)}"><b>${fmtN(x.tot)}</b>${over ? '<div style="font-size:11px">over capacity</div>' : ''}</td><td class="num muted">${x.booked}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="small muted" style="margin-top:8px">Weekly and 2x patients count every week; every-N-week patients count in their cycle week; new starts count 2 a week for their first 3 weeks. ${hasT || hasC ? '' : 'Add templates and chairs to flag weeks over capacity. '}Booked now drops off further out because visits aren’t scheduled that far yet.</div></div>`;
+  const pn = m.panels, credChip = c => c ? `<span class="chip ${c === 'MD' ? 'ok' : ''}">${c}</span>` : '<span class="chip warn">set</span>';
+  const pc = (x, bold) => x.n ? `<td class="num">${bold ? '<b>' : ''}${fmtN(x.need)}${bold ? '</b>' : ''}<div class="muted" style="font-size:11px">${x.n} pt${x.n === 1 ? '' : 's'}</div></td>` : '<td class="num muted">·</td>';
+  const lines = [];
+  if (!hasT) lines.push('<span class="warnText">No templates entered yet.</span> Add them under Templates &amp; chairs to compare each panel with its template.');
+  if (cs.noCred.length) lines.push(`<span class="warnText">Credential not set for ${cs.noCred.map(esc).join(', ')}.</span>`);
+  if (hasT){
+    lines.push(`<b>MD</b> templates hold ${cs.mdSupply}/wk; MD Only patients need ${fmtN(cs.mdOnlyNeed)}/wk — ${cs.mdHeadroom >= 0 ? `${fmtN(cs.mdHeadroom)} left for MD &amp; NP patients` : `<span class="warnText">${fmtN(-cs.mdHeadroom)} short even before MD &amp; NP patients</span>`}.`);
+    lines.push(`<b>NP</b> templates hold ${cs.npSupply}/wk against ${fmtN(cs.npNeed)}/wk on NP panels (${fmtN(cs.npSpare)} open).`);
+    if (cs.mdOver) lines.push(`MD panels are ${fmtN(cs.mdOver)}/wk over template; ${fmtN(cs.flexOnMdOver)} of that is MD &amp; NP patients. <b>${fmtN(cs.toNp)}/wk could transfer to an NP</b> with room.`);
+    if (cs.npOver) lines.push(`NP panels are ${fmtN(cs.npOver)}/wk over template. <b>${fmtN(cs.toMd)}/wk could transfer to an MD</b> with room.`);
+    lines.push(`Clinic: need ${fmtN(t.need)}/wk · template ${m.tmplWk}/wk${hasC ? ` · chairs ${m.chairWk}/wk` : ''}.`);
+  }
+  if (cs.mismatch.length) lines.push(`<span class="warnText">${cs.mismatch.length} MD Only patient${cs.mismatch.length > 1 ? 's are' : ' is'} on an NP panel:</span> ${cs.mismatch.map(r => esc(r.p.name)).join(', ')}.`);
+  const panels = `<div class="card"><h2>Provider panels vs template <span class="small muted" style="font-weight:500">visits needed / week by coverage requirement</span></h2>
+    <div class="small" style="display:grid;gap:3px;margin-bottom:8px">${lines.map(l => `<div>${l}</div>`).join('')}</div>
+    <div class="tw"><table class="t small wrap"><thead><tr><th>Provider</th><th>Cred.</th><th class="num">MD Only</th><th class="num">MD &amp; NP</th><th class="num">Not set</th><th class="num">Need / wk</th><th class="num">Template / wk</th><th class="num">Open / wk</th><th class="num">Booked / wk</th><th class="num">Avg / clinic day</th></tr></thead><tbody>
+      ${pn.map(x => `<tr><td class="lbl">${esc(x.k)}${x.mismatch.length ? `<div class="warnText" style="font-size:11px">${x.mismatch.length} MD Only pt${x.mismatch.length > 1 ? 's' : ''}</div>` : ''}</td><td>${x.k === 'Not set' ? '' : credChip(x.cred)}</td>${pc(x.mdOnly)}${pc(x.flex)}${pc(x.unset)}${pc({ n: x.n, need: x.need }, true)}<td class="num">${x.tmpl || '<span class="muted">·</span>'}</td><td class="num ${x.tmpl && x.spare < 0 ? 'warnText' : x.tmpl ? 'okText' : 'muted'}">${x.tmpl ? fmtN(x.spare) : '·'}</td><td class="num">${fmtN(x.booked)}</td><td class="num">${fmtN(x.perDay)}<div class="muted" style="font-size:11px">${x.days ? `over ${x.days} day${x.days === 1 ? '' : 's'}` : '÷ 5'}</div></td></tr>`).join('') || '<tr><td colspan="10" class="muted">No patients match.</td></tr>'}
+      ${pn.length ? `<tr class="tot"><td>Total</td><td></td>${pc({ n: m.rows.filter(r => r.cred === 'MD Only').length, need: cs.mdOnlyNeed })}${pc({ n: m.rows.filter(r => r.cred === 'MD & NP').length, need: cs.flexNeed })}${pc({ n: m.rows.filter(r => r.cred !== 'MD Only' && r.cred !== 'MD & NP').length, need: cs.unsetNeed })}${pc({ n: t.n, need: t.need }, true)}<td class="num">${m.tmplWk || '·'}</td><td class="num">${hasT ? fmtN(m.tmplWk - t.need) : '·'}</td><td class="num">${fmtN(t.booked)}</td><td></td></tr>` : ''}</tbody></table></div>
+    <div class="small muted" style="margin-top:8px">Coverage requirement is the patient’s Coverage Options (MD Only or MD &amp; NP). Open = template minus need. Transfers only move MD &amp; NP patients to NPs, and only into open template.</div></div>`;
+  const dmax = Math.max(1, ...BLOCKS.map(b => m.dp[b].need));
+  const dcell = b => { const x = m.dp[b], lim = Math.min(hasT ? x.tmpl : Infinity, hasC ? x.chairs : Infinity), over = lim !== Infinity && x.need > lim + 0.05;
+    return `<td class="num" style="${heat(x.need, dmax)}" title="${blockLabel(b)}: need ${fmtN(x.need)}/wk (${x.n} usual), booked ${fmtN(x.booked)}/wk${hasT ? `, template ${x.tmpl}` : ''}${hasC ? `, chairs ${x.chairs}` : ''}"><b class="${over ? 'warnText' : ''}">${fmtN(x.need)}</b><div class="muted" style="font-size:11px">booked ${fmtN(x.booked)}${hasT ? ` · tmpl ${x.tmpl}` : ''}${hasC ? ` · chairs ${x.chairs}` : ''}</div></td>`; };
+  const dsum = (L, f) => L.reduce((s, b) => s + f(m.dp[b]), 0);
+  const day = `<div class="card"><h2>Average need by day &amp; half day <span class="small muted" style="font-weight:500">visits / week in each patient’s usual slot</span></h2>
+    <div class="tw"><table class="t small heat"><thead><tr><th></th>${[1, 2, 3, 4, 5].map(d => `<th class="num">${DN5[d]}</th>`).join('')}<th class="num">Week</th></tr></thead><tbody>
+      ${['AM', 'PM'].map(h => { const L = [1, 2, 3, 4, 5].map(d => `${d}|${h}`); return `<tr><th>${h}</th>${L.map(dcell).join('')}<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="muted" style="font-size:11px">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}${hasC ? ` · chairs ${dsum(L, x => x.chairs)}` : ''}</div></td></tr>`; }).join('')}
+      <tr class="tot"><th>Day</th>${[1, 2, 3, 4, 5].map(d => { const L = [`${d}|AM`, `${d}|PM`]; return `<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="muted" style="font-size:11px">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}</div></td>`; }).join('')}<td class="num"><b>${fmtN(dsum(BLOCKS, x => x.need))}</b></td></tr></tbody></table></div>
+    <div class="small muted" style="margin-top:8px">Usual slot = the weekday and half day most of a patient’s recent and booked visits fall in. Booked = the next ${F.weeks} weeks, per week. Red = need above the template or chairs for that half day.${m.dpUnN ? ` ${m.dpUnN} patient${m.dpUnN > 1 ? 's' : ''} (${fmtN(m.dpUn)}/wk) have no visits to place yet.` : ''}</div></div>`;
+  return `${head}${freq}${cad}${fc}${panels}${day}
   <div class="cols">
     <div>${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}</div>
     <div>${barsHTML('By provider', 'Rendering provider', m.provider)}${barsHTML('By pharmacy', 'Specialty pharmacy on file', m.pharm)}</div></div>
-  <div class="card"><h2>Appointment volume needed: provider × credential <span class="small muted" style="font-weight:500">visits needed / week</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Provider</th>${creds.map(c => `<th class="num">${c}</th>`).join('')}<th class="num">Total</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th></tr></thead><tbody>
-    ${provs.map(pv => { const o = m.provCred.get(pv); const g = m.provider.find(x => x.k === pv); return `<tr><td class="lbl">${esc(pv)}</td>${creds.map(c => cellNP(o[c])).join('')}${cellNP({ need: g.need, n: g.n }, true)}<td class="num">${fmtN(g.booked)}</td><td class="num ${g.short > 0.25 ? 'warnText' : 'muted'}">${g.short > 0.25 ? fmtN(g.short) : '0'}</td></tr>`; }).join('') || `<tr><td colspan="7" class="muted">No patients match.</td></tr>`}
-    ${provs.length ? `<tr class="tot"><td>Total</td>${creds.map(c => cellNP(m.cred.find(x => x.k === c) || null)).join('')}${cellNP({ need: t.need, n: t.n })}<td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td></tr>` : ''}</tbody></table></div></div>
-  <div class="cols">
-    <div><div class="card"><h2>Average template requirement <span class="small muted" style="font-weight:500">per provider</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Provider</th><th class="num">Slots needed / wk</th><th class="num">Avg per clinic day</th></tr></thead><tbody>
-      ${m.template.map(r => `<tr><td class="lbl">${esc(r.k)}<div class="muted" style="font-size:11px">${r.n} pt${r.n === 1 ? '' : 's'}</div></td><td class="num"><b>${fmtN(r.need)}</b></td><td class="num">${fmtN(r.perDay)}<div class="muted" style="font-size:11px">${r.days ? `over ${r.days} day${r.days === 1 ? '' : 's'}` : 'no visits · ÷ 5'}</div></td></tr>`).join('') || `<tr><td colspan="3" class="muted">No patients match.</td></tr>`}</tbody></table></div>
-      <div class="small muted" style="margin-top:8px">Slots needed is the provider’s visits needed per week, so their template has to hold at least that many ESK slots. Avg per clinic day divides it by the weekdays their patients are actually booked over the next ${F.weeks} weeks (or by 5 if nothing is booked).</div></div></div>
-    <div><div class="card"><h2>Booked slots by day <span class="small muted" style="font-weight:500">appointments / week, next ${F.weeks} weeks</span></h2><div class="tw"><table class="t small heat"><thead><tr><th></th>${['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => `<th class="num">${d}</th>`).join('')}</tr></thead><tbody>${['AM', 'PM'].map(h => `<tr><th>${h}</th>${[1, 2, 3, 4, 5].map(d => { const v = (m.slots[`${d}|${h}`] || 0) / F.weeks; return `<td class="num" style="background:color-mix(in srgb, #2a78d6 ${Math.round(v / (maxSlot / F.weeks) * 70)}%, transparent)" title="${['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'][d]} ${h}: ${fmtN(v)} booked / week">${fmtN(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></div>
-    </div></div>
   ${keptHTML(m.kept)}`;
+}
+
+// ---------- export for the clinic template optimization tool ----------
+// One workbook, tidy tables (one header row, stable column names, ISO dates) and an About sheet with the schema version,
+// so the template tool can import it and the same layout works for IV ketamine (Modality column).
+const ACCESS_SCHEMA = { name: 'mhs-access-model', version: 1 };
+function accessBook(m, withPts){
+  const iso = isoOf, F = m.F, cap = m.cap, sts = accStatuses().filter(s => F.st.has(s.k)).map(s => s.l).join(', ');
+  const r1 = n => Math.round(n * 100) / 100, wd = b => DN5[+b.split('|')[0]], hp = b => b.split('|')[1];
+  const S_ = {};
+  S_.About = [['Field', 'Value'], ['Schema', ACCESS_SCHEMA.name], ['Schema version', ACCESS_SCHEMA.version], ['Modality', MODALITY], ['Clinic', CFG.clinic || ''], ['Generated', new Date().toISOString()], ['Source', 'ESK Tracker add-in · Access tab'],
+    ['Week runs', 'Sunday to Saturday'], ['First week of forecast', iso(m.W0)], ['Forecast weeks', m.H], ['Booked window (weeks)', F.weeks], ['Statuses included', sts], ['Pharmacy filter', F.ph === 'all' ? 'All' : F.ph],
+    ['Chairs', +cap.chairs || 0], ['Visit length (min)', +cap.visitMin], ['AM block (min)', +cap.amMin], ['PM block (min)', +cap.pmMin], ['Template slots per week', m.tmplWk], ['Chair capacity per week', m.chairWk],
+    ['Patients', m.tot.n], ['Visits needed per week', r1(m.tot.need)], ['Booked per week', r1(m.tot.booked)], ['Contains patient identifiers', withPts ? 'Yes' : 'No']];
+  S_.Providers = [['Modality', 'Provider', 'Credential', 'Patients', 'Need per week', 'MD Only patients', 'MD Only need', 'MD & NP patients', 'MD & NP need', 'Coverage not set patients', 'Coverage not set need', 'Template slots per week', 'Open per week', 'Booked per week', 'MD Only on NP panel']]
+    .concat(m.panels.map(x => [MODALITY, x.k, x.cred, x.n, r1(x.need), x.mdOnly.n, r1(x.mdOnly.need), x.flex.n, r1(x.flex.need), x.unset.n, r1(x.unset.need), x.tmpl, r1(x.spare), r1(x.booked), x.mismatch.length]));
+  S_.Template = [['Modality', 'Provider', 'Credential', 'Weekday', 'Day part', 'Template slots']].concat(m.panels.flatMap(x => BLOCKS.map(b => [MODALITY, x.k, x.cred, wd(b), hp(b), +x.t[b] || 0])));
+  S_.DayPart = [['Modality', 'Weekday', 'Day part', 'Need per week', 'Patients usual slot', 'Booked per week', 'Template slots', 'Chair capacity']].concat(BLOCKS.map(b => { const x = m.dp[b]; return [MODALITY, wd(b), hp(b), r1(x.need), x.n, r1(x.booked), x.tmpl, x.chairs]; }), [[MODALITY, 'Unplaced', '', r1(m.dpUn), m.dpUnN, '', '', '']]);
+  S_.Frequencies = [['Modality', 'Frequency group', 'Visits per week each', 'Interval weeks', 'Patients', 'Need per week', 'Booked per week', 'Unbooked per week']].concat(m.protocol.map(g => { const r = m.rows.find(x => m.fqOf(x) === g.k); return [MODALITY, g.k, r && r.need != null ? r1(r.need) : '', r && r.need != null ? (r.ind ? 0.5 : r.k) : '', g.n, r1(g.need), r1(g.booked), r1(g.short)]; }));
+  S_.Cadence = [['Modality', 'Frequency group', 'Interval weeks', 'Patients', 'Cycle week', 'Next week of', 'Patients now', 'Patients evened out', 'Even share']].concat(m.cadence.flatMap(g => g.counts.map((v, j) => [MODALITY, g.label, g.k, g.n, j + 1, iso(m.W0 + j * 7), v, g.after[j], r1(g.ideal)])));
+  S_.Weekly = [['Modality', 'Week of', 'Series', 'Visits']].concat(m.weeks.flatMap(x => [...m.groups.map(g => [MODALITY, iso(x.start), g, r1(x.g[g] || 0)]), [MODALITY, iso(x.start), 'Projected total', r1(x.tot)], [MODALITY, iso(x.start), 'Booked', x.booked], [MODALITY, iso(x.start), 'Template capacity', m.tmplWk], [MODALITY, iso(x.start), 'Chair capacity', m.chairWk]]));
+  const cs = m.cs;
+  S_.Credential = [['Modality', 'Metric', 'Visits per week']].concat([['MD template', cs.mdSupply], ['NP template', cs.npSupply], ['MD Only need', cs.mdOnlyNeed], ['MD & NP need', cs.flexNeed], ['Coverage not set need', cs.unsetNeed], ['Need on MD panels', cs.mdNeed], ['Need on NP panels', cs.npNeed], ['MD open', cs.mdSpare], ['NP open', cs.npSpare], ['MD over template', cs.mdOver], ['NP over template', cs.npOver], ['MD headroom after MD Only', cs.mdHeadroom], ['MD & NP need on over-template MD panels', cs.flexOnMdOver], ['Transferable MD to NP', cs.toNp], ['Transferable NP to MD', cs.toMd], ['MD Only patients on NP panels (count)', cs.mismatch.length]].map(([k, v]) => [MODALITY, k, r1(v)]));
+  if (withPts){
+    S_.Moves = [['Modality', 'Short name', 'MRN', 'Provider', 'Frequency group', 'Next visit', 'Shift weeks', 'Move to week of']].concat(m.cadence.flatMap(g => g.moves.map(x => [MODALITY, x.r.p.name, x.r.p.mrn, x.r.prov, g.label, x.r.next ? iso(x.r.next.date) : '', x.shift, iso(x.toWeek)])));
+    S_.Patients = [['Modality', 'Short name', 'MRN', 'Status', 'Provider', 'Provider credential', 'Coverage requirement', 'Tx Frequency', 'Frequency group', 'Visits per week', 'Interval weeks', 'Cycle week of', 'Usual weekday', 'Usual day part', 'Next visit', 'Booked per week']]
+      .concat(m.rows.map(r => [MODALITY, r.p.name, r.p.mrn, r.p.status, r.prov, provCredOf(r.prov), r.cred, r.p.freq, m.fqOf(r), r.need ?? '', r.k > 1 ? r.k : 1, r.phase != null ? iso(m.W0 + r.phase * 7) : '', r.slot ? wd(r.slot) : '', r.slot ? hp(r.slot) : '', r.next ? iso(r.next.date) : '', r1(r.booked)]));
+  }
+  return S_;
+}
+function openAccExport(){
+  S.accX = S.accX || { pts: false };
+  openModal(`<h2>Export for the template tool</h2><div class="small muted">One Excel workbook with tidy tables (About, Providers, Template, DayPart, Frequencies, Cadence, Weekly, Credential) using the filters on the Access tab now. Built to import into the clinic template optimization tool; the layout is versioned (${ACCESS_SCHEMA.name} v${ACCESS_SCHEMA.version}) and carries a Modality column so IV ketamine can use the same import.</div>
+    <label class="opt small" style="margin-top:10px;display:block"><input type="checkbox" id="accXpts" ${S.accX.pts ? 'checked' : ''}> Include patient rows (short name + MRN, plus suggested moves)</label>
+    <div class="small muted" style="margin-top:4px">Leave this off unless the tool needs patient-level rows. With it on, the file holds patient identifiers — keep it in approved locations (OneDrive / SharePoint), not email or personal drives.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="accXlsx">Download workbook</button></div>`);
+}
+async function accXlsx(){
+  const pts = !!$('#accXpts')?.checked; S.accX = { pts };
+  if (!(await loadXLSX())) return toast('bad', 'Couldn’t load the Excel writer. Check the connection and try again.');
+  const m = accessModel(), sh = accessBook(m, pts), wb = XLSX.utils.book_new();
+  for (const [n, rows] of Object.entries(sh)){ const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map((_, c) => ({ wch: Math.min(40, Math.max(10, ...rows.slice(0, 200).map(r => String(r[c] ?? '').length + 2))) })); XLSX.utils.book_append_sheet(wb, ws, n); }
+  const name = `${MODALITY} access model - ${(CFG.clinic || 'clinic').replace(/[\\/:*?"<>|]/g, '')} - ${isoOf(todaySerial())}${pts ? ' - PHI' : ''}.xlsx`;
+  const ok = downloadText(name, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(ok ? 'ok' : 'warn', ok ? `Downloaded ${esc(name)}.` : 'Download was blocked here. Try from the full-screen view or Excel in a browser.');
+  if (ok) closeModal();
 }
 
 // ---------- ordering ----------
@@ -1355,7 +1655,7 @@ function weeksFor(od){ const d = dowOf(od); let add = (1 - d + 7) % 7; if (add =
 function besseModel(){
   const w = weeksFor(S.orderDate); const rows = { 56:{ w1:0, w2:0 }, 84:{ w1:0, w2:0 } }; const list = [], review = [];
   for (const a of S.A){
-    if (!a.active || a.date < w[0][0] || a.date > w[1][1]) continue;
+    if (!a.active || a.date < w[0][0] || a.date > w[1][1] || !pendingAppt(a)) continue;
     const wk = a.date <= w[0][1] ? 1 : a.date >= w[1][0] ? 2 : 0; if (!wk) continue;
     const inf = apptInfo(a);
     if (inf.pharm !== 'BESSE'){ if (!inf.pharm) review.push({ a, why:'Not on the patient tracker — pharmacy unknown' }); continue; }
@@ -1464,7 +1764,7 @@ const mrnVal = m => /^\d+$/.test(m) ? Number(m) : m;
 function pharmText(code){ const want = code === 'BESSE' ? 'Besse' : code === 'GENOA' ? 'Genoa' : code; const refv = (S.ref.pharmacy || []).find(v => pharmOf(v) === code); return refv || want; }
 async function write(label, fn, okText){
   if (label) busy(label); S._writing = true;
-  try { await fn(); await reload(true); if (label) toast('ok', okText || 'Saved to the workbook.'); return true; }
+  try { await fn(); await reload(true); if (label) toast('ok', (typeof okText === 'function' ? okText() : okText) || 'Saved to the workbook.'); return true; }   // okText can be a function when it depends on what the write did
   catch (e){ console.error(e); try { await reload(true); } catch {} toast('bad', esc(e.message || String(e))); return false; }
   finally { S._writing = false; S._selfWriteAt = Date.now(); if (label) busy(false); }   // the watcher ignores table change events from this write
 }
@@ -1484,9 +1784,9 @@ function render(){
     ${freshHTML()}
     <header class="top">
       <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
-        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm" data-act="full" title="Open full screen over Excel">⛶ Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm hdrc" data-act="full" title="Open full screen over Excel" aria-label="Full screen">⛶<span class="hl"> Full screen</span></button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm hdrc" data-act="exitFull" title="Exit full screen" aria-label="Exit full screen">⤢<span class="hl"> Exit full screen</span></button>' : ''}
         <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
-        ${S.store.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">⇪ Upload appt list</button>' : ''}
+        ${S.store.live ? '<button class="btn sm hdrc" data-act="upAppt" title="Upload the 1 ESK Ordering - B export" aria-label="Upload appt list">⇪<span class="hl"> Upload appt list</span></button>' : ''}
         <button class="btn sm hdrc" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab" aria-label="Import Sohar benefits">⇪<span class="hl"> Import Sohar benefits</span></button>
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
@@ -1528,7 +1828,7 @@ function rangeModel(from, to){
     if (!a.active) r.st = 'off';
     else if (r.adminKit) r.st = 'done';
     else if (r.pulledKit) r.st = 'pulled';
-    else if (a.date < T) r.st = 'past';
+    else if (!pendingAppt(a)) r.st = 'past';   // before today, or today after its time: never prompt to order
     else if (inf.pharm === 'BESSE'){ const i = pickBesse(pool, a.mrn, inf.mg, a.date); if (i >= 0){ r.kit = pool.splice(i, 1)[0]; r.st = 'avail'; } else r.st = 'need'; }
     else if (PS(inf.pharm)){ const l = per.get(a.mrn) || []; const i = l.findIndex(k => (!inf.mg || k.recv === inf.mg) && (k.expDate == null || k.expDate >= a.date)); if (i >= 0){ r.kit = l.splice(i, 1)[0]; r.st = 'avail'; } else { const o = open.get(a.mrn) || []; if (o.length){ r.kit = o.shift(); r.st = 'ordered'; } else r.st = 'need'; } }
     else r.st = 'unknown';
@@ -1575,6 +1875,21 @@ function weekHTML(){
     <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
   </div>`;
 }
+// ---------- snooze (3 hours at a time) / dismiss, shared with the workbook (eskSnooze: id → { until ms | 0 = dismissed, by, at }) ----------
+const SNOOZE_MS = 3 * 60 * 60 * 1000;
+const snzGet = id => { const s = (S.snooze || {})[id]; return s && (!s.until || s.until > Date.now()) ? s : null; };
+const hidden = id => !S.showSnz && !!snzGet(id);
+async function snoozeSet(id, kind){
+  S.snooze = S.snooze || {}; const now = Date.now();
+  if (kind) S.snooze[id] = { until: kind === 'dismiss' ? 0 : Math.max(now, S.snooze[id]?.until || 0) + SNOOZE_MS, by: CFG.me || '', at: new Date(now).toISOString() }; else delete S.snooze[id];
+  for (const [k, v] of Object.entries(S.snooze)) if (now - Date.parse(v.at) > 30 * 864e5) delete S.snooze[k];   // keep it small
+  render(); await S.store.setDoc('eskSnooze', S.snooze);
+  if (kind) toast('info', `${kind === 'dismiss' ? 'Dismissed' : `Snoozed until ${new Date(S.snooze[id].until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}. <button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Undo</button>`);
+}
+// Snooze/dismiss controls; when shown via "Show snoozed", a Restore link instead.
+const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">${s.until ? 'snoozed to ' + new Date(s.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'dismissed'}</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="snz" data-id="${esc(id)}" title="Hide for 3 hours (tap again to add 3 more)">⏰ 3h</button><button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss">✕</button>`}</span>`; };
+const snzCount = ids => ids.filter(id => snzGet(id)).length;
+const snzFoot = n => n ? `<div class="small muted snzfoot">${n} snoozed or dismissed · <button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show'}</button></div>` : '';
 function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
 function actionModel(){
   const T = todaySerial(); const end = bizDaysAhead(T, 3);
@@ -1622,19 +1937,23 @@ async function madrsRemSent(){
 function actionHTML(){
   const m = actionModel(); const T = todaySerial();
   const when = a => `${a.date === T ? 'Today' : fmtD(a.date, 'dow')} ${fmtT(a.time)}`;
+  const idM = c => `madrs|${c}|${T}`, idO = r => `order|${r.a.key}`, idS = x => `smeds|${x.mrn}|${x.t.at}`, idT = x => `transit|${x.r.kit.id}`, idR = x => `reas|${x.k.id}`;
+  const nSnz = snzCount([...[...madrsByClin(m.madrs).keys()].map(idM), ...m.order.map(idO), ...m.schedMeds.map(idS), ...m.transit.map(idT), ...m.reassign.map(idR)]);
+  m.madrs = m.madrs.filter(x => !hidden(idM(x.by))); m.order = m.order.filter(r => !hidden(idO(r))); m.schedMeds = m.schedMeds.filter(x => !hidden(idS(x))); m.transit = m.transit.filter(x => !hidden(idT(x))); m.reassign = m.reassign.filter(x => !hidden(idR(x)));
   const remSent = m.madrs.length && m.madrs.every(x => madrsRemGet(x.i.a.mrn));
   const total = m.transit.length + m.order.length + m.schedMeds.length + (m.madrs.length && !remSent ? 1 : 0);
   const byClin = madrsByClin(m.madrs); const nToday = m.madrs.filter(x => x.today).length;
   return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
     <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days). Each patient’s schedule-out, protocol and MADRS to-dos are on their appointment card.</div>
     ${m.madrs.length ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
-      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span><span class="grow"></span>${remSent ? '' : `<button class="btn sm" data-act="madrsRemMail" data-c="${esc(c)}">✉ Email</button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
+      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
       <div class="row small" style="margin-top:8px">${remSent ? `<span class="chip ok">Reminder sent ✓ ${esc(madrsRemGet(m.madrs[0].i.a.mrn).by)}</span><button class="linkbtn" data-act="madrsRemSent">Undo</button>` : `<button class="btn sm primary" data-act="madrsRemSent">Mark sent</button><button class="linkbtn" data-act="madrsRemCopy">Copy all instead</button><span class="muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email + practice leader not set (Settings)</span>'}</span>`}</div></div>` : ''}
-    ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span></div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span></div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
-    ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span></div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
+    ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span>${snzBtns(idS(x))}</div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span>${snzBtns(idO(r))}</div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
+    ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span>${snzBtns(idT(x))}</div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
     ${!m.madrs.length && !m.order.length && !m.schedMeds.length && !m.transit.length ? '<div class="asec gray small" style="margin-top:10px">All clear: nothing to order or chase for the next 3 business days, and no MADRS due today.</div>' : ''}
+    ${snzFoot(nSnz)}
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
-      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span></div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
+      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span>${snzBtns(idR(x))}</div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
       ${m.expired.length ? `<div class="srow"><div class="line small">${m.expired.length} expired kit${m.expired.length > 1 ? 's' : ''} waiting for disposal.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Open Stock</button></div></div>` : ''}
     </details>
@@ -1659,7 +1978,7 @@ function todayHTML(){
     ${startsHTML()}
     ${schedHTML()}
   </div><div>
-    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm" data-act="bays" ${act.length ? '' : 'disabled'}>🖨 Vitals Tracker &amp; bays</button><button class="btn sm" data-act="copyPull" ${act.length ? '' : 'disabled'}>Copy med list</button></h2>${toolbarHTML()}
+    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm hdrc" data-act="bays" ${act.length ? '' : 'disabled'} title="Vitals Tracker &amp; bays" aria-label="Vitals Tracker and bays">🖨<span class="hl"> Vitals Tracker &amp; bays</span></button><button class="btn sm hdrc" data-act="copyPull" ${act.length ? '' : 'disabled'} title="Copy med list" aria-label="Copy med list">⧉<span class="hl"> Copy med list</span></button></h2>${toolbarHTML()}
       ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
         return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
       ${(() => { const live = items.filter(i => !i.a.cancelled), shown = filterSort(live, itemState); return live.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
@@ -1690,7 +2009,7 @@ async function noteApptList(){
 function freshHTML(){
   if (!S.store.live) return '';
   const on = fromIso(S.apptList?.on); if ((on != null && on >= todaySerial()) || S.freshHidden === (S.apptList?.on || 'none')) return '';
-  return `<div class="msg warn noprint" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
+  return `<div class="msg warn noprint fresh" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
     <details style="margin-top:4px"><summary>How to run the report</summary><ol style="margin:6px 0 0 18px;padding:0">
       <li>Navigate to NextGen PM.</li>
       <li>Locate the “Reports” menu option on the top-left.</li>
@@ -2041,14 +2360,15 @@ function checklistHTML(i){
 function actionBullets(i){
   const a = i.a, p = i.p, m = esc(a.mrn), T = todaySerial(); const k = i.adminKit || i.suggest; const L = [];
   if (i.needsSched){ const sd = taskGet(a.mrn, 'sched');
-    L.push(sd ? `<li class="done">Scheduled out <span class="muted">${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button></li>`
-      : `<li class="warn"><b>Schedule out</b> <span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span><button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button></li>`); }
-  if (i.needsProto) L.push(`<li class="bad"><b>New protocol + consent</b> <span class="muted">${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn" data-act="consent" data-m="${m}">Print consent</button><button class="linkbtn" data-act="protoRenew" data-m="${m}">Renewed…</button></li>`);
-  if (i.needsMadrs) L.push(`<li class="bad"><span class="mpill">MADRS</span> <b>Needs MADRS</b> <span class="muted">auth ${p.authExp < T ? 'expired' : 'exp'} ${fmtD(p.authExp)}</span><button class="linkbtn" data-act="madrsDo" data-m="${m}">Collected…</button></li>`);
-  if (i.inf.mg === 56 && !a.isStart) L.push('<li class="warn">56 mg — verify the dose</li>');
-  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); if (adj) L.push(`<li class="bad">Back-to-back with ${fmtD(adj.date, 'dow')}</li>`);
-  if (S._re?.has(k?.id)) L.push('<li class="warn">Re-assign this kit</li>');
-  return `<div class="todos"><div class="ckh"><b>To do</b></div>${L.length ? `<ul>${L.join('')}</ul>` : '<div class="small okText">Nothing due ✓</div>'}</div>`;
+    L.push(['sched', sd ? `<li class="done">Scheduled out <span class="muted">${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button></li>`
+      : `<li class="warn"><b>Schedule out</b> <span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span><button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button></li>`]); }
+  if (i.needsProto) L.push(['proto', `<li class="bad"><b>New protocol + consent</b> <span class="muted">${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn" data-act="consent" data-m="${m}">Print consent</button><button class="linkbtn" data-act="protoRenew" data-m="${m}">Renewed…</button></li>`]);
+  if (i.needsMadrs) L.push(['madrs', `<li class="bad"><span class="mpill">MADRS</span> <b>Needs MADRS</b> <span class="muted">auth ${p.authExp < T ? 'expired' : 'exp'} ${fmtD(p.authExp)}</span><button class="linkbtn" data-act="madrsDo" data-m="${m}">Collected…</button></li>`]);
+  if (i.inf.mg === 56 && !a.isStart) L.push(['dose', '<li class="warn">56 mg — verify the dose</li>']);
+  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); if (adj) L.push(['b2b', `<li class="bad">Back-to-back with ${fmtD(adj.date, 'dow')}</li>`]);
+  if (S._re?.has(k?.id)) L.push(['reas', '<li class="warn">Re-assign this kit</li>']);
+  const id = kind => `todo|${a.mrn}|${kind}|${a.date}`; const V = L.filter(([kind]) => !hidden(id(kind))); const n = snzCount(L.map(([kind]) => id(kind)));
+  return `<div class="todos"><div class="ckh"><b>To do</b></div>${V.length ? `<ul>${V.map(([kind, h]) => h.replace(/<\/li>$/, `${snzBtns(id(kind))}</li>`)).join('')}</ul>` : '<div class="small okText">Nothing due ✓</div>'}${snzFoot(n)}</div>`;
 }
 // Appointment notes / alerts (saved with the workbook, per patient)
 const notesFor = mrn => (S.notes || {})[mrn] || [];
@@ -2654,7 +2974,7 @@ function openPatient(mrn){
 const CONSENT_REASON = 'Major Depressive Disorder (MDD)';
 function apptProviders(){
   const t = S.tables.appts; const c = t && ['rendering', 'renderingprovider', 'provider'].map(k => t.cols[k]).find(x => x != null); if (c == null) return [];
-  return [...new Set(t.values.map(r => String(r[c] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(t.values.map(r => canonProv(r[c])).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 function openConsent(mrn){
   const provs = apptProviders();
@@ -2770,7 +3090,7 @@ async function dispSave(){
 }
 
 // ---------- generic row editor ----------
-const REFMAP = { pharmacy:'pharmacy', receivedmg:'dose', administeredmg:'dose', protocolmg:'dose', disposalmethod:'disposalmethod', markedfordisposal:'yesno', status:'status', txfrequency:'treatmentfrequency', coverageoptions:'coverageoptions' };
+const REFMAP = { pharmacy:'pharmacy', receivedmg:'dose', administeredmg:'dose', protocolmg:'dose', disposalmethod:'disposalmethod', markedfordisposal:'yesno', status:'status', txfrequency:'treatmentfrequency', coverageoptions:'coverageoptions', renderingprovider:'renderingprovider' };
 function distinct(tkey, key, max = 40){ const t = S.tables[tkey]; if (!t || t.cols[key] == null) return []; const s = new Map(); for (let r = t.values.length - 1; r >= 0 && s.size < max; r--){ const v = t.values[r][t.cols[key]]; if (v !== '' && v != null && !s.has(String(v))) s.set(String(v), v); } return [...s.values()]; }
 const datalist = (id, vals) => `<datalist id="${id}">${[...new Set(vals.map(String))].map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
 const isDateHeader = h => /date|expiration|use by|auth exp|auth start|thru|last treatment|next treatment/i.test(h);
@@ -2818,7 +3138,7 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sCc">Always cc on order &amp; follow-up emails</label><input id="sCc" class="fld" data-cfg="cc" value="${esc(CFG.cc || '')}" placeholder="name@mymhs.com; name2@mymhs.com"></div>
       <div><label class="lbl" for="sHelp">Help email (cc on MADRS reminders)</label><input id="sHelp" class="fld" data-cfg="helpEmail" value="${esc(CFG.helpEmail || '')}" placeholder="team help address"></div>
       <div><label class="lbl" for="sLead">Practice leader email (cc on MADRS reminders)</label><input id="sLead" class="fld" data-cfg="leadEmail" value="${esc(CFG.leadEmail || '')}" placeholder="name@mymhs.com"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the appointment list">${esc(CFG.provEmails || '')}</textarea></div>
+      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders; merge spellings on Access › By provider)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the appointment list">${esc(CFG.provEmails || '')}</textarea></div>
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
@@ -2911,6 +3231,21 @@ const ACT = {
   madrsRemCopy: () => madrsRemCopy(),
   madrsRemSent: () => madrsRemSent(),
   madrsRemMail: el => madrsRemMail(el.dataset.c),
+  mergeProv: () => openMerge('prov'),
+  mergeFreq: () => openMerge('freq'),
+  mergeBack: () => renderMerge(),
+  mpSave: () => mpSave(),
+  mpUn: el => { delete (S[MERGE[S.mpKind || 'prov'].state] || {})[el.dataset.n.toLowerCase()]; mpPersist(); },
+  mpApply: () => openMpApply(),
+  mpWrite: () => mpWrite(),
+  capEdit: () => openCap(),
+  capSave: () => capSave(),
+  accExport: () => openAccExport(),
+  accXlsx: () => accXlsx(),
+  snz: el => snoozeSet(el.dataset.id, 'snooze'),
+  dis: el => snoozeSet(el.dataset.id, 'dismiss'),
+  unsnz: el => snoozeSet(el.dataset.id, null),
+  snzShow: () => { S.showSnz = !S.showSnz; render(); },
   noteDel: async el => { const m = el.dataset.m; S.notes = S.notes || {}; (S.notes[m] || []).splice(+el.dataset.i, 1); if (!S.notes[m]?.length) delete S.notes[m]; await saveNotes(); render(); },
   protoRenew: el => openProto(el.dataset.m),
   protoSave: el => protoSave(el.dataset.m),
@@ -3016,7 +3351,9 @@ document.addEventListener('change', e => {
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
-  if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = ['weeks', 'back'].includes(el.dataset.accv) ? +el.value : el.value; render(); }
+  if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = ['weeks', 'back', 'horizon'].includes(el.dataset.accv) ? +el.value : el.value; render(); }
+  if (el.dataset.accst != null && S.acc?.st){ el.checked ? S.acc.st.add(el.dataset.accst) : S.acc.st.delete(el.dataset.accst); render(); }
+  if (el.dataset.frate != null){ const k = el.dataset.frate.toLowerCase(); S.freqRate = S.freqRate || {}; if (el.value === '') delete S.freqRate[k]; else S.freqRate[k] = +el.value; S.store.setDoc('eskFreqRate', S.freqRate).then(() => { derive(); render(); renderMerge(); }); return; }
   if (el.dataset.bay != null && S.baysDraw){ const key = el.dataset.bay; S.visit = S.visit || {}; const v = el.value.trim(); if (v) (S.visit[key] = S.visit[key] || {}).bay = v; else if (S.visit[key]) delete S.visit[key].bay; saveVisit(); const bad = bayClashes(S.day); const span = (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); document.querySelectorAll('[data-clash]').forEach(td => { td.innerHTML = bad.has(td.dataset.clash) ? `<span class="chip warn">Same bay within ${span} min</span>` : ''; }); }
   if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
   if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
@@ -3032,6 +3369,7 @@ document.addEventListener('change', e => {
   if (el.dataset.flag){ S[el.dataset.flag] = el.checked; render(); }
   if (el.dataset.aud){ const A = auditState(); A[el.dataset.aud] = el.value.trim(); saveAudit(); if (S.tables.daily && (S.dailyDay === isoOf(todaySerial()) || !dailyRows().length)) writeDailyHeader(); render(); }
   if (el.dataset.win){ const v = fromIso(el.value); if (v != null){ S.win[el.dataset.win] = v; if (S.win.to < S.win.from) S.win.to = S.win.from; render(); } }
+  if (el.dataset.mp != null){ S.mpTo = $('#mpTo')?.value || ''; S.mpSel = S.mpSel || new Set(); el.checked ? S.mpSel.add(el.dataset.mp) : S.mpSel.delete(el.dataset.mp); if (!S.mpSel.has(S.mpTo)) S.mpTo = ''; renderMerge(); return; }
   if ('gall' in el.dataset){ genoaModel().rows.filter(r => r.cover === 'need').forEach(r => el.checked ? S.genoaSel.add(r.a.key) : S.genoaSel.delete(r.a.key)); render(); }
   if (el.dataset.gsel){ el.checked ? S.genoaSel.add(el.dataset.gsel) : S.genoaSel.delete(el.dataset.gsel); render(); }
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; renderAdmin(); }
@@ -3041,6 +3379,7 @@ document.addEventListener('change', e => {
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
+  if (S.loaded && $('#modal').hidden && Object.values(S.snooze || {}).some(v => v.until && v.until <= Date.now() && v.until > Date.now() - 20000)) render();   // a snooze just ran out
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); } }
@@ -3072,7 +3411,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles();
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
@@ -3106,7 +3445,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
@@ -3129,6 +3468,8 @@ function RemoteStore(){
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
+    updateMany: (k, items) => call('updateMany', [k, items]),
+    setDropdown: (...a) => call('setDropdown', a),
     saveProfile: p => call('saveProfile', [p]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
@@ -3149,7 +3490,7 @@ function openFull(){
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
-      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
