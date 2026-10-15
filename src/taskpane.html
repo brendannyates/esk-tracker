@@ -435,7 +435,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60 };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing' };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveLocal(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
@@ -444,7 +444,7 @@ function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOS
 // One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
 // on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
@@ -3233,6 +3233,8 @@ function openSettings(){
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
+    <label class="row small" style="margin-top:12px"><input type="checkbox" id="sVitN" ${CFG.vitNotify ? 'checked' : ''}> Alert me when vitals are due (browser pop-up + sound)</label>
+    <div class="row small" style="margin-top:4px;gap:8px;padding-left:24px"><label for="sVitS">Sound</label><select id="sVitS" class="fld" style="width:auto;min-height:30px;padding:2px 8px">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${CFG.vitSound === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="vitTest">Test</button><span class="muted">${notifyHint()}</span></div>
     ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open full screen automatically when the panel opens</label>` : ''}
     ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
     <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
@@ -3307,6 +3309,7 @@ const ACT = {
   vitClear: async el => { closeModal(); await vitSave(el.dataset.k, el.dataset.w, null); },
   provEmailSave: el => provEmailSave(el.dataset.n, el.dataset.e),
   provEmailFill: () => provEmailFill(),
+  vitTest: async () => { const s = $('#sVitS')?.value || CFG.vitSound; playSound(s); await askNotify(); if (notifyPerm() === 'granted') try { new Notification('Final vitals due · test', { body: 'Bay 1', tag: 'esk-test', icon: 'assets/icon-80.png' }); } catch {} if (SOUNDS.includes(s) && !(await findSound(s))) toast('warn', `No ${esc(s)} sound file found yet, so the built-in chime played.`); },
   rxAdd: el => { coAutosave(); S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { coAutosave(); S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   coReset: () => { S.coEdit = null; coRefresh(); },
@@ -3393,6 +3396,7 @@ const ACT = {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
+    const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; if (vn.checked) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
@@ -3466,13 +3470,59 @@ document.addEventListener('change', e => {
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; renderDispose(); }
 });
 
+// ---------- vitals-due alerts (per person, off by default): browser pop-up + the Kinnect sounds ----------
+// Sounds: bing/boom/bop/bow from this add-in's assets/sounds, else Kinnect Relay's; neither found = built-in chime.
+// Pop-ups never name the patient (anyone walking by can read them): vitals type, time and bay only.
+const SOUNDS = ['bing', 'boom', 'bop', 'bow'], SOUND_EXTS = ['mp3', 'wav', 'ogg', 'm4a'];
+const SOUND_DIRS = ['assets/sounds/', 'https://brendannyates.github.io/kinnect-addin/assets/sounds/'];
+const soundUrl = {};
+function findSound(id){
+  if (id in soundUrl) return Promise.resolve(soundUrl[id]);
+  const urls = SOUND_DIRS.flatMap(d => SOUND_EXTS.map(x => d + id + '.' + x));
+  return new Promise(done => {
+    const a = new Audio(); let i = 0, over = false;
+    const finish = (u, keep = true) => { if (over) return; over = true; clearTimeout(t); a.onloadedmetadata = a.onerror = null; if (keep) soundUrl[id] = u; done(u); };
+    const next = () => { if (i >= urls.length) return finish(null); a.src = urls[i++]; a.load(); };
+    const t = setTimeout(() => finish(null, false), 4000);   // slow network: chime this time, look again next time
+    a.preload = 'metadata'; a.onloadedmetadata = () => finish(a.src); a.onerror = next; next();
+  });
+}
+let audioCtx;
+function chime(){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const c = audioCtx, o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880;
+    g.gain.setValueAtTime(.25, c.currentTime); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .4); o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + .4);
+  } catch {}
+}
+const player = new Audio();
+async function playSound(id = CFG.vitSound){
+  if (id === 'none') return;
+  const u = SOUNDS.includes(id) ? await findSound(id) : null;
+  if (!u) return chime();
+  player.src = u; player.currentTime = 0; player.play().catch(chime);   // autoplay can be blocked until the panel has been clicked once
+}
+document.addEventListener('click', () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {} }, { once: true });   // the first click unlocks sound
+const notifyPerm = () => 'Notification' in window ? Notification.permission : 'unsupported';
+async function askNotify(){
+  if (notifyPerm() === 'default'){ try { await Notification.requestPermission(); } catch {} }
+  if (notifyPerm() !== 'granted') toast('warn', 'This browser didn’t allow pop-ups here, so vitals alerts will use the sound and the in-panel message.');
+}
+const notifyHint = () => ({ granted: 'Pop-ups allowed in this browser.', denied: 'Pop-ups are blocked in this browser’s site settings; the sound still plays.', unsupported: 'Pop-ups aren’t available here; the sound still plays.' })[notifyPerm()] || 'Excel may block the pop-up permission prompt inside the panel; the sound still plays.';
+function vitAlert(id, d, v){
+  if (!CFG.vitNotify || S.full) return;   // S.full: the full-screen dialog is open and alerts from there instead
+  playSound();
+  if (notifyPerm() !== 'granted') return;
+  try { const n = new Notification(`${d.what} due · ${fmtT(d.at)}`, { body: v?.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, icon: 'assets/icon-80.png' }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
+}
+
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   document.querySelectorAll('[data-coat]').forEach(el => { if (now >= +el.dataset.coat && !/Check out/.test(el.textContent)){ el.textContent = 'Check out / Tx report' + (/draft saved/.test(el.textContent) ? ' · draft saved' : ''); el.classList.add('primary'); } });   // final vitals now due
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
-  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v, key)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); } }
+  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v, key)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); vitAlert(id, d, v); } }
 }, 20000);
 
 // ---------- load ----------
