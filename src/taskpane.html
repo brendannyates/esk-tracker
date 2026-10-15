@@ -1903,7 +1903,8 @@ function actionModel(){
     madrs.push({ i: { a, p }, by: a.rendering || p.provider || 'Clinician not set', today: a.date === T }); }
   return { end, transit, order, madrs, schedMeds: scheduledNeedingMeds(), reassign: reassignModel(), expired: S.K.filter(k => k.needsDisposal) };
 }
-// MADRS reminder email to each rendering clinician (cc help + practice leader): one per day, marked sent by the PCT (eskTasks "<mrn>|madrsRem").
+// MADRS reminder email to each rendering clinician (cc help + practice leader): one per day, marked sent by the PCT
+// (eskTasks "<mrn>|madrsRem" = { at: day sent, ts: time sent, by }). Once sent it collapses until tomorrow or a patient not yet reminded today shows up.
 const MADRS_AHEAD = 7;
 const madrsRemGet = mrn => { const t = (S.tasks || {})[`${mrn}|madrsRem`]; return t && t.at === isoOf(todaySerial()) ? t : null; };
 const madrsByClin = L => { const m = new Map(); for (const x of L){ if (!m.has(x.by)) m.set(x.by, []); m.get(x.by).push(x.i); } return m; };
@@ -1930,7 +1931,7 @@ function madrsRemMail(clin){
 }
 async function madrsRemSent(){
   const L = actionModel().madrs; const on = !L.every(x => madrsRemGet(x.i.a.mrn)); S.tasks = S.tasks || {};
-  for (const x of L){ const k = `${x.i.a.mrn}|madrsRem`; if (on) S.tasks[k] = { at: isoOf(todaySerial()), by: CFG.me || '' }; else delete S.tasks[k]; }
+  for (const x of L){ const k = `${x.i.a.mrn}|madrsRem`; if (on) S.tasks[k] = { at: isoOf(todaySerial()), ts: new Date().toISOString(), by: CFG.me || '' }; else delete S.tasks[k]; }
   await S.store.setDoc('eskTasks', S.tasks); render();
 }
 function actionHTML(){
@@ -1944,7 +1945,10 @@ function actionHTML(){
   const byClin = madrsByClin(m.madrs); const nToday = m.madrs.filter(x => x.today).length;
   return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
     <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days). Each patient’s schedule-out, protocol and MADRS to-dos are on their appointment card.</div>
-    ${m.madrs.length ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
+    ${m.madrs.length && remSent ? (() => { const s = madrsRemGet(m.madrs[0].i.a.mrn); return `<details class="asec gray"><summary style="cursor:pointer;font-weight:700"><span class="mpill">MADRS</span> Reminder sent ✓ <span class="small muted" style="font-weight:500">${s.ts ? new Date(s.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' ' : 'today '}${s.by ? 'by ' + esc(s.by) + ' ' : ''}· ${m.madrs.length} patient${m.madrs.length > 1 ? 's' : ''} · back tomorrow or when a new patient is due</span></summary>
+      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}</span></div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)}</div>`).join('')}</div>`).join('')}
+      <div class="row small" style="margin-top:8px"><button class="linkbtn" data-act="madrsRemSent">Undo — not sent</button></div></details>`; })() : ''}
+    ${m.madrs.length && !remSent ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
       ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : ' · <span class="warnText">no email in Settings</span>'}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
       <div class="row small" style="margin-top:8px">${remSent ? `<span class="chip ok">Reminder sent ✓ ${esc(madrsRemGet(m.madrs[0].i.a.mrn).by)}</span><button class="linkbtn" data-act="madrsRemSent">Undo</button>` : `<button class="btn sm primary" data-act="madrsRemSent">Mark sent</button><button class="linkbtn" data-act="madrsRemCopy">Copy all instead</button><span class="muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email + practice leader not set (Settings)</span>'}</span>`}</div></div>` : ''}
     ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span>${snzBtns(idS(x))}</div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span>${snzBtns(idO(r))}</div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
