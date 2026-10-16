@@ -1876,22 +1876,49 @@ function render(){
   const act = document.activeElement; const keepId = act && act.id; const keepVal = act && act.value; const selS = act?.selectionStart;
   const app = $('#app');
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
+  if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; S.view = 'settings'; S.firstRun = true; }   // first run: the Settings page asks for a name (live: after the first read, so saved profiles are known)
+  if (!PAGES[S.view]) S.view = 'today';
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id)); S._b = badges();
-  app.innerHTML = `
-    ${S.store.live ? '' : '<div class="banner">Demo mode — fake data. Nothing here touches a real workbook.</div>'}
-    ${freshHTML()}
-    <header class="top">
-      <div class="bar"><div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><span class="bsep"></span><span>ESK Tracker</span><small>${esc(CFG.clinic)} · updated ${S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : ''}</small></div>
-        ${S.mode === 'pane' && S.canFull ? '<button class="btn sm hdrc" data-act="full" title="Open full screen over Excel" aria-label="Full screen">⛶<span class="hl"> Full screen</span></button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm hdrc" data-act="exitFull" title="Exit full screen" aria-label="Exit full screen">⤢<span class="hl"> Exit full screen</span></button>' : ''}
-        <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
-        ${S.store.live ? '<button class="btn sm hdrc" data-act="upAppt" title="Upload the 1 ESK Ordering - B export" aria-label="Upload appt list">⇪<span class="hl"> Upload appt list</span></button>' : ''}
-        <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
-        <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
-      <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
-    </header>
-    <main>${S.full ? `<div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open — it connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div>` : S.view === 'today' ? todayHTML() : S.view === 'patients' ? patientsHTML() : S.view === 'access' ? accessHTML() : invShellHTML()}</main>`;
-  if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; setTimeout(openSettings, 50); }   // live: after the first read, so saved profiles are known
+  const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
+  const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bname"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
+  const conn = `<div class="conn" role="status"><i aria-hidden="true"></i>${!S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook'}</div>`;
+  if (S.full){
+    app.innerHTML = `<div class="app full" data-mode="${S.mode}"><aside class="rail">${brand}<div class="sec">${conn}</div></aside><div class="page"><main id="main" class="pg-full"><div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open. It connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div></main></div></div>`;
+    return;
+  }
+  const navBtn = v => { const p = PAGES[v]; if (!p) return ''; const b = p.badge ? p.badge() : null;
+    return `<button class="ni" data-act="view" data-v="${v}"${S.view === v ? ' aria-current="page"' : ''}><span class="nl">${esc(p.label)}</span>${b && b.n ? `<span class="badge n${b.tone === 'quiet' ? ' quiet' : ''}">${b.n}</span>` : ''}</button>`; };
+  const P = PAGES[S.view];
+  const body = P.html(); const title = P.title ? P.title() : esc(P.label); const sub = P.sub ? P.sub() : ''; const tools = P.tools ? P.tools() : '';
+  app.innerHTML = `<div class="app" data-mode="${S.mode}">
+    <aside class="rail">
+      ${brand}
+      <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(navBtn).join('')}</nav>
+      <div class="sec">${navBtn('access')}${navBtn('settings')}
+        ${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
+        <button class="ni rt" data-act="refresh" title="Read the workbook again">Refresh</button>
+        ${conn}</div>
+    </aside>
+    <div class="page">
+      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
+      ${freshHTML()}
+      <header class="pbar"><div class="ptitle"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
+        <div class="tools">${tools}<input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"></div></header>
+      <main id="main" class="pg-${S.view}">${body}</main>
+    </div></div>`;
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
+}
+// Global find (#gq, Enter): a kit barcode or serial opens that kit on Meds; else an exact MRN or LASFIR opens the patient.
+function globalFind(raw){
+  const q = cleanScan(raw); if (!q) return;
+  const done = () => { S.gq = ''; const g = $('#gq'); if (g) g.value = ''; };
+  const { list } = findByScan(q);
+  if (list.length){ done(); S.view = 'inventory'; S.invTab = 'stock'; render(); window.scrollTo(0, 0); openKit(list[0].id); return; }
+  const mrns = new Set([...S.byMrn.keys(), ...S.A.map(a => a.mrn)].filter(Boolean));
+  const k = mrnKey(q), lq = q.toLowerCase();
+  const m = mrns.has(k) ? k : [...mrns].find(x => String(nm(x) || '').trim().toLowerCase() === lq);
+  if (m){ done(); ACT.patient({ dataset: { m } }); return; }
+  toast('warn', 'No patient or kit matches.');
 }
 function badges(){
   const d = {};
@@ -3418,9 +3445,127 @@ async function copyText(text, html){
 }
 
 function confirmClear(){ if (S._clr && Date.now() - S._clr < 4000){ S._clr = 0; return true; } S._clr = Date.now(); toast('warn', 'Tap “Clear audit” again to confirm.'); return false; }
+// ===== ui kit =====
+// Shared helpers for the v2 pages. Page code uses these and does not copy them.
+//   PAGES                        registry: PAGES.<view> = { label, title(), sub(), tools(), html(), badge() }
+//                                  view keys: today, schedule, inventory (label Meds), patients, access, settings
+//                                  render() calls html() first, then title(), sub() and tools(), so html() may set S state they read.
+//                                  title() = inner HTML of the page <h1>; put the subtitle in a <span>: 'Schedule <span>next 3 business days</span>'
+//                                  sub()   = HTML summary line under the title ('' for none). tools() = HTML buttons left of the search box.
+//                                  html()  = page body, placed straight into <main id="main" class="pg-<view>"> (no wrapper div).
+//                                  badge() = { n, tone: 'bad'|'quiet' } or null (rail count).
+//   taskRow({ t, d, btn, done, id, body, open, tone, current, more })  -> '<div class="task ...">'
+//                                  t = title HTML, d = detail line HTML, btn = one button as an HTML string,
+//                                  done = true: one muted line with ✓ (btn still shown if given, body hidden),
+//                                  body = HTML for an expandable <details data-open="<id>"> under the row (needs id),
+//                                  id = key for S.open, open = default open state before the user toggles it,
+//                                  tone = 'bad'|'warn'|'ok'|'info' class on the row, current = true adds aria-current="true" and class cur,
+//                                  more = summary text of the fold (default 'Show details').
+//   factsDL(pairs)               pairs = [[label, html], ...]; label is plain text (escaped); skips pairs whose html is null, '' or false
+//                                  -> '<dl class="facts"><div><dt>label</dt><dd>html</dd></div>...</dl>' ('' when nothing is left)
+//   tag(tone, text)              text is plain text (escaped) -> '<span class="tag <tone>">text</span>'; tone '' | ok | warn | bad | info | acc
+//   pageCols(kind, left, right)  kind q | t | m | two | detail -> '<div class="cols2 <kind>"><div class="col">left</div><div class="col">right</div></div>'
+//   TICKS                        array of now => void; the 20 s timer calls each one (now = nowMin()). No extra setIntervals.
+//   formBusy()                   true while a modal or the busy wash is up or an in-page form has unsaved changes (S.editing).
+//                                  Check it before any re-render you start from a timer.
+//   S.open                       { [id]: true|false } for every <details data-open="<id>">; a toggle listener keeps it, render() reads it back.
+const PAGES = {};
+const TICKS = [];
+S.open = S.open || {};
+function formBusy(){ return !$('#modal').hidden || !$('#busy').hidden || !!S.editing; }
+function taskRow({ t = '', d = '', btn = '', done = false, id = '', body = '', open = false, tone = '', current = false, more = 'Show details' } = {}){
+  const cls = 'task' + (tone ? ' ' + tone : '') + (done ? ' done' : '') + (current ? ' cur' : '');
+  const cur = current ? ' aria-current="true"' : '';
+  if (done) return `<div class="${cls}"${cur}><div class="tmain"><div class="tt"><span class="ck" aria-hidden="true">✓</span> ${t}${d ? ` <span class="td">${d}</span>` : ''}</div></div>${btn ? `<div class="tb">${btn}</div>` : ''}</div>`;
+  const isOpen = id && Object.prototype.hasOwnProperty.call(S.open, id) ? S.open[id] : !!open;
+  const fold = body && id ? `<details class="tmore" data-open="${esc(id)}"${isOpen ? ' open' : ''}><summary>${more}</summary><div class="tbody">${body}</div></details>` : '';
+  return `<div class="${cls}"${cur}><div class="tmain"><div class="tt">${t}</div>${d ? `<div class="td">${d}</div>` : ''}</div>${btn ? `<div class="tb">${btn}</div>` : ''}${fold}</div>`;
+}
+function factsDL(pairs){
+  const L = (pairs || []).filter(p => p && p[1] != null && p[1] !== '' && p[1] !== false);
+  return L.length ? `<dl class="facts">${L.map(([l, h]) => `<div><dt>${esc(l)}</dt><dd>${h}</dd></div>`).join('')}</dl>` : '';
+}
+function tag(tone, text){ return `<span class="tag${tone ? ' ' + tone : ''}">${esc(text)}</span>`; }
+function pageCols(kind, left, right){ return `<div class="cols2 ${kind}"><div class="col">${left}</div><div class="col">${right}</div></div>`; }
+// ===== /ui kit =====
+
+// ===== page: today =====
+const ACT_TODAY = {};
+PAGES.today = {
+  label: 'Today',
+  title: () => { const T = todaySerial(); return `Today <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span>`; },
+  sub: () => '',
+  tools: () => '',
+  html(){ S.day = todaySerial(); S.range = 'day'; return todayHTML(); },
+  badge: () => (S._b || {}).today ? { n: S._b.today, tone: 'bad' } : null,
+};
+// ===== /page: today =====
+
+// ===== page: schedule =====
+const ACT_SCHEDULE = {};
+PAGES.schedule = {
+  label: 'Schedule',
+  title: () => 'Schedule',
+  sub: () => '',
+  tools: () => S.store?.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">Upload appt list</button>' : '',
+  html(){ const r = S.range; S.range = 'week'; try { return actionHTML() + startsHTML() + schedHTML() + weekHTML(); } finally { S.range = r; } },
+  badge: () => null,
+};
+// ===== /page: schedule =====
+
+// ===== page: inventory =====
+const ACT_INVENTORY = {};
+PAGES.inventory = {
+  label: 'Meds',
+  title: () => 'Meds',
+  sub: () => '',
+  tools: () => '',
+  html: () => invShellHTML(),
+  badge: () => (S._b || {}).inventory ? { n: S._b.inventory, tone: 'bad' } : null,
+};
+// ===== /page: inventory =====
+
+// ===== page: patients =====
+const ACT_PATIENTS = {};
+PAGES.patients = {
+  label: 'Patients',
+  title: () => 'Patients',
+  sub: () => '',
+  tools: () => '<button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>',
+  html: () => patientsHTML(),
+  badge: () => null,
+};
+// ===== /page: patients =====
+
+// ===== page: access =====
+const ACT_ACCESS = {};
+PAGES.access = {
+  label: 'Access',
+  title: () => 'Access <span>capacity and templates</span>',
+  sub: () => '',
+  tools: () => '',
+  html: () => accessHTML(),
+  badge: () => null,
+};
+// ===== /page: access =====
+
+// ===== page: settings =====
+const ACT_SETTINGS = {};
+PAGES.settings = {
+  label: 'Settings',
+  title: () => 'Settings',
+  sub: () => '',
+  tools: () => '',
+  html: () => `${S.firstRun && !CFG.me ? '<div class="alert warn" role="status">Add your name so your changes are signed.</div>' : ''}
+    <div class="card"><h3>Settings</h3><div class="small muted">Your name, clinic emails, vitals alerts and the Sohar benefits import.</div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" data-act="settings">Open settings</button></div></div>`,
+  badge: () => null,
+};
+// ===== /page: settings =====
+
 // ---------- events ----------
 const ACT = {
-  view: el => { S.view = el.dataset.v; render(); },
+  view: el => { S.view = el.dataset.v; render(); window.scrollTo(0, 0); },
   refresh: () => reload(),
   upAppt: () => $('#apptFile').click(),
   upBen: () => $('#benFile').click(),
@@ -3577,6 +3722,7 @@ const ACT = {
   demo: () => { location.search = '?demo=1'; },
   dlManifest: () => downloadManifest(),
 };
+Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_SETTINGS);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal'){ closeModal(); return; }
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
@@ -3586,6 +3732,7 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.target.dataset?.todo != null){ if (e.key === 'Escape'){ S.todoFor = null; render(); return; } if (e.key === 'Enter'){ e.preventDefault(); const t = e.target.value.trim(); const k = e.target.dataset.todo; S.todoFor = null; if (t) todoEdit(k, L => L.push({ t, by: CFG.me || '', at: new Date().toISOString(), done: null })); else render(); return; } }
   if (e.target.dataset?.note != null){ if (e.key === 'Escape'){ S.noteFor = null; render(); return; } if (e.key === 'Enter'){ e.preventDefault(); const t = e.target.value.trim(); const m = e.target.dataset.note; S.noteFor = null; if (t){ S.notes = S.notes || {}; (S.notes[m] = S.notes[m] || []).push({ t, by: CFG.me || '', at: isoOf(todaySerial()) }); saveNotes(); } render(); return; } }
+  if (e.target.id === 'gq'){ if (e.key === 'Enter'){ e.preventDefault(); globalFind(e.target.value); return; } if (e.key === 'Escape'){ e.target.value = ''; S.gq = ''; e.target.blur(); return; } }   // global find in the page header
   // A scanner types like a keyboard. If focus wandered off (a click on a button), send the keystrokes to the page's scan box.
   if (!/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '') && $('#modal').hidden && !e.ctrlKey && !e.metaKey && !e.altKey){
     const el = document.querySelector('[data-scan]:not([disabled])');
@@ -3607,11 +3754,12 @@ document.addEventListener('input', e => {
   if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
   if (el.dataset.co && S.co && (el.tagName === 'TEXTAREA' || el.type === 'number')){ S.co[el.dataset.co] = el.value; if (S.coEdit == null) coRefresh(); }
   if (el.dataset.rx != null && S.co && el.tagName === 'INPUT' && el.type !== 'time'){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; if (S.coEdit == null) coRefresh(); }
+  if (el.id === 'gq') S.gq = el.value;
   if (el.dataset.input){ S[el.dataset.input] = el.value; clearTimeout(S._t); S._t = setTimeout(render, 180); }
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; clearTimeout(S._a); S._a = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderAdmin(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; clearTimeout(S._d); S._d = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderDispose(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
 });
-document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'sched' && CFG.schedOpen !== d.open){ CFG.schedOpen = d.open; saveLocal(); } if (d.dataset?.sec === 'admin') S.adminOpen = d.open; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'sched' && CFG.schedOpen !== d.open){ CFG.schedOpen = d.open; saveLocal(); } if (d.dataset?.sec === 'admin') S.adminOpen = d.open; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } if (d.dataset?.open){ S.open = S.open || {}; S.open[d.dataset.open] = d.open; } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
@@ -3698,6 +3846,7 @@ setInterval(() => {
   document.querySelectorAll('.track[data-start]').forEach(el => { if (el.dataset.out) return; const p = trackPos({ start: +el.dataset.start }, now) / 3 * 100 + '%'; const f = el.querySelector('.tfill'), n = el.querySelector('.tnow'); if (f) f.style.width = p; if (n) n.style.left = p;
     el.querySelectorAll('[data-mk]').forEach(m => { m.className = 'tmark ' + markCls(m.dataset.mk, +m.dataset.at, now); }); });
   document.querySelectorAll('[data-coat]').forEach(el => { if (now >= +el.dataset.coat) el.classList.add('primary'); });   // final vitals now due
+  for (const f of TICKS){ try { f(now); } catch (err) { console.error(err); } }   // page live updates (ui kit)
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v, key)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); vitAlert(id, d, v); } }
 }, 20000);
@@ -3822,7 +3971,7 @@ function openFull(){
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
   const start = store => { S.store = store; useMsName(); return reload(true).then(() => store.watch?.(onWorkbookChange)); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
-  if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); if (location.hash === '#dash') setTimeout(closeModal, 1500); if (location.hash === '#access') setTimeout(() => { closeModal(); S.view = 'access'; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up, #dash closes the first-run settings
+  if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
   Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
