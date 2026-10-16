@@ -521,9 +521,15 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 
 /* ===== page: today ===== */
 /* queue */
-.pg-today .tq{display:grid;gap:18px;align-content:start}
+.pg-today .tq{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-content:start}
+.pg-today .tq>*,.pg-today .qg{min-width:0}
 .pg-today .qrest{display:grid;gap:18px}
-.pg-today .qstrip{display:grid;gap:18px}
+@media (min-width:1180px){   /* full layout: the on-site groups are plain queue lists (the global .qstrip tile look is for the stacked layout) */
+  .pg-today .qstrip{display:grid;gap:18px;overflow:visible;padding:0;margin:0;scroll-snap-type:none}
+  .pg-today .qstrip .qrow{width:100%;min-width:0;max-width:none;background:transparent;box-shadow:none}
+  .pg-today .qstrip .qrow:hover{background:var(--surface2)}
+  .pg-today .qstrip .qrow[aria-current="true"]{background:var(--surface);box-shadow:var(--shadow)}
+}
 .pg-today .qg h2{margin:0 0 4px 12px}
 .pg-today .qg .none{margin:0 12px;color:var(--faint);font-size:14px}
 .pg-today .qfold>summary{list-style:none;cursor:pointer;border-radius:10px}
@@ -532,7 +538,8 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-today .qfold>summary h2::after{content:"▸";color:var(--faint)}
 .pg-today .qfold[open]>summary h2::after{content:"▾"}
 .pg-today .qfold[open]>summary{margin-bottom:4px}
-.pg-today .qmore{margin:0 0 0 12px}
+.pg-today .qfold .qmore{display:flex;align-items:center;min-height:32px;margin-left:12px;color:var(--accent);font-size:14px;font-weight:500}
+.pg-today .qfold[open] .qmore{display:none}
 .pg-today .qrow .who{flex:1;min-width:0;display:block}
 .pg-today .qrow .t{display:block;font-weight:600}
 .pg-today .qrow .t small{font-weight:400;font-size:13px;color:var(--muted);margin-left:6px}
@@ -553,7 +560,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-today .talerts{display:grid;gap:8px;margin-top:14px}
 .pg-today .alert .abtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
 .pg-today .alert .snz{margin-left:4px}
-.pg-today .tside .facts{display:grid;gap:12px}
+.pg-today .tside .facts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 .pg-today .tside .facts>div{display:grid;grid-template-columns:minmax(0,1fr);gap:2px}
 .pg-today .tside .facts dt{font-size:13px}
 .pg-today .tact{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}
@@ -2798,7 +2805,7 @@ function openBays(){
   const draw = () => { const bad = bayClashes(day);
     openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after room time; final vitals ${esc(CFG.disAfter)} min after that.</div>
       <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
-      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b> <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
+      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td>${day === todaySerial() ? `<button class="linkbtn" data-act="goCard" data-k="${esc(i.a.key)}" title="Open on Today">${esc(nm(i.a.mrn))}</button>` : `<b>${esc(nm(i.a.mrn))}</b>`} <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
       </tbody></table></div>
       <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" data-act="baysSave">Save</button><button class="btn primary" data-act="baysPrint">Save &amp; print Vitals Tracker</button></div>`, true); };
   S.baysDraw = draw; draw();
@@ -3829,6 +3836,10 @@ function pageCols(kind, left, right){ return `<div class="cols2 ${kind}"><div cl
 // Pure helpers read the existing models only (todayModel, visitGet, vitGet, finalDue, docState…); nothing here writes.
 const TD_SOON = 5;   // minutes: 40-min vitals count as "due soon" from here (SPEC §1 urgency)
 function tdOpen(id, def){ return S.open && Object.prototype.hasOwnProperty.call(S.open, id) ? !!S.open[id] : !!def; }
+// A <details> drawn open fires "toggle" once on creation, and the shared listener would then store that default in S.open for good.
+// Folds whose default can change (selection, width) carry data-tdflt while open by default; that first toggle is not recorded.
+function tdOpenAttr(id, def){ const set = S.open && Object.prototype.hasOwnProperty.call(S.open, id); return set ? (S.open[id] ? ' open' : '') : def ? ' open data-tdflt=""' : ''; }
+document.addEventListener('toggle', function tdFirstToggle(ev){ const d = ev.target; if (d.dataset && 'tdflt' in d.dataset){ delete d.dataset.tdflt; if (d.open) ev.stopImmediatePropagation(); } }, true);   // registered before the shared toggle listener, so it runs first
 const tdType = a => a.isStart ? 'Start' : a.isEFU ? 'Follow-up' : (a.event || 'Visit');
 // Live text: the 20 s timer rewrites textContent and replaces className with "st <tone>", so nothing else goes on this span.
 const tdLive = due => `<span class="st ${dueCls(due, true)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="1">${esc(dueText(due, true))}</span>`;
@@ -3969,16 +3980,15 @@ function tdDetail(r){
     ${pageCols('detail', `<div class="tmainc">${left}</div>`, `<div class="tside">${right}</div>`)}</section>`;
 }
 function tdQueue(m, sel){
-  // On-site rows keep the old On site tiles' act (goCard, now "select"); the rest use tSel. Both select the patient.
-  const row = r => `<button class="qrow" data-act="${r.grp === 'need' || r.grp === 'chair' ? 'goCard' : 'tSel'}" data-k="${esc(r.key)}" aria-current="${!!sel && sel.key === r.key}"><span class="qdot${r.tone ? ' ' + r.tone : ''}" aria-hidden="true"></span><span class="who"><span class="t">${esc(nm(r.a.mrn))}${r.v?.bay ? `<small>Bay ${esc(r.v.bay)}</small>` : ''}</span><span class="s">${r.line}</span></span>${r.tags.length ? `<span class="qtags">${r.tags.join('')}</span>` : ''}</button>`;
+  const row = r => `<button class="qrow" data-act="tSel" data-k="${esc(r.key)}" aria-current="${!!sel && sel.key === r.key}"><span class="qdot${r.tone ? ' ' + r.tone : ''}" aria-hidden="true"></span><span class="who"><span class="t">${esc(nm(r.a.mrn))}${r.v?.bay ? `<small>Bay ${esc(r.v.bay)}</small>` : ''}</span><span class="s">${r.line}</span></span>${r.tags.length ? `<span class="qtags">${r.tags.join('')}</span>` : ''}</button>`;
   const grp = (h, L, none) => `<div class="qg"><h2>${h}</h2>${L.length ? L.map(row).join('') : `<p class="none">${none}</p>`}</div>`;
-  const fold = (id, h, L, def) => `<details class="qg qfold" data-open="${id}"${tdOpen(id, def) ? ' open' : ''}><summary><h2>${h}</h2></summary>${L.map(row).join('')}</details>`;
-  const onN = m.need.length + m.chair.length, doneOpen = tdOpen('td:done', sel?.grp === 'done');
+  const fold = (id, h, L, def, more = '') => `<details class="qg qfold" data-open="${id}"${tdOpenAttr(id, def)}><summary><h2>${h}</h2>${more}</summary>${L.map(row).join('')}</details>`;
+  const onN = m.need.length + m.chair.length;
   return `<div class="tq">
     <div class="qstrip">${grp(`Needs you now · ${m.need.length}`, m.need, 'Nothing due right now')}${grp(`In chair · ${m.chair.length}`, m.chair, 'No one else in the bays')}</div>
     <div class="qrest">
     ${m.wait.length ? fold('td:nr', `Not roomed yet · ${m.wait.length}`, m.wait, window.innerWidth >= 1180 || !onN || sel?.grp === 'wait') : grp('Not roomed yet · 0', [], 'Everyone has been roomed')}
-    ${m.done.length ? `<div class="qg"><h2>Done today · ${m.done.length}</h2>${doneOpen ? m.done.map(row).join('') : ''}<button class="linkbtn qmore" data-act="tDone">${doneOpen ? 'Hide done' : `Show ${m.done.length} done`}</button></div>` : ''}
+    ${m.done.length ? fold('td:done', `Done today · ${m.done.length}`, m.done, sel?.grp === 'done', `<span class="qmore">Show ${m.done.length} done</span>`) : ''}
     ${m.off.length ? fold('td:off', `Not coming · ${m.off.length}`, m.off, sel?.grp === 'off') : ''}
     ${cancelledHTML(m.items)}</div>
   </div>`;
@@ -3996,9 +4006,10 @@ const ACT_TODAY = {
     const s = $('.pg-today .qstrip'), c = s && s.querySelector('.qrow[aria-current="true"]');   // keep the strip where it was, with the tapped tile in view
     if (s){ s.scrollLeft = x0; if (c){ const cr = c.getBoundingClientRect(), sr = s.getBoundingClientRect(); if (cr.left < sr.left || cr.right > sr.right) s.scrollLeft += cr.left - sr.left - 8; } }
     if (window.innerWidth < 1180){ const d = $('.pg-today .tdet'); if (d && d.getBoundingClientRect().top > window.innerHeight * 0.6) d.scrollIntoView({ block: 'start' }); } },
-  tDone: () => { S.open = S.open || {}; S.open['td:done'] = !tdOpen('td:done', false); render(); },
   copyMrn: async el => { const ok = await copyText(el.dataset.m); toast(ok ? 'ok' : 'bad', ok ? 'MRN copied.' : 'Couldn’t copy the MRN.'); },
-  goCard: el => { S.view = 'today'; ACT_TODAY.tSel(el); },   // On site rows (was: scroll to the card): select the patient
+  goCard: el => {   // was: scroll to the On site card. Now: open that patient on Today (from the bays dialog's names)
+    if (!$('#modal').hidden){ if ([...document.querySelectorAll('[data-bay]')].some(x => x.value.trim() !== String(visitGet(x.dataset.bay)?.bay || '').trim())) return toast('warn', 'Save the bays first, then open the patient.'); closeModal(); }
+    S.view = 'today'; window.scrollTo(0, 0); ACT_TODAY.tSel(el); },
 };
 PAGES.today = {
   label: 'Today',
