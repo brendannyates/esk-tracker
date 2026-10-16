@@ -90,7 +90,7 @@ h3:first-child{margin-top:0}
 .page>.msg{margin:12px 28px 0}
 .pbar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px 24px;flex-wrap:wrap;padding:22px 28px 14px}
 .pbar>div:first-child{flex:1 1 320px;min-width:0}
-.pbar h1 span{color:var(--muted);font-weight:400;margin-left:.25em}
+.pbar h1 span{color:var(--muted);font-weight:400;font-size:17px;margin-left:.25em}
 .pbar .sub{margin-top:3px;color:var(--muted)}
 .pbar .sub strong{color:var(--bad);font-weight:500}
 .pbar .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:0 1 auto;min-width:0}
@@ -337,6 +337,7 @@ button.tile:hover{background:color-mix(in srgb,var(--surface2),var(--ink) 7%)}
 .kv,.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 16px;font-size:14px;margin:0}
 .kv{gap:4px 12px}
 .kv dt,.facts dt{color:var(--muted)} .kv dd,.facts dd{margin:0;min-width:0}
+.facts>div{display:contents}   /* factsDL wraps each dt/dd pair in a div; the pairs sit on the dl grid */
 @media (max-width:899px){.facts{gap:6px 12px}}
 .lead{font-size:18px;font-weight:500;line-height:1.35;margin:0}
 .lead.late{color:var(--bad)} .lead.soon{color:var(--warn)}
@@ -2560,7 +2561,7 @@ function render(){
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
   if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; S.view = 'settings'; S.firstRun = true; }   // first run: the Settings page asks for a name (live: after the first read, so saved profiles are known)
   if (!PAGES[S.view]) S.view = 'today';
-  S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id)); S._b = badges();
+  S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id));   // rail counts come from PAGES.<view>.badge()
   const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
   const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bt"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
   const conn = `<div class="conn${!S.store.live ? ' demo' : ''}" role="status"><i aria-hidden="true"></i>${!S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook'}</div>`;
@@ -2571,6 +2572,7 @@ function render(){
   const navBtn = (v, lo) => { const p = PAGES[v]; if (!p) return ''; const b = p.badge ? p.badge() : null;
     return `<button class="ni${lo ? ' lo' : ''}" data-act="view" data-v="${v}"${S.view === v ? ' aria-current="page"' : ''}><span class="nl">${esc(p.label)}</span>${b && b.n ? `<span class="badge n${b.tone === 'quiet' ? ' quiet' : ''}">${b.n}</span>` : ''}</button>`; };
   const P = PAGES[S.view];
+  const qx = S.view === 'today' ? app.querySelector('.pg-today .qstrip')?.scrollLeft || 0 : 0;   // pane: Today's queue strip keeps its scroll across re-renders
   const body = P.html(); const title = P.title ? P.title() : esc(P.label); const sub = P.sub ? P.sub() : ''; const tools = P.tools ? P.tools() : '';
   app.innerHTML = `<div class="app" data-mode="${S.mode}">
     <aside class="rail">
@@ -2590,6 +2592,7 @@ function render(){
     </div></div>`;
   { const nv = app.querySelector('.rail .nav'), cur = nv && nv.querySelector('[aria-current="page"]');   // pane: keep the current area visible in the scrolling nav row
     if (cur && nv.scrollWidth > nv.clientWidth){ const r = cur.getBoundingClientRect(), n = nv.getBoundingClientRect(); if (r.right > n.right) nv.scrollLeft += r.right - n.right + 12; else if (r.left < n.left) nv.scrollLeft -= n.left - r.left + 12; } }
+  if (qx){ const qs = app.querySelector('.pg-today .qstrip'); if (qs) qs.scrollLeft = qx; }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
 // Global find (#gq, Enter): a kit barcode or serial opens that kit on Meds; else an exact MRN or LASFIR opens the patient.
@@ -2603,13 +2606,6 @@ function globalFind(raw){
   const m = mrns.has(k) ? k : [...mrns].find(x => String(nm(x) || '').trim().toLowerCase() === lq);
   if (m){ done(); ACT.patient({ dataset: { m } }); return; }
   toast('warn', 'No patient or kit matches.');
-}
-function badges(){
-  const d = {};
-  const it = todayModel(todaySerial()).filter(i => i.a.active && !i.adminKit && !i.pulledKit); if (it.length) d.today = it.length;
-  const inv = { stock: S.K.filter(k => k.needsDisposal).length + reassignModel().length, order: genoaModel().rows.filter(r => r.cover === 'need').length, transit: followModel().filter(f => f.cls === 'bad').length };
-  S._ib = inv; const t = inv.stock + inv.order + inv.transit; if (t) d.inventory = t;
-  return d;
 }
 function invShellHTML(){
   const tab = INV_TABS.some(([k]) => k === S.invTab) ? S.invTab : 'stock'; const open = tab !== 'stock';
@@ -5073,7 +5069,7 @@ const ACT = {
   orderFor: async el => { const mrn = el.dataset.m; const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText(p.pharm), dateordered: { date: todaySerial() }, comments: `${nm(mrn)} | Ordered after scheduling ${fmtD(todaySerial())}` }); await write('Opening an order line…', () => S.store.add('kits', out), `${nm(mrn)} marked as ordered.`); },
   selAll: el => { const k = el.dataset.k; if (k === 'fu'){ followItems(S.fuPh).forEach(x => S.fuSel.add(x.id)); S.fuDraw(); } else if (k === 'fu2'){ followItems(S.oPh).forEach(x => S.oFu.add(x.id)); S.oDraw(); } else { patientOrderItems().forEach(x => S.oPt.add(x.id)); S.oDraw(); } },
   selNone: el => { const k = el.dataset.k; if (k === 'fu'){ S.fuSel.clear(); S.fuDraw(); } else if (k === 'fu2'){ S.oFu.clear(); S.oDraw(); } else { S.oPt.clear(); S.oDraw(); } },
-  goInv: el => { S.view = 'inventory'; S.invTab = el.dataset.v; render(); },
+  goInv: el => { const from = S.view; S.view = 'inventory'; S.invTab = el.dataset.v; render(); if (from !== 'inventory') window.scrollTo(0, 0); },
   fuEmail: el => openFollowEmail((el.dataset.ids || '').split(',').filter(Boolean)),
   fuCopy: async () => { const ids = followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id)); const e = followEmail(ids); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Email copied — paste it into Outlook.'); },
   orderEmail: el => openOrderEmail(el.dataset.p || 'BESSE'),
