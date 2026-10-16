@@ -566,8 +566,8 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .ptup .ptst{flex:none;margin-left:auto}
 .pg-patients .facts{margin-top:12px}
 .pg-patients .ptup + .facts{margin-top:14px}
-.pg-patients table.pthist td{white-space:normal}
-.pg-patients table.pthist td:first-child{min-width:90px}
+.pg-patients table.pthist td:first-child .muted{display:block}
+.pg-patients table.pthist td:nth-child(5),.pg-patients table.pthist td:nth-child(7){white-space:normal}
 .pg-patients .facts dd .chip,.pg-patients .facts dd .tag{white-space:normal}
 .pg-patients .ptfields > summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none}
 .pg-patients .ptfields > summary::-webkit-details-marker{display:none}
@@ -4019,7 +4019,8 @@ function openPtEdit(mrn){
 // The page entry and handlers fill in the foundation stubs at the top of this region.
 Object.assign(PAGES.patients, {
   sub: () => { const L = curPatients().filter(ptCurrent); const N = ptNeedsAll(); const n = L.filter(p => N.has(p.mrn)).length; return `${L.length} current · ${n ? `<strong>${n} need${n === 1 ? 's' : ''} something</strong>` : 'nothing needed'}`; },
-  tools: () => `<button class="btn sm" data-act="ptTable" aria-pressed="${!!S.ptTable}">${S.ptTable ? 'List view' : 'Table view'}</button><button class="btn sm" data-act="expOpen">Export list…</button><button class="btn sm" data-act="print" data-t="guide">Print list</button><button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>`,
+  // Table view is for the full layout; the pane keeps the list (Print list still prints the guide there).
+  tools: () => `${S.ptTable || !matchMedia('(max-width:899px)').matches ? `<button class="btn sm" data-act="ptTable" aria-pressed="${!!S.ptTable}">${S.ptTable ? 'List view' : 'Table view'}</button>` : ''}<button class="btn sm" data-act="expOpen">Export list…</button><button class="btn sm" data-act="print" data-t="guide">Print list</button><button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>`,
 });
 Object.assign(ACT_PATIENTS, {
   patient: el => openPatient(el.dataset.m),
