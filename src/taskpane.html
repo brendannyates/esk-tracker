@@ -566,6 +566,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .ptup .ptst{flex:none;margin-left:auto}
 .pg-patients .facts{margin-top:12px}
 .pg-patients .ptup + .facts{margin-top:14px}
+.pg-patients table.pthist th{white-space:normal;vertical-align:bottom}
 .pg-patients table.pthist td:first-child .muted{display:block}
 .pg-patients table.pthist td:nth-child(5),.pg-patients table.pthist td:nth-child(7){white-space:normal}
 .pg-patients .facts dd .chip,.pg-patients .facts dd .tag{white-space:normal}
@@ -3923,7 +3924,7 @@ function ptHistory(mrn){
 function ptHistRow(h){
   const v = h.v || {}, vit = v.vit || {}, bp = w => vit[w]?.bp ? esc(vit[w].bp) : '—';
   const chair = v.start != null && v.out?.at != null ? (m => `${Math.floor(m / 60)} h ${m % 60} min`)(Math.max(0, v.out.at - v.start)) : '—';
-  const st = v.out?.at != null ? `Discharged ${fmtT(v.out.at)}` : h.a ? (h.a.marked ? 'Cancelled in the tracker' : h.a.status || '') : 'Kit given, no appointment row';
+  const st = v.out?.at != null ? `Discharged ${fmtT(v.out.at)}` : h.a ? (h.a.marked ? 'Cancelled in the tracker' : h.a.status || '') : 'Kit given';   // a kit marked administered with no row on the appointment list for that date
   const tone = h.k || v.out ? 'ok' : /cancel|no.?show/i.test(st) ? 'bad' : /kept/i.test(st) ? 'ok' : '';
   const by = v.out?.by || vit.init?.by || h.k?.tech || '';
   const td = (l, v, num) => `<td class="${num ? 'num' : ''}${v === '—' ? ' nil' : ''}" data-l="${l}">${v}</td>`;   // nil cells fold away in the pane
