@@ -575,9 +575,9 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-schedule table.schtab{table-layout:fixed;min-width:600px}
 .pg-schedule table.schtab td{white-space:normal;overflow-wrap:anywhere}
 .pg-schedule table.schtab td.acts{overflow-wrap:normal}
-.pg-schedule .actw{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
-.pg-schedule .actw .btn{padding:0 10px}
-.pg-schedule .c-time{width:12%} .pg-schedule .c-pt{width:14%} .pg-schedule .c-visit{width:20%} .pg-schedule .c-med{width:21%} .pg-schedule .c-thru{width:9%} .pg-schedule .c-act{width:24%}
+.pg-schedule .actw{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px}
+.pg-schedule .actw .btn{padding:0 10px} .pg-schedule .actw .btn.ghost{padding:0 6px}
+.pg-schedule .c-time{width:11%} .pg-schedule .c-pt{width:12%} .pg-schedule .c-visit{width:17%} .pg-schedule .c-med{width:16%} .pg-schedule .c-thru{width:8%} .pg-schedule .c-act{width:36%}
 .pg-schedule table.schtab th,.pg-schedule table.schtab td{padding-left:8px;padding-right:8px}
 .pg-schedule table.schtab td[data-l="Time"]{white-space:nowrap}
 .pg-schedule table.t .pt{padding:0;min-height:0;font-weight:600;color:var(--ink);font-size:14px;text-align:left}
@@ -3912,7 +3912,8 @@ function schSync(){
   const T = todaySerial(); if (S.schDay == null) S.schDay = T;
   const here = document.getElementById('main')?.classList.contains('pg-schedule');
   if (here && S._schSet != null && S.day !== S._schSet) S.schDay = S.day;
-  if (here || S.schRange == null) S.schRange = S.range === 'week' ? 'week' : 'day'; else S.range = S.schRange;
+  // Only Schedule offers Week, and Today forces 'day': coming back with 'day' restores Schedule's own mode.
+  if (here || S.range === 'week' || S.schRange == null) S.schRange = S.range === 'week' ? 'week' : 'day'; else S.range = S.schRange;
   S.day = S.schDay; S._schSet = S.day;
 }
 const schTabs = () => { const T = todaySerial(); return [T, bizDaysAhead(T, 1), bizDaysAhead(T, 2), bizDaysAhead(T, 3)]; };
@@ -3981,10 +3982,11 @@ document.addEventListener('toggle', schToggle, true);
 
 Object.assign(PAGES.schedule, {
   label: 'Schedule',
-  title(){ schSync(); return `Schedule <span>next 3 business days, through ${fmtD(schModel().m.end, 'dow')}</span>`; },
+  // The end date sits in the sub line, not the h1 subtitle, so the title stays on one line next to the tools.
+  title(){ schSync(); return 'Schedule <span>next 3 business days</span>'; },
   sub(){ schSync(); const M = schModel(); const T = M.T;
     const n = S.A.filter(a => a.active && a.date >= T && a.date <= M.m.end).length;
-    return `${schPl(n, 'visit')} · ${M.nOpen ? schPl(M.nOpen, 'thing') + ' to do first' : 'nothing to do first'}`; },
+    return `${schPl(n, 'visit')} through ${fmtD(M.m.end, 'dow')} · ${M.nOpen ? schPl(M.nOpen, 'thing') + ' to do first' : 'nothing to do first'}`; },
   tools(){ schSync(); const T = todaySerial(), d = S.schDay; const n = S.A.filter(a => a.date === d && a.active && !a.cancelled).length;
     const on = d === T ? '' : ` (${fmtD(d, 'dow')})`;
     return `${S.store?.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">Upload appointment list</button>' : ''}<button class="btn sm" data-act="schBays" ${n ? '' : 'disabled'}>Print day sheet${on}</button><button class="btn sm" data-act="schCopy" ${n ? '' : 'disabled'}>Copy med list${on}</button>`; },
