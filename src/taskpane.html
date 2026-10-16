@@ -535,7 +535,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-inventory .inv-routine .task[aria-current="true"] + .task{border-top-color:transparent}
 .pg-inventory .inv-routine .task.bad:not(.done) .d{color:var(--bad)}
 .pg-inventory .inv-routine .task.warn:not(.done) .d{color:var(--warn)}
-.pg-inventory .inv-foot{margin:12px 0 0}
+.pg-inventory .inv-routine .task.done>.d{white-space:normal}
 .pg-inventory .inv-ws > .card + .card{margin-top:16px}
 .pg-inventory .inv-wshead{display:flex;align-items:center;gap:12px;min-height:44px;margin:18px 2px 8px}
 .pg-inventory .inv-wst{margin:0;font-size:17px;font-weight:600;color:var(--ink)}
@@ -3890,11 +3890,10 @@ function invRoutine(){
   return out;
 }
 function invRoutineHTML(steps, tab){
-  const first = steps.find(s => !s.done);
+  const first = tab === 'stock' ? steps.find(s => !s.done) : null;   // one primary per screen: an open step brings its own
   return `<section class="card inv-routine${tab !== 'stock' ? ' inv-off' : ''}" aria-label="Today’s routine"><h3>Today’s routine</h3>
     ${steps.map(s => taskRow({ t: s.t, d: s.d, done: s.done, tone: s.tone, current: s.k === tab, id: 'inv:' + s.k,
-      btn: `<button class="btn sm${s.done ? ' ghost mute' : s === first ? ' primary' : ''}" data-act="invStep" data-v="${s.k}"${s.done ? ` aria-label="View ${esc(s.t)}"` : ''}${s.k === tab ? ' aria-current="true"' : ''}>${s.done ? 'View' : s.b}</button>` })).join('')}
-    <p class="small muted inv-foot">A finished step folds to one line.</p></section>`;
+      btn: `<button class="btn sm${s.done ? ' ghost mute' : s === first ? ' primary' : ''}" data-act="invStep" data-v="${s.k}"${s.done ? ` aria-label="View ${esc(s.t)}"` : ''}${s.k === tab ? ' aria-current="true"' : ''}>${s.done ? 'View' : s.b}</button>` })).join('')}</section>`;
 }
 // Stock tiles (counts from S.K only). "Genoa or specialty" = every non-Besse pharmacy; "on order" = all pharmacies, as before.
 function invTilesHTML(){
