@@ -520,7 +520,136 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 }
 
 /* ===== page: today ===== */
-/* today styles */
+/* queue */
+.pg-today .tq{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-content:start}
+.pg-today .tq>*,.pg-today .qg{min-width:0}
+.pg-today .qrest{display:grid;gap:18px}
+@media (min-width:1180px){   /* full layout: the on-site groups are plain queue lists (the global .qstrip tile look is for the stacked layout) */
+  .pg-today .qstrip{display:grid;gap:18px;overflow:visible;padding:0;margin:0;scroll-snap-type:none}
+  .pg-today .qstrip .qrow{width:100%;min-width:0;max-width:none;background:transparent;box-shadow:none}
+  .pg-today .qstrip .qrow:hover{background:var(--surface2)}
+  .pg-today .qstrip .qrow[aria-current="true"]{background:var(--surface);box-shadow:var(--shadow)}
+}
+.pg-today .qg h2{margin:0 0 4px 12px}
+.pg-today .qg .none{margin:0 12px;color:var(--faint);font-size:14px}
+.pg-today .qfold>summary{list-style:none;cursor:pointer;border-radius:10px}
+.pg-today .qfold>summary::-webkit-details-marker{display:none}
+.pg-today .qfold>summary h2{display:flex;gap:6px;align-items:center;min-height:32px;margin-bottom:0}
+.pg-today .qfold>summary h2::after{content:"▸";color:var(--faint)}
+.pg-today .qfold[open]>summary h2::after{content:"▾"}
+.pg-today .qfold[open]>summary{margin-bottom:4px}
+.pg-today .qfold .qmore{display:flex;align-items:center;min-height:32px;margin-left:12px;color:var(--accent);font-size:14px;font-weight:500}
+.pg-today .qfold[open] .qmore{display:none}
+.pg-today .qrow .who{flex:1;min-width:0;display:block}
+.pg-today .qrow .t{display:block;font-weight:600}
+.pg-today .qrow .t small{font-weight:400;font-size:13px;color:var(--muted);margin-left:6px}
+.pg-today .qrow .s{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pg-today .qtags{display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex:none}
+/* live text: the timer sets className to "st <tone>" */
+.pg-today .st.bad{color:var(--bad);font-weight:500} .pg-today .st.warn{color:var(--warn);font-weight:500} .pg-today .st.ok{color:var(--ok);font-weight:500}
+.pg-today .cxlist{margin:0 12px;color:var(--muted)} .pg-today .cxlist>summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
+.pg-today .cxlist .row{color:var(--ink)}
+/* selected visit */
+.pg-today .tdet .cols2{margin-top:18px}
+.pg-today .dhead{display:flex;justify-content:space-between;gap:12px 16px;align-items:flex-start;flex-wrap:wrap}
+.pg-today .dfacts{margin-top:8px;color:var(--muted)}
+.pg-today .dfacts .btn.inline{color:var(--muted)}
+.pg-today .dtools{display:flex;gap:4px;flex-wrap:wrap}
+.pg-today .lead{margin:0}
+.pg-today .lead .tag{vertical-align:2px}
+.pg-today .talerts{display:grid;gap:8px;margin-top:14px}
+.pg-today .alert .abtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
+.pg-today .alert .snz{margin-left:4px}
+.pg-today .tside .facts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.pg-today .tside .facts>div{display:grid;grid-template-columns:minmax(0,1fr);gap:2px}
+.pg-today .tside .facts dt{font-size:13px}
+.pg-today .tact{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.pg-today .tfold>summary{cursor:pointer;color:var(--muted);font-size:13px;min-height:36px;display:flex;align-items:center;gap:6px;list-style:none}
+.pg-today .tfold>summary::-webkit-details-marker{display:none}
+.pg-today .tfold>summary::before{content:"▸";color:var(--faint);font-size:13px;font-weight:400}
+.pg-today .tfold[open]>summary::before{content:"▾"}
+.pg-today .tmainc .tfold{margin-top:14px}
+.pg-today .tside h3{margin-bottom:10px}
+.pg-today .tsec{margin-top:22px}
+.pg-today details.tsec>summary,.pg-today .tdoc.tfold>summary{font-size:17px;font-weight:600;color:var(--ink)}
+.pg-today .pdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.pg-today .tmed{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;margin-right:8px}
+.pg-today .kit{font-size:13px;color:var(--muted)}
+.pg-today .kit .sn{font-size:12.5px;color:var(--ink);letter-spacing:.2px}
+.pg-today .tact{margin-top:16px}
+.pg-today .tact+.track,.pg-today .tact+.steps{margin-top:18px}
+.pg-today .facts dd .snz{margin-left:8px}
+.pg-today .tleave .task:first-child{padding-top:0}
+.pg-today .tleave .tdoc{padding:8px 0;border-top:1px solid var(--line)}
+.pg-today .tleave .tdoc h3,.pg-today .tleave .tdoc>summary{font-size:15px;font-weight:500;margin:4px 0}
+/* documentation: buttons styled as checks (no data-act on a real checkbox) */
+.pg-today .dlist{list-style:none;margin:0;padding:0;display:grid}
+.pg-today .dck{display:flex;align-items:center;gap:10px;min-height:46px}
+.pg-today .dck>button:first-child{display:flex;align-items:center;gap:14px;flex:1;min-width:0;min-height:44px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:0;border-radius:10px}
+.pg-today .dck .box{width:22px;height:22px;border-radius:6px;box-shadow:inset 0 0 0 2px var(--faint);display:inline-grid;place-items:center;font-size:13px;font-weight:600;flex:none}
+.pg-today .dck.on .box{background:var(--accent);color:var(--accent-ink);box-shadow:none}
+.pg-today .dck.on>button span:last-child{color:var(--muted)}
+.pg-today .dck a{color:var(--accent);text-decoration:none;font-size:13px;font-weight:500;padding:10px 6px}
+.pg-today .dck.auto{min-height:36px;gap:14px;font-size:13px;color:var(--muted)}
+.pg-today .dck.auto .box{width:22px;height:22px}
+.pg-today .dck.auto .muted{font-size:13px}
+/* notes */
+.pg-today .notebox{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pg-today .note{font-size:14px;padding:6px 6px 6px 12px;border-radius:10px;background:var(--info-soft)}
+.pg-today .note .nby{font-size:12px}
+.pg-today .addnote{border:0;background:var(--surface2);color:var(--ink);border-radius:10px;min-height:38px;padding:0 12px;font-size:14px;font-weight:500}
+.pg-today .noteIn{max-width:none;flex:1;min-width:200px}
+/* timeline (Room → 40-min → Final vitals → Discharge) and steps */
+.pg-today .track{height:74px;margin:18px 12px 2px}
+.pg-today .track .tbar,.pg-today .track .tfill{top:24px}
+.pg-today .track .tfill{background:var(--accent)}
+.pg-today .track .tmark{top:17px;width:20px;height:20px;box-shadow:inset 0 0 0 2px var(--faint)}
+.pg-today .track .tmark.done{background:var(--accent);box-shadow:none} .pg-today .track .tmark.late{background:var(--bad);box-shadow:none}
+.pg-today .track .tmark.soon{box-shadow:inset 0 0 0 3px var(--warn)} .pg-today .track .tmark.due{box-shadow:inset 0 0 0 3px var(--accent)}
+.pg-today .track .tlb{top:42px;font-size:12px;line-height:1.3}
+.pg-today .track .tlb b{font-size:14px;font-weight:600}
+.pg-today .track .tlb.start{transform:translateX(-10px)} .pg-today .track .tlb.end{transform:translateX(calc(-100% + 10px))}
+.pg-today .track .tnow{top:12px;height:30px}
+.pg-today .steps{margin:8px 0 0}
+.pg-today .step{grid-template-columns:26px minmax(0,1fr) auto;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+.pg-today .step:first-child{border-top:0}
+.pg-today .step .n{width:24px;height:24px;font-size:12px;font-weight:600}
+.pg-today .step.done .n{background:var(--accent-soft);color:var(--accent)}
+.pg-today .step.late .n{background:var(--bad);color:var(--bad-ink)} .pg-today .step.soon .n{background:var(--warn);color:var(--surface)}
+.pg-today .step .t{font-weight:500;font-size:15px} .pg-today .step.upcoming .t{font-weight:400}
+.pg-today .step .m{font-size:13px;gap:4px 8px;margin-top:2px}
+.pg-today .step .m .vv{font-size:13px;color:var(--ink);min-height:0}
+.pg-today .step .w{font-size:13px}
+.pg-today .step .tm{font-size:14px;font-weight:600;min-height:32px}
+.pg-today .vdue .chip{border:1px dashed currentColor;min-height:30px;padding:2px 10px}
+.pg-today .tempty{max-width:560px}
+.pg-today .tempty .btn{margin-top:12px}
+/* stacked layout (< 1180 px, and the Excel pane): the queue's on-site groups become a horizontal strip of tiles */
+@media (max-width:1179px){
+  .pg-today .tq{gap:10px;margin-bottom:12px}
+  .pg-today .qstrip{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;margin:0 -2px}
+  .pg-today .qstrip .qg{display:contents}
+  .pg-today .qstrip .qg>h2{flex:none;align-self:center;margin:0;padding:0 4px 0 2px;max-width:84px;line-height:1.25;scroll-snap-align:start}   /* snap to the label so "Needs you now" stays in view */
+  .pg-today .qstrip .none{flex:none;align-self:center;margin:0 8px 0 0;font-size:13px}
+  .pg-today .qstrip .qrow{flex:none;width:210px;min-height:66px;align-items:flex-start;background:var(--surface);box-shadow:var(--shadow)}
+  .pg-today .qstrip .qrow .qdot{margin-top:6px}
+  .pg-today .qstrip .qrow .s,.pg-today .qstrip .qrow .st{white-space:normal}
+  .pg-today .qstrip .qrow[aria-current="true"]{box-shadow:0 0 0 2px var(--accent)}
+  .pg-today .qstrip .qtags{display:none}
+  .pg-today .qrest{gap:6px}
+  .pg-today .qrest .qg h2{margin-left:4px}
+  .pg-today .qrest .none{margin-left:4px}
+}
+@media (max-width:899px){
+  .pg-today .code{font-size:24px}
+  .pg-today .dtools{width:100%;margin-left:-12px}
+  .pg-today .track{margin:14px 8px 0}
+  .pg-today .tact .btn{width:100%}
+}
+@media (max-width:519px){   /* a due chip goes under its step title instead of squeezing it */
+  .pg-today .step:has(.vdue){grid-template-columns:26px minmax(0,1fr)}
+  .pg-today .step:has(.vdue) .w{grid-column:2;justify-self:start;text-align:left}
+}
 /* ===== /page: today ===== */
 
 /* ===== page: schedule ===== */
@@ -2360,38 +2489,11 @@ function actionHTML(){
   </div>`;
 }
 function todayHTML(){
-  if (S.range === 'week') return weekHTML();
-  const T = todaySerial(); const day = S.day; const items = todayModel(day);
-  const act = items.filter(i => i.a.active);
-  const done = act.filter(i => i.adminKit).length, noKit = act.filter(i => itemState(i) === 'bad').length, check = act.filter(i => itemState(i) === 'check').length;
-  const am = act.filter(i => (i.a.time ?? 0) < 12 * 60).length, pm = act.length - am;
-  return `
-  <div class="card">
-    <div class="row" style="justify-content:center"><div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="row" style="margin-top:10px"><button class="btn sm" data-act="day" data-d="-1" aria-label="Previous day">◀</button>
-      <div class="grow" style="text-align:center;font-weight:700">${day === T ? 'Today · ' : ''}${DAYNAME[dowOf(day)]}, ${fmtD(day, 'full')}</div>
-      <button class="btn sm" data-act="day" data-d="1" aria-label="Next day">▶</button>${day !== T ? '<button class="btn sm" data-act="day" data-d="0">Back to today</button>' : ''}</div>
-    <div class="row small" style="margin-top:10px;gap:8px;justify-content:center"><span class="chip">${done}/${act.length} given</span>${(() => { const dd = act.filter(i => docState(i).done).length; return act.length ? `<span class="chip ${dd === act.length ? 'ok' : ''}">${dd}/${act.length} documented</span>` : ''; })()}${check ? `<span class="chip warn">${check} to confirm</span>` : ''}${noKit ? `<span class="chip bad">${noKit} with no kit</span>` : ''}</div>
-  </div>
-  <div class="cols swap"><div>
-    ${actionHTML()}
-    ${startsHTML()}
-    ${schedHTML()}
-  </div><div>
-    <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm hdrc" data-act="bays" ${act.length ? '' : 'disabled'} title="Vitals Tracker &amp; bays" aria-label="Vitals Tracker and bays">🖨<span class="hl"> Vitals Tracker &amp; bays</span></button><button class="btn sm hdrc" data-act="copyPull" ${act.length ? '' : 'disabled'} title="Copy med list" aria-label="Copy med list">⧉<span class="hl"> Copy med list</span></button></h2>${toolbarHTML()}
-      ${(() => { if (day !== T) return ''; const now = nowMin();
-        // roomed and not discharged; gone an hour after final vitals were due, or once someone newer is roomed in the same bay
-        const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out && now <= disAt(x.v.start) + 60);
-        const bay = new Map(); for (const x of inC){ const b = String(x.v.bay || '').trim().toLowerCase() || 'k:' + x.i.a.key; const o = bay.get(b); if (!o || x.v.start > o.v.start) bay.set(b, x); }
-        const L = [...bay.values()].sort((p, q) => String(p.v.bay || '~').localeCompare(String(q.v.bay || '~'), undefined, { numeric: true }) || p.v.start - q.v.start);
-        const tile = x => { const v = x.v, key = x.i.a.key, mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin');
-          const d = !mid ? { what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' } : !fin ? { what: 'Final vitals', at: disAt(v.start), kind: 'dis' } : null;
-          return `<button class="fl" data-act="goCard" data-k="${esc(key)}" data-exp="${disAt(v.start) + 60}"><span>${v.bay ? `<span class="bay">Bay ${esc(v.bay)}</span> ` : ''}<span class="name">${esc(nm(x.i.a.mrn))}</span></span>${d ? `<span class="st ${dueCls(d, true)}" data-due="${d.at}" data-what="${esc(d.what)}" data-kind="${d.kind}" data-today="1">${esc(dueText(d, true))}</span>` : '<span class="st ok">Ready to discharge</span>'}</button>`; };
-        return L.length ? `<div class="floor"><b>On site · ${L.length}</b><div class="flrow">${L.map(tile).join('')}</div></div>` : ''; })()}
-      ${(() => { const live = items.filter(i => !i.a.cancelled), shown = filterSort(live, itemState); return live.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
-      ${cancelledHTML(items)}
-    </div>
-  </div></div>`;
+  S.day = todaySerial();   // Administer, bays and Copy med list read S.day; Today is always today
+  const m = tdModel(); S._tdSig = tdSig(m);
+  if (!m.all.length && !m.cx.length) return '<div class="card tempty"><p class="lead">No ESK visits today.</p><p class="muted">Upcoming visits and the week are on Schedule.</p><button class="btn" data-act="view" data-v="schedule">Open Schedule</button></div>';
+  const sel = tdPick(m);
+  return pageCols('q', tdQueue(m, sel), tdDetail(sel));
 }
 // ---------- cancelled visits: marked here (saved with the workbook) or cancelled in NextGen; listed under the day, not in it ----------
 async function setCancelled(key, on){
@@ -2403,7 +2505,8 @@ async function setCancelled(key, on){
 }
 function cancelledHTML(items){
   const c = items.filter(i => i.a.cancelled); if (!c.length) return '';
-  return `<details class="small noprint" style="margin-top:10px"><summary class="muted">Cancelled · ${c.length}</summary>${c.map(i => `<div class="row" style="gap:8px;margin-top:4px"><span>${fmtT(i.a.time)}</span><b>${esc(nm(i.a.mrn))}</b><span class="muted">${i.a.marked ? 'marked in the tracker' : 'cancelled in NextGen'}</span>${i.a.marked ? `<button class="btn sm ghost" data-act="apptUncancel" data-k="${esc(i.a.key)}">Undo</button>` : ''}</div>`).join('')}</details>`;
+  const id = 'cx:' + c[0].a.date;
+  return `<details class="cxlist small noprint" data-open="${id}"${tdOpen(id, false) ? ' open' : ''}><summary>Cancelled · ${c.length}</summary>${c.map(i => `<div class="row" style="gap:8px;margin-top:4px"><span>${fmtT(i.a.time)}</span><b>${esc(nm(i.a.mrn))}</b><span class="muted">${i.a.marked ? 'marked in the tracker' : 'cancelled in NextGen'}</span>${i.a.marked ? `<button class="btn sm ghost" data-act="apptUncancel" data-k="${esc(i.a.key)}">Undo</button>` : ''}</div>`).join('')}</details>`;
 }
 // ---------- daily appointment list: the panel notes the day the Appt List (NextGen) table last changed ----------
 function apptSig(){ const s = JSON.stringify((S.tables.appts?.values || []).filter(r => r.some(v => v !== '' && v != null))); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
@@ -2585,10 +2688,10 @@ const dueChip = (due, isToday) => `<span class="chip ${dueCls(due, isToday)}" da
 // Bottom row of the appointment card: the kit (dose, serial, received), then for today's visits the bay, timers, the three vitals and the Tx report.
 function kitRowHTML(i){
   const k = i.adminKit || i.suggest; const au = k && !i.adminKit ? auditStatus(k) : null;
-  return `<span class="kit"><span class="mono sn">${i.inf.mg ?? '?'} mg</span>${k ? `<span class="mono sn">SN ${esc(k.serial)}</span><span class="muted">rec ${fmtD(k.received)}</span>` : ''}${au ? `<span class="${au.cls === 'warn' ? 'warnText' : 'muted'}">${esc(au.text)}</span>` : ''}</span>`;
+  return `<span class="kit">${[`${i.inf.mg ?? '?'} mg`, k ? `<span class="mono sn">SN ${esc(k.serial)}</span>` : '', k ? `received ${fmtD(k.received)}` : '', au ? `<span class="${au.cls === 'warn' ? 'warnText' : ''}">${esc(au.text)}</span>` : ''].filter(Boolean).join(' · ')}</span>`;
 }
 const txBtnLabel = v => v?.out ? 'Tx report' : 'Record vitals';
-const txBtn = (key, v) => `<button class="btn sm ${finalDue(v) && !v.out ? 'primary' : ''}" data-act="vOut" data-k="${esc(key)}" ${v?.start != null && !v.out ? `data-coat="${disAt(v.start)}"` : ''} title="Vitals, Tx report draft and discharge">${txBtnLabel(v)}${v?.savedAt && !v.out ? ' · draft saved' : ''}</button>`;
+const txBtn = (key, v, pri) => `<button class="btn ${pri ? 'primary lg' : 'sm'}" data-act="vOut" data-k="${esc(key)}" ${pri && v?.start != null && !v.out ? `data-coat="${disAt(v.start)}"` : ''} title="Vitals, Tx report draft and discharge">${txBtnLabel(v)}${v?.savedAt && !v.out ? ' · draft saved' : ''}</button>`;
 // Today's timeline: Room → 40-min vitals → Final vitals → Discharge. Equal segments; the fill moves through each by the clock.
 const v40At = v => v.start + (+CFG.vitalsMin || 40);
 function trackPos(v, now){
@@ -2606,24 +2709,25 @@ function trackHTML(key, v){
     ${v.out ? '' : `<div class="tnow" style="left:${pct(p)}"></div>`}</div>`;
 }
 // The breakdown under today's card: one line per step; recorded values replace their prompt (click to edit).
-function stepsHTML(i, v){
+function stepsHTML(i, v, pri){
   const a = i.a, key = a.key, k = esc(key), now = nowMin(), roomed = !!v && v.start != null;
   const init = vitGet(key, 'init'), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), kit = i.adminKit;
   const tm = (t, act, w) => `<button class="linkbtn tm" data-act="${act}" data-k="${k}"${w ? ` data-w="${w}"` : ''} title="Edit">${fmtT(t)}</button>`;
   const val = (x, act, w) => `<button class="linkbtn vv" data-act="${act}" data-k="${k}"${w ? ` data-w="${w}"` : ''} title="Edit">${esc(vitText(x))}</button>`;
   const md = roomed && { what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' }, fd = roomed && { what: 'Final vitals', at: disAt(v.start), kind: 'dis' };
   const L = [
-    roomed ? { c: 'done', t: `Roomed${v.bay ? ' · Bay ' + esc(v.bay) : ''}`, m: init ? 'Initial ' + val(init, 'vit', 'init') : `<button class="linkbtn" data-act="vit" data-k="${k}" data-w="init">+ Initial vitals</button>`, w: tm(v.start, 'vStart') }
-      : { c: 'active', t: 'Room time + Initial vitals', m: a.time != null && !kit ? dueChip({ what: 'Expected', at: a.time, kind: 'arr' }, true) : '', w: `<button class="btn sm primary" data-act="vStart" data-k="${k}">+ Room + vitals</button>` },
+    roomed ? { c: 'done', t: `Roomed${v.bay ? ' · Bay ' + esc(v.bay) : ''}`, m: init ? 'Initial ' + val(init, 'vit', 'init') : `<button class="linkbtn" data-act="vit" data-k="${k}" data-w="init">Add initial vitals</button>`, w: tm(v.start, 'vStart') }
+      : { c: 'active', t: 'Room time + Initial vitals', m: a.time != null ? `Booked ${fmtT(a.time)}` : '', w: pri === 'vStart' ? '' : `<button class="btn sm" data-act="vStart" data-k="${k}">Room time + Initial vitals</button>` },
     kit ? { c: 'done', t: 'Dose given', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · tracker and med logs updated`, w: '' }
-      : { c: roomed ? 'active' : 'upcoming', t: 'Give dose', m: SAFE(i.inf.pharm) + kitRowHTML(i), w: `<button class="btn sm ${roomed ? 'primary' : ''}" data-act="admin" data-k="${k}">Administer</button>` },
+      : { c: roomed ? 'active' : 'upcoming', t: 'Give dose', m: SAFE(i.inf.pharm) + kitRowHTML(i), w: pri === 'admin' ? '' : `<button class="btn sm" data-act="admin" data-k="${k}">Administer</button>` },
     mid ? { c: 'done', t: `${CFG.vitalsMin}-min vitals`, m: val(mid, 'vit', 'mid'), w: mid.at != null ? tm(mid.at, 'vit', 'mid') : '' }
       : roomed ? { c: 'active ' + markCls('mid', md.at, now), t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<button class="vdue" data-act="vit" data-k="${k}" data-w="mid" title="Record the ${esc(CFG.vitalsMin)}-min vitals">${dueChip(md, true)}</button>` }
-      : { c: 'upcoming', t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<span class="muted">${esc(CFG.vitalsMin)} min after room</span>` },
+      : { c: 'upcoming', t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<span class="muted">${esc(CFG.vitalsMin)} min after room time</span>` },
     fin ? { c: 'done', t: 'Final vitals', m: val(fin, 'vOut'), w: fin.at != null ? tm(fin.at, 'vOut') : '' }
       : roomed ? { c: mid || now > md.at + GRACE ? 'active' : 'upcoming', t: 'Final vitals', m: '<span>in Record vitals</span>', w: `<button class="vdue" data-act="vOut" data-k="${k}" title="Final vitals are entered in Record vitals">${dueChip(fd, true)}</button>` }
-      : { c: 'upcoming', t: 'Final vitals', m: '', w: '' },
-    { c: roomed && finalDue(v) ? 'active' : 'upcoming', t: 'Discharge', m: '', w: roomed ? `<span class="muted">after ${fmtT(fd.at)}</span>` : '' }
+      : { c: 'upcoming', t: 'Final vitals', m: '', w: `<span class="muted">${esc(CFG.disAfter)} min after that</span>` },
+    v?.out ? { c: 'done', t: 'Discharged', m: '', w: tm(v.out.at, 'vEdit') }
+      : { c: roomed && finalDue(v) ? 'active' : 'upcoming', t: 'Discharge', m: roomed && finalDue(v) ? '<span>Discharge &amp; copy note is in Record vitals</span>' : '', w: roomed ? `<span class="muted">after ${fmtT(fd.at)}</span>` : '' }
   ];
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
 }
@@ -2705,7 +2809,7 @@ function openBays(){
   const draw = () => { const bad = bayClashes(day);
     openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after room time; final vitals ${esc(CFG.disAfter)} min after that.</div>
       <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
-      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b> <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
+      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td>${day === todaySerial() ? `<button class="linkbtn" data-act="goCard" data-k="${esc(i.a.key)}" title="Open on Today">${esc(nm(i.a.mrn))}</button>` : `<b>${esc(nm(i.a.mrn))}</b>`} <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
       </tbody></table></div>
       <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" data-act="baysSave">Save</button><button class="btn primary" data-act="baysPrint">Save &amp; print Vitals Tracker</button></div>`, true); };
   S.baysDraw = draw; draw();
@@ -2853,37 +2957,33 @@ function docRowHTML(i){
 }
 // Card checklist (outer right): documentation as checkboxes, plus the PCT's own to-dos for the visit.
 function checklistHTML(i){
-  const d = docState(i); const key = esc(i.a.key); const given = !!i.adminKit; const medInv = (S.shared || {}).medInvUrl;
+  const d = docState(i), key = esc(i.a.key), given = !!i.adminKit, medInv = (S.shared || {}).medInvUrl;
   const box = on => `<span class="box" aria-hidden="true">${on ? '✓' : ''}</span>`;
+  const auto = `<li class="dck auto${given ? ' on' : ''}">${box(given)}<span>ESK Tracker and med logs <span class="muted">· ${given ? 'done when the kit was administered' : 'filled in when you Administer'}</span></span></li>`;
   const row = ([t, l]) => {
-    if (t === 'tracker' || t === 'logs') return `<li class="ck auto ${d[t] ? 'on' : ''}" title="${d[t] ? 'Done when the kit was marked administered' : 'Checks itself when you Administer'}">${box(d[t])}<span>${l}</span><span class="muted">auto</span></li>`;
-    const g = docGet(i.a.key, t); const tip = g ? `Marked by ${esc(g.by || '—')} — click to undo` : 'Click to mark done';
-    const link = t === 'rems' ? `<a href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site">↗</a>` : t === 'medinv' && medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener" title="Open the Medication Inventory Tracker">↗</a>` : t === 'tx' ? '<span class="muted">NextGen</span>' : '';
-    return `<li class="ck ${g ? 'on' : ''}"><button data-act="docTog" data-k="${key}" data-t="${t}" title="${tip}">${box(g)}<span>${l}</span></button>${link}</li>`;
+    const g = docGet(i.a.key, t); const tip = g ? `Marked by ${esc(g.by || '—')}. Click to undo.` : 'Click to mark done';
+    const link = t === 'rems' ? `<a href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site">Open ↗</a>` : t === 'medinv' && medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener" title="Open the Medication Inventory Tracker">Open ↗</a>` : '';
+    return `<li class="dck${g ? ' on' : ''}"><button data-act="docTog" data-k="${key}" data-t="${t}" title="${tip}" aria-pressed="${!!g}">${box(g)}<span>${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</span></button>${link}</li>`;
   };
-  const own = todosFor(i.a.key).map((x, n) => `<li class="ck own ${x.done ? 'on' : ''}"><button data-act="todoTog" data-k="${key}" data-i="${n}" title="${x.done ? `Done by ${esc(x.done.by || '—')} — click to undo` : 'Click to mark done'}">${box(x.done)}<span>${esc(x.t)}</span></button><button class="x" data-act="todoDel" data-k="${key}" data-i="${n}" aria-label="Remove to-do">×</button></li>`).join('');
-  return `<div class="cklist"><div class="ckh"><b>Checklist</b><span class="${d.done ? 'okText' : given ? 'warnText' : 'muted'}">${d.n}/${d.total}</span></div><ul>${docItems(i).map(row).join('')}${own}</ul></div>`;   // routine items only; to-dos added before this change still show
+  const own = todosFor(i.a.key).map((x, n) => `<li class="dck${x.done ? ' on' : ''}"><button data-act="todoTog" data-k="${key}" data-i="${n}" title="${x.done ? `Done by ${esc(x.done.by || '—')}. Click to undo.` : 'Click to mark done'}" aria-pressed="${!!x.done}">${box(x.done)}<span>${esc(x.t)}</span></button><button class="x" data-act="todoDel" data-k="${key}" data-i="${n}" aria-label="Remove to-do">×</button></li>`).join('');   // to-dos added before this change still show
+  const list = `<ul class="dlist">${auto}${docItems(i).filter(([t]) => t !== 'tracker' && t !== 'logs').map(row).join('')}${own}</ul>`;
+  const head = `Documentation <span class="${d.done ? 'okText' : given ? 'warnText' : 'muted'}">${d.n}/${d.total}${d.done ? ' ✓' : ''}</span>`;
+  const id = 'doc:' + i.a.key;
+  return d.done ? `<details class="tdoc tfold" data-open="${esc(id)}"${tdOpen(id, false) ? ' open' : ''}><summary>${head}</summary>${list}</details>` : `<div class="tdoc"><h3>${head}</h3>${list}</div>`;
 }
 // Card to-dos (left of the checklist): what this patient needs before they leave, one action each.
+// Right-column "To do": what isn't already a day-of alert or the Booked line (today: re-assign this kit), plus the dismissed footer for all of the visit's to-dos.
 function actionBullets(i){
-  const a = i.a, p = i.p, m = esc(a.mrn), T = todaySerial(); const k = i.adminKit || i.suggest; const L = [];
-  if (i.needsSched){ const sd = taskGet(a.mrn, 'sched');
-    L.push(['sched', sd ? `<li class="done">Scheduled out <span class="muted">${esc(sd.by)} ${fmtD(fromIso(sd.at))}</span><button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button></li>`
-      : `<li class="warn"><b>Schedule out</b> <span class="muted">booked thru ${i.thru ? fmtD(i.thru) : '—'}</span><button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button></li>`]); }
-  if (i.needsProto) L.push(['proto', `<li class="bad"><b>New protocol + consent</b> <span class="muted">${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn" data-act="consent" data-m="${m}">Print consent</button><button class="linkbtn" data-act="protoRenew" data-m="${m}">Renewed…</button></li>`]);
-  if (i.needsMadrs) L.push(['madrs', `<li class="bad"><span class="mpill">MADRS</span> <b>Needs MADRS</b> <span class="muted">auth ${p.authExp < T ? 'expired' : 'exp'} ${fmtD(p.authExp)}</span><button class="linkbtn" data-act="madrsDo" data-m="${m}">Collected…</button></li>`]);
-  if (i.inf.mg === 56 && !a.isStart) L.push(['dose', '<li class="warn">56 mg — verify the dose</li>']);
-  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1); if (adj) L.push(['b2b', `<li class="bad">Back-to-back with ${fmtD(adj.date, 'dow')}</li>`]);
-  if (S._re?.has(k?.id)) L.push(['reas', '<li class="warn">Re-assign this kit</li>']);
-  const id = kind => `todo|${a.mrn}|${kind}|${a.date}`; const V = L.filter(([kind]) => !hidden(id(kind))); const n = snzCount(L.map(([kind]) => id(kind)));
-  return `<div class="todos"><div class="ckh"><b>To do</b></div>${V.length ? `<ul>${V.map(([kind, h]) => h.replace(/<\/li>$/, `${snzBtns(id(kind))}</li>`)).join('')}</ul>` : '<div class="small okText">Nothing due ✓</div>'}${snzFoot(n)}${notesHTML(a)}</div>`;
+  const a = i.a, n = snzCount(tdKinds(i).map(kind => tdId(a, kind))), L = [];
+  if (tdKinds(i).includes('reas') && !hidden(tdId(a, 'reas'))) L.push(taskRow({ t: 'Re-assign this kit', d: `It is labeled for this patient and expires soon. ${snzBtns(tdId(a, 'reas'))}`, btn: '<button class="btn sm" data-act="goInv" data-v="assign">Open Meds</button>', tone: 'warn' }));
+  return L.length || n ? `<div class="tsec ttodo"><h3>To do</h3>${L.join('')}${snzFoot(n)}</div>` : '';
 }
 // Appointment notes / alerts (saved with the workbook, per patient), shown under To do
 const notesFor = mrn => (S.notes || {})[mrn] || [];
 function notesHTML(a){
   const notes = notesFor(a.mrn), adding = S.noteFor === a.key;
   return `<div class="notebox">${notes.map((n, idx) => `<span class="note">${esc(n.t)}<span class="nby">${esc(n.by || '')} ${fmtD(fromIso(n.at))}</span><button class="x" data-act="noteDel" data-m="${esc(a.mrn)}" data-i="${idx}" aria-label="Remove note">×</button></span>`).join('')}
-    ${adding ? `<input id="noteIn" class="fld noteIn" data-note="${esc(a.mrn)}" placeholder="Note or alert — Enter to save" autocomplete="off">` : `<button class="addnote" data-act="noteAdd" data-k="${esc(a.key)}" title="Add a note or alert">+ ${notes.length ? '' : 'note / alert'}</button>`}</div>`;
+    ${adding ? `<input id="noteIn" class="fld noteIn" data-note="${esc(a.mrn)}" placeholder="Note or alert. Press Enter to save" autocomplete="off" aria-label="New note">` : `<button class="addnote" data-act="noteAdd" data-k="${esc(a.key)}" title="Add a note or alert for this patient">Add a note</button>${notes.length ? '' : '<span class="muted small">Anything the next PCT should know.</span>'}`}</div>`;
 }
 // Provider banner color: a fixed palette (white text passes contrast on each), picked by the provider's name so it stays the same everywhere.
 const PROV_COLORS = ['#2a5f9e', '#1f7a62', '#7b3fa0', '#9a5a00', '#2e6b2f', '#a3285d', '#46606e', '#6d4c41', '#3949ab', '#00796b'];
@@ -3736,15 +3836,200 @@ function pageCols(kind, left, right){ return `<div class="cols2 ${kind}"><div cl
 // ===== /ui kit =====
 
 // ===== page: today =====
-const ACT_TODAY = {};
+// Today is always today. Queue (Needs you now, In chair, Not roomed yet, Done today, Not coming, Cancelled) | the selected visit.
+// Pure helpers read the existing models only (todayModel, visitGet, vitGet, finalDue, docState…); nothing here writes.
+const TD_SOON = 5;   // minutes: 40-min vitals count as "due soon" from here (SPEC §1 urgency)
+function tdOpen(id, def){ return S.open && Object.prototype.hasOwnProperty.call(S.open, id) ? !!S.open[id] : !!def; }
+// A <details> drawn open fires "toggle" once on creation, and the shared listener would then store that default in S.open for good.
+// Folds whose default can change (selection, width) carry data-tdflt while open by default; that first toggle is not recorded.
+function tdOpenAttr(id, def){ const set = S.open && Object.prototype.hasOwnProperty.call(S.open, id); return set ? (S.open[id] ? ' open' : '') : def ? ' open data-tdflt=""' : ''; }
+document.addEventListener('toggle', function tdFirstToggle(ev){ const d = ev.target; if (d.dataset && 'tdflt' in d.dataset){ delete d.dataset.tdflt; if (d.open) ev.stopImmediatePropagation(); } }, true);   // registered before the shared toggle listener, so it runs first
+const tdType = a => a.isStart ? 'Start' : a.isEFU ? 'Follow-up' : (a.event || 'Visit');
+// Live text: the 20 s timer rewrites textContent and replaces className with "st <tone>", so nothing else goes on this span.
+const tdLive = due => `<span class="st ${dueCls(due, true)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="1">${esc(dueText(due, true))}</span>`;
+const tdM40 = v => ({ what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' });
+const tdFin = v => ({ what: 'Final vitals', at: disAt(v.start), kind: 'dis' });
+const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'Rescue: ' + v.rescue.map(r => r.med).join(', ')) : '';
+
+// One queue row per visit: group, sort rank, dot tone, state line and up to two tags.
+function tdRow(i, now, on){
+  const a = i.a, key = a.key, v = visitGet(key);
+  const r = { i, a, v, key, grp: 'wait', rank: 9, at: a.time ?? 0, tone: '', line: '' };
+  r.tags = [i.noKit && !i.adminKit && a.active ? tag('bad', 'No kit') : '', i.needsMadrs && a.active ? tag('bad', 'MADRS') : '', a.isStart ? tag('info', 'Start') : ''].filter(Boolean).slice(0, 2);
+  if (!a.active){ r.grp = 'off'; r.line = esc(a.hold ? 'Hold' : a.status || 'Not active'); return r; }
+  if (v?.out){ r.grp = 'done'; r.at = v.out.at; r.line = `Discharged ${fmtT(v.out.at)}`; return r; }
+  if (v?.start == null){ r.line = a.time == null ? 'No appointment time' : i.adminKit ? `Given, no room time · booked ${fmtT(a.time)}` : tdLive({ what: 'Expected', at: a.time, kind: 'arr' }); return r; }
+  if (!on.has(key)){ r.grp = 'done'; r.lost = true; r.at = v.start; r.line = 'Not discharged in the tracker'; return r; }
+  const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = v40At(v) - now, fd = finalDue(v);
+  const late = !mid && d40 < 0, soon = !mid && d40 >= 0 && d40 <= TD_SOON, noDose = !i.adminKit;
+  r.grp = late || soon || noDose || fd ? 'need' : 'chair';
+  r.rank = late ? 0 : soon ? 1 : noDose ? 2 : fd ? 3 : 4;
+  r.tone = late ? 'late' : soon || r.rank === 2 ? 'soon' : 'ok';
+  const nx = !mid ? tdM40(v) : !fin ? tdFin(v) : null; r.at = nx ? nx.at : disAt(v.start);
+  r.line = late || soon ? tdLive(tdM40(v)) : noDose ? `Roomed ${fmtT(v.start)} · dose not recorded` : nx ? tdLive(nx) : 'Ready to discharge';
+  return r;
+}
+// Today's groups. On site = roomed, not discharged, at most 60 min past final vitals due, one per bay (the most recently roomed).
+function tdModel(){
+  const T = todaySerial(), now = nowMin(), items = todayModel(T);
+  const live = items.filter(i => !i.a.cancelled), act = live.filter(i => i.a.active);
+  const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out && now <= disAt(x.v.start) + 60);
+  const bay = new Map(); for (const x of inC){ const b = String(x.v.bay || '').trim().toLowerCase() || 'k:' + x.i.a.key; const o = bay.get(b); if (!o || x.v.start > o.v.start) bay.set(b, x); }
+  const on = new Set([...bay.values()].map(x => x.i.a.key));
+  const rows = live.map(i => tdRow(i, now, on)); const g = k => rows.filter(r => r.grp === k);
+  const need = g('need').sort((x, y) => x.rank - y.rank || x.at - y.at), chair = g('chair').sort((x, y) => x.at - y.at);
+  const wait = g('wait').sort((x, y) => (x.a.time ?? 0) - (y.a.time ?? 0)), done = g('done').sort((x, y) => (!!x.lost - !!y.lost) || x.at - y.at), off = g('off');
+  return { T, now, items, act, need, chair, wait, done, off, cx: items.filter(i => i.a.cancelled), all: [...need, ...chair, ...wait, ...done, ...off] };
+}
+const tdPick = m => m.all.find(r => r.key === S.tSel) || m.need[0] || m.chair[0] || m.wait[0] || m.done[0] || m.off[0] || null;
+// The one primary button for the visit (first match wins). After discharge there is no primary, only "Tx report".
+function tdPrimary(r){
+  const { i, a, v, key } = r, k = esc(key);
+  if (!a.active) return { act: '', html: '' };
+  const b = (act, label, extra = '', cls = '') => `<button class="btn primary lg${cls ? ' ' + cls : ''}" data-act="${act}" data-k="${k}"${extra}>${label}</button>`;
+  if (v?.out) return { act: 'tx', html: txBtn(key, v) };
+  if (!v || v.start == null) return { act: 'vStart', html: b('vStart', 'Room time + Initial vitals') };
+  const mid = vitGet(key, 'mid'), d40 = v40At(v) - nowMin(), fd = finalDue(v), lab = `Record ${esc(CFG.vitalsMin)}-min vitals`;
+  if (!mid && d40 <= TD_SOON && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"', d40 < 0 ? 'late' : '') };
+  if (!i.adminKit) return { act: 'admin', html: b('admin', 'Administer') };
+  if (!mid && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"') };
+  return { act: 'vOut', html: txBtn(key, v, true) };
+}
+// Re-render only when a patient changes group, urgency or next step (the timer already updates the live text in place).
+const tdSig = m => m.all.map(r => r.key + ':' + r.grp + r.rank + r.tone + tdPrimary(r).act).join('|');
+function tdLead(r){
+  const { i, a, v, key } = r, P = (tone, h) => `<p class="lead${tone ? ' ' + tone : ''}">${h}</p>`;
+  if (!a.active) return P('', `Not coming: ${esc(a.hold ? 'Hold' : a.status || 'not active')}`);
+  if (v?.out) return P('', `Discharged ${fmtT(v.out.at)} ${tdRescue(v)}`);
+  if (v?.start == null) return P('', a.time == null ? 'Not roomed yet.' : i.adminKit ? `Dose recorded, but no room time. Booked ${fmtT(a.time)}.` : `Not roomed yet. ${tdLive({ what: 'Expected', at: a.time, kind: 'arr' })}`);
+  const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = v40At(v) - nowMin(), fd = finalDue(v), rx = tdRescue(v);
+  if (r.lost) return P('', `Not discharged in the tracker. Final vitals were due ${fmtT(disAt(v.start))}. ${rx}`);
+  if (!mid && d40 <= TD_SOON && !fd) return P(d40 < 0 ? 'late' : 'soon', `${tdLive(tdM40(v))} ${rx}`);
+  if (!i.adminKit) return P('soon', `Roomed ${fmtT(v.start)}${v.bay ? ' in Bay ' + esc(v.bay) : ''}. Dose not recorded yet. ${rx}`);
+  if (!mid && !fd) return P('', `${tdLive(tdM40(v))} ${rx}`);
+  if (fin) return P('', `Final vitals recorded. ${fd ? 'Ready to discharge.' : `Discharge opens at ${fmtT(disAt(v.start))}.`} ${rx}`);
+  return P('', `${tdLive(tdFin(v))} ${rx}`);
+}
+// Ids of every card to-do this visit has (eskSnooze ids, unchanged: todo|mrn|kind|date).
+function tdKinds(i){
+  const a = i.a, k = i.adminKit || i.suggest, L = [];
+  if (i.needsSched) L.push('sched'); if (i.needsProto) L.push('proto'); if (i.needsMadrs) L.push('madrs');
+  if (i.inf.mg === 56 && !a.isStart) L.push('dose');
+  if (S.A.some(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1)) L.push('b2b');
+  if (S._re?.has(k?.id)) L.push('reas');
+  return L;
+}
+const tdId = (a, kind) => `todo|${a.mrn}|${kind}|${a.date}`;
+// Day-of alerts with their existing buttons. Dismiss only (no snoozing); dismissed ones come back with "Show".
+function tdAlerts(i){
+  const a = i.a, p = i.p, m = esc(a.mrn), T = todaySerial(), L = [];
+  const add = (kind, tone, html, btns = '') => { if (kind && hidden(tdId(a, kind))) return; L.push(`<div class="alert${tone === 'warn' ? ' warn' : ''}"><p>${html}</p><span class="abtns">${btns}${kind ? snzBtns(tdId(a, kind)) : ''}</span></div>`); };
+  if (i.needsProto) add('proto', 'bad', `<b>New protocol and consent needed.</b> The protocol ${p?.protoExp ? (p.protoExp < T ? 'expired ' : 'expires ') + fmtD(p.protoExp) : 'has no date'}.`, `<button class="btn sm" data-act="consent" data-m="${m}">Print consent</button><button class="btn sm ghost" data-act="protoRenew" data-m="${m}">Renewed…</button>`);
+  if (i.needsMadrs) add('madrs', 'bad', `<b>MADRS needed.</b> The auth ${p.authExp < T ? 'expired' : 'expires'} ${fmtD(p.authExp)}.`, `<button class="btn sm" data-act="madrsDo" data-m="${m}">Collected…</button>`);
+  if (i.inf.mg === 56 && !a.isStart && !i.adminKit) add('dose', 'warn', '<b>56 mg.</b> Verify the dose before you give it.');
+  const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1);
+  if (adj) add('b2b', 'bad', `<b>Back-to-back</b> with the visit on ${fmtD(adj.date, 'dow')}.`);
+  if (i.noKit && !i.adminKit && a.active) add(null, 'bad', `<b>No kit on hand</b> for this ${esc(PH_LABEL[i.inf.pharm] || '')} visit.`, `<button class="btn sm" data-act="goInv" data-v="${i.inf.pharm === 'BESSE' ? 'stock' : 'order'}">Open Meds</button>`);
+  return L.length ? `<div class="talerts">${L.join('')}</div>` : '';
+}
+function tdMed(i, v){
+  const k = i.adminKit || i.suggest, au = k && !i.adminKit ? auditStatus(k) : null;
+  if (i.adminKit) return `Given ✓ ${esc(i.adminKit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(i.adminKit.serial).slice(-5))} ${tdRescue(v)}`;
+  const st = k ? tag(au?.cls === 'warn' ? 'warn' : 'ok', au?.cls === 'warn' ? 'Confirm on hand' : 'On hand') : !i.inf.pharm ? tag('warn', 'Not on tracker') : i.inf.pharm === 'BESSE' ? tag('', 'Besse stock') : tag('bad', 'No kit on hand');
+  return `<span class="tmed">${SAFE(i.inf.pharm)} ${st}${S._re?.has(k?.id) ? ' ' + tag('warn', 'Re-assign') : ''}</span><div>${kitRowHTML(i)} ${tdRescue(v)}</div>`;
+}
+function tdBooked(i){
+  const a = i.a, m = esc(a.mrn), thru = i.thru ? fmtD(i.thru) : 'nothing booked';
+  if (!a.active) return '';
+  if (!i.needsSched) return `Through ${thru}`;
+  const sd = taskGet(a.mrn, 'sched');
+  if (sd) return `Through ${thru} · scheduled out by ${esc(sd.by || '—')} ${fmtD(fromIso(sd.at))} <button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button>`;
+  if (hidden(tdId(a, 'sched'))) return `Through ${thru}`;
+  return `Through ${thru} ${tag('warn', 'Schedule out')} <button class="linkbtn" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button>${snzBtns(tdId(a, 'sched'))}`;
+}
+function tdFacts(r){
+  const { i, a, v } = r, p = i.p, T = todaySerial(), prov = a.rendering || p?.provider || '';
+  const clin = `${prov ? `<span class="pdot" style="background:${provColor(prov)}" aria-hidden="true"></span>${esc(prov)}` : 'Not set'}${p ? ' · ' + (p.coverage ? esc(p.coverage) : tag('warn', 'MD/NP not set')) : ''}`;
+  const proto = !p ? 'Not on the tracker' : i.needsProto ? tag('bad', p.protoExp ? (p.protoExp < T ? 'Expired ' : 'Expires ') + fmtD(p.protoExp) : 'No protocol date') : `Protocol through ${fmtD(p.protoExp)}`;
+  const madrs = !p ? '' : i.needsMadrs ? `${tag('bad', 'MADRS due')} auth ${p.authExp < T ? 'expired' : 'expires'} ${fmtD(p.authExp)}` : `${p.authExp ? 'Auth through ' + fmtD(p.authExp) : 'No auth date'}${p.lastMadrs ? ' · last MADRS ' + fmtD(p.lastMadrs) : ''}`;
+  const cov = `${p?.insurance ? esc(p.insurance) : ''}${benHTML(a.mrn) || (p?.insurance ? '' : '<span class="muted">No Sohar check on file</span>')}`;
+  return factsDL([['Clinician', clin], ['Medication', a.active ? tdMed(i, v) : ''], ['Consent & protocol', proto], ['MADRS / auth', madrs], ['Booked', tdBooked(i)], ['Coverage', cov]]);
+}
+// Right column once final vitals are due and the patient isn't discharged yet.
+function tdLeave(r, pri){
+  const { i, a, v, key } = r, fin = vitGet(key, 'fin'), m = esc(a.mrn), sd = taskGet(a.mrn, 'sched');
+  const fv = taskRow({ t: 'Final vitals', d: fin ? esc(vitText(fin)) + (fin.at != null ? ' at ' + fmtT(fin.at) : '') : 'Enter them in Record vitals', btn: fin || pri.act === 'vOut' ? '' : txBtn(key, v), done: !!fin });
+  const nb = !i.needsSched ? taskRow({ t: 'Next visits booked', d: `Through ${i.thru ? fmtD(i.thru) : '—'}`, done: true })
+    : sd ? taskRow({ t: 'Scheduled out', d: `${esc(sd.by || '—')} ${fmtD(fromIso(sd.at))}`, btn: `<button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button>`, done: true })
+    : taskRow({ t: 'Next visits booked', d: `Only booked through ${i.thru ? fmtD(i.thru) : '—'}`, btn: `<button class="btn sm" data-act="taskDo" data-m="${m}" data-k="sched">Mark scheduled</button>`, tone: 'warn' });
+  return `<h3>Before ${esc(nm(a.mrn))} leaves</h3><div class="tleave">${fv}${checklistHTML(i)}${nb}</div>${actionBullets(i)}
+    <details class="tsec tfold" data-open="tv:${esc(key)}"${tdOpen('tv:' + key, false) ? ' open' : ''}><summary>This visit</summary>${tdFacts(r)}</details>
+    <div class="tsec"><h3>Notes</h3>${notesHTML(a)}</div>`;
+}
+function tdDetail(r){
+  if (!r) return '<section class="card tdet"><p class="lead">No visits left to show today.</p></section>';
+  const { i, a, v, key } = r, k = esc(key), mrn = esc(a.mrn), roomed = !!v && v.start != null;
+  const pri = tdPrimary(r);
+  const facts = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, `<button class="btn inline" data-act="copyMrn" data-m="${mrn}" title="Copy the MRN">MRN ${mrn}</button>`,
+    a.time != null ? `Booked ${fmtT(a.time)}` : 'No time booked', a.moved ? `moved from ${fmtT(a.origTime)} with ${esc(a.origRendering || 'no clinician')}` : ''].filter(Boolean).join(' · ');
+  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
+  const flow = !a.active ? '' : v?.out
+    ? `<details class="tfold" data-open="tl:${k}"${tdOpen('tl:' + key, false) ? ' open' : ''}><summary>Timeline</summary>${v.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}</details>`
+    : `${roomed ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}`;
+  const left = `${tdLead(r)}${tdAlerts(i)}${pri.html ? `<div class="tact">${pri.html}</div>` : ''}${flow}`;   // the one next step sits above the timeline so it stays in view
+  const right = a.active && roomed && !v.out && finalDue(v) ? tdLeave(r, pri)
+    : `<h3>This visit</h3>${tdFacts(r)}${a.active ? actionBullets(i) + `<div class="tsec">${checklistHTML(i)}</div>` : ''}<div class="tsec"><h3>Notes</h3>${notesHTML(a)}</div>`;
+  return `<section class="card tdet" aria-label="Selected visit">
+    <div class="dhead"><div><div class="code">${esc(nm(a.mrn))}${v?.bay ? `<span>Bay ${esc(v.bay)}</span>` : ''}</div><div class="dfacts">${facts}</div></div><div class="dtools noprint">${tools}</div></div>
+    ${pageCols('detail', `<div class="tmainc">${left}</div>`, `<div class="tside">${right}</div>`)}</section>`;
+}
+function tdQueue(m, sel){
+  const row = r => `<button class="qrow" data-act="tSel" data-k="${esc(r.key)}" aria-current="${!!sel && sel.key === r.key}"><span class="qdot${r.tone ? ' ' + r.tone : ''}" aria-hidden="true"></span><span class="who"><span class="t">${esc(nm(r.a.mrn))}${r.v?.bay ? `<small>Bay ${esc(r.v.bay)}</small>` : ''}</span><span class="s">${r.line}</span></span>${r.tags.length ? `<span class="qtags">${r.tags.join('')}</span>` : ''}</button>`;
+  const grp = (h, L, none) => `<div class="qg"><h2>${h}</h2>${L.length ? L.map(row).join('') : `<p class="none">${none}</p>`}</div>`;
+  const fold = (id, h, L, def, more = '') => `<details class="qg qfold" data-open="${id}"${tdOpenAttr(id, def)}><summary><h2>${h}</h2>${more}</summary>${L.map(row).join('')}</details>`;
+  const onN = m.need.length + m.chair.length;
+  return `<div class="tq">
+    <div class="qstrip">${grp(`Needs you now · ${m.need.length}`, m.need, 'Nothing due right now')}${grp(`In chair · ${m.chair.length}`, m.chair, 'No one else in the bays')}</div>
+    <div class="qrest">
+    ${m.wait.length ? fold('td:nr', `Not roomed yet · ${m.wait.length}`, m.wait, window.innerWidth >= 1180 || !onN || sel?.grp === 'wait') : grp('Not roomed yet · 0', [], 'Everyone has been roomed')}
+    ${m.done.length ? fold('td:done', `Done today · ${m.done.length}`, m.done, sel?.grp === 'done', `<span class="qmore">Show ${m.done.length} done</span>`) : ''}
+    ${m.off.length ? fold('td:off', `Not coming · ${m.off.length}`, m.off, sel?.grp === 'off') : ''}
+    ${cancelledHTML(m.items)}</div>
+  </div>`;
+}
+function tdSub(m){
+  const n = m.act.length; if (!n) return 'No visits today';
+  const over = m.need.filter(r => r.rank === 0).length, given = m.act.filter(i => i.adminKit).length, docd = m.act.filter(i => docState(i).done).length;
+  const check = m.act.filter(i => itemState(i) === 'check').length, noKit = m.act.filter(i => itemState(i) === 'bad').length;
+  return [`${m.need.length + m.chair.length} in chair`, over ? `<strong>${over} overdue for vitals</strong>` : '', `${m.wait.length} not roomed yet`].filter(Boolean).join(', ')
+    + ` · ${given}/${n} given · ${docd}/${n} documented${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
+}
+const ACT_TODAY = {
+  tSel: el => { const x0 = $('.pg-today .qstrip')?.scrollLeft || 0;
+    S.tSel = el.dataset.k; if (S.noteFor && S.noteFor !== el.dataset.k) S.noteFor = null; render();
+    const s = $('.pg-today .qstrip'), c = s && s.querySelector('.qrow[aria-current="true"]');   // keep the strip where it was, with the tapped tile in view
+    if (s){ s.scrollLeft = x0; if (c){ const cr = c.getBoundingClientRect(), sr = s.getBoundingClientRect(); if (cr.left < sr.left || cr.right > sr.right) s.scrollLeft += cr.left - sr.left - 8; } }
+    if (window.innerWidth < 1180){ const d = $('.pg-today .tdet'); if (d && d.getBoundingClientRect().top > window.innerHeight * 0.6) d.scrollIntoView({ block: 'start' }); } },
+  copyMrn: async el => { const ok = await copyText(el.dataset.m); toast(ok ? 'ok' : 'bad', ok ? 'MRN copied.' : 'Couldn’t copy the MRN.'); },
+  goCard: el => {   // was: scroll to the On site card. Now: open that patient on Today (from the bays dialog's names)
+    if (!$('#modal').hidden){ if ([...document.querySelectorAll('[data-bay]')].some(x => x.value.trim() !== String(visitGet(x.dataset.bay)?.bay || '').trim())) return toast('warn', 'Save the bays first, then open the patient.'); closeModal(); }
+    S.view = 'today'; window.scrollTo(0, 0); ACT_TODAY.tSel(el); },
+};
 PAGES.today = {
   label: 'Today',
   title: () => { const T = todaySerial(); return `Today <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span>`; },
-  sub: () => '',
-  tools: () => '',
-  html(){ S.day = todaySerial(); S.range = 'day'; return todayHTML(); },
-  badge: () => (S._b || {}).today ? { n: S._b.today, tone: 'bad' } : null,
+  sub: () => tdSub(tdModel()),
+  tools: () => { S.day = todaySerial(); const n = todayModel(S.day).filter(i => i.a.active).length;
+    return `<button class="btn" data-act="bays" ${n ? '' : 'disabled'} title="Plan bays and print the Vitals Tracker">Bays &amp; day sheet</button><button class="btn" data-act="copyPull" ${n ? '' : 'disabled'} title="Copy today's kits as a table">Copy med list</button>`; },
+  html: () => todayHTML(),
+  badge: () => { const n = tdModel().need.length; return n ? { n, tone: 'bad' } : null; },
 };
+// Live tick: re-render when someone changes group or next step (vitals come due, a patient drops off On site). Never mid-typing.
+TICKS.push(() => {
+  if (S.view !== 'today' || !S.loaded || S.full || S._tdSig == null || formBusy()) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) return;
+  if (tdSig(tdModel()) !== S._tdSig) render();
+});
 // ===== /page: today =====
 
 // ===== page: schedule =====
