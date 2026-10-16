@@ -537,19 +537,23 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .ptsearch .seg{flex-wrap:nowrap;flex:none}
 .pg-patients .group + .group{margin-top:18px}
 .pg-patients .group h2{margin:0 0 4px 12px}
-.pg-patients .group .none{margin:0 12px;color:var(--faint);font-size:14px}
+.pg-patients .group > .none{margin:0 12px;color:var(--muted);font-size:14px}
+.pg-patients .qdot.none{background:var(--line)}
+.pg-patients .facts dd{overflow-wrap:anywhere}
 .pg-patients .qrow .tags{display:flex;gap:4px;flex:none}
 .pg-patients .snzfoot{margin:10px 12px 0}
-.pg-patients .ptp > * + *{margin-top:16px}
+.pg-patients .ptp > .card,.pg-patients .ptp > .cols2{margin:0 0 16px}
 .pg-patients .ptp .cols2{gap:16px}
-.pg-patients .ptp .cols2 > .card{margin:0}
+.pg-patients .ptp .cols2 > .col > .card{margin:0}
+.pg-patients .facts > div{display:contents}
 .pg-patients .ptnav{display:flex;gap:4px}
 .pg-patients .ptnav .btn{margin:-8px 0 8px -12px}
 .pg-patients .pthrow{display:flex;justify-content:space-between;gap:12px 16px;align-items:flex-start;flex-wrap:wrap}
 .pg-patients .code .tag{margin-left:12px;vertical-align:middle}
 .pg-patients .ptid{margin-top:8px}
 .pg-patients .pttools{display:flex;gap:4px;flex-wrap:wrap;margin-right:-8px}
-.pg-patients .task .ptact{grid-column:2;grid-row:1/3;display:flex;gap:6px;align-items:center;justify-self:end}
+.pg-patients .task .ptact{display:flex;gap:10px;align-items:center}
+.pg-patients .task .ptact .snz{margin-left:0}
 .pg-patients .ptkits{list-style:none;margin:0;padding:0}
 .pg-patients .ptkits li{padding:8px 0}
 .pg-patients .ptkits li + li{border-top:1px solid var(--line)}
@@ -3825,6 +3829,16 @@ PAGES.inventory = {
 // <section id="guide" class="print-target"> straight under <main> so Print list keeps working; it shows on screen in Table view.
 // Pure helpers only read existing models (needsMadrs, needsProto, schedGaps, adminModel, actionModel, scheduledNeedingMeds,
 // patientMeds, benOf). Nothing here writes; every button reuses an existing ACT handler except the small ACT_PATIENTS set below.
+// The two stubs right below stay byte-identical to the foundation (protect.js); Object.assign at the end of the region fills them in.
+const ACT_PATIENTS = {};
+PAGES.patients = {
+  label: 'Patients',
+  title: () => 'Patients',
+  sub: () => '',
+  tools: () => '<button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>',
+  html: () => patientsHTML(),
+  badge: () => null,
+};
 const PT_FROM = { today: 'Today', schedule: 'Schedule', inventory: 'Meds', access: 'Access', settings: 'Settings' };
 const ptCurrent = p => !/discontinued|did not start/i.test(p.status);   // the list's "Current" (same rule as before: Paused and blank stay in)
 const ptRank = tone => tone === 'bad' ? 0 : tone === 'warn' ? 1 : 2;
@@ -3910,7 +3924,7 @@ function ptHistRow(h){
   const tone = h.k || v.out ? 'ok' : /cancel|no.?show/i.test(st) ? 'bad' : /kept/i.test(st) ? 'ok' : '';
   const by = v.out?.by || vit.init?.by || h.k?.tech || '';
   const td = (l, v, num) => `<td class="${num ? 'num' : ''}${v === '—' ? ' nil' : ''}" data-l="${l}">${v}</td>`;   // nil cells fold away in the pane
-  return `<tr>${td('Date', `${fmtD(h.date, 'dow')}${h.time != null ? ` <span class="muted">${fmtT(h.time)}</span>` : ''}`)}${td('Visit', h.a ? esc(h.a.isStart ? 'Start' : h.a.isEFU ? 'Follow-up' : h.a.event || 'Treatment') : '—')}${td('Status', st ? tag(tone, esc(st)) : '—')}${td('mg', h.k?.admin != null ? String(h.k.admin) : '—', true)}${td('Kit', h.k ? `<span class="mono">SN …${esc(String(h.k.serial || '').slice(-5) || '—')}</span>` : '—')}${td('Initial', bp('init'))}${td('40-min', bp('mid'))}${td('Final', bp('fin'))}${td('In chair', chair)}${td('By', esc(by) || '—')}</tr>`;
+  return `<tr>${td('Date', `${fmtD(h.date, 'dow')}${h.time != null ? ` <span class="muted">${fmtT(h.time)}</span>` : ''}`)}${td('Visit', h.a ? esc(h.a.isStart ? 'Start' : h.a.isEFU ? 'Follow-up' : h.a.event || 'Treatment') : '—')}${td('Status', st ? tag(tone, st) : '—')}${td('mg', h.k?.admin != null ? String(h.k.admin) : '—', true)}${td('Kit', h.k ? `<span class="mono">SN …${esc(String(h.k.serial || '').slice(-5) || '—')}</span>` : '—')}${td('Initial', bp('init'))}${td('40-min', bp('mid'))}${td('Final', bp('fin'))}${td('In chair', chair)}${td('By', esc(by) || '—')}</tr>`;
 }
 function ptHistoryHTML(mrn){
   const H = ptHistory(mrn); if (!H.length) return '<div class="muted small">No past visits on the appointment list and no kits given.</div>';
@@ -3924,7 +3938,7 @@ function ptHistoryHTML(mrn){
 function ptFieldsHTML(p){
   const t = S.tables.patients; if (!t) return '';
   const val = (h, v) => { if (v == null || v === '') return '<span class="muted">—</span>'; if (isDateHeader(h)){ const s = toSerial(v); if (s != null) return fmtD(s, 'full'); } return esc(String(v)); };
-  return factsDL(t.headers.map((h, c) => [String(h ?? '').trim(), c]).filter(([h]) => h).map(([h, c]) => [esc(h), val(h, t.values[p.r][c])]));
+  return factsDL(t.headers.map((h, c) => [String(h ?? '').trim(), c]).filter(([h]) => h).map(([h, c]) => [h, val(h, t.values[p.r][c])]));
 }
 function ptPageHTML(mrn){
   if (!mrn) return `<section class="ptp noprint${S.ptPick ? '' : ' n-hide'}"><div class="card"><div class="muted">No patients on the tracker yet.</div></div></section>`;
@@ -3935,7 +3949,7 @@ function ptPageHTML(mrn){
   const back = S.ptFrom && PT_FROM[S.ptFrom] ? `<button class="btn ghost sm ptback" data-act="ptBack">Back to ${PT_FROM[S.ptFrom]}</button>` : '';
   const head = `<div class="card pthead">
     <div class="ptnav">${back}<button class="btn ghost sm n-only" data-act="ptList">Back to list</button></div>
-    <div class="pthrow"><div><div class="code">${esc(nm(mrn))}${p ? tag(stTone, esc(p.status || 'No status')) : tag('warn', 'Not on the tracker')}</div>
+    <div class="pthrow"><div><div class="code">${esc(nm(mrn))}${p ? tag(stTone, p.status || 'No status') : tag('warn', 'Not on the tracker')}</div>
       <div class="ptid muted">MRN <button class="btn inline" data-act="ptCopy" data-m="${m}" title="Copy the MRN">${m}</button>${p ? ` · ${PH_LABEL[p.pharm] || '—'} · ${p.mg ?? '?'} mg · ${esc(p.freq || 'frequency not set')}` : ' · not on the patient tracker'}</div></div>
       <div class="pttools"><button class="btn ghost mute sm" data-act="consent" data-m="${m}">Print consent</button><button class="btn ghost mute sm" data-act="ptPrint" data-m="${m}" ${canPrint ? '' : 'disabled title="Nothing booked ahead"'}>Print schedule</button>${p ? `<button class="btn ghost mute sm" data-act="ptEdit" data-m="${m}">Edit tracker row</button>` : ''}</div></div></div>`;
   const needs = R.length ? `<div class="card"><h3>Needs · ${R.length}</h3>${R.map(r => taskRow({ t: r.t, d: r.d, tone: r.tone, btn: r.snz ? `<span class="ptact">${r.btn}${snzBtns(r.snz)}</span>` : r.btn })).join('')}</div>` : '';
@@ -3953,9 +3967,9 @@ function ptPageHTML(mrn){
   ]);
   const pd = p.protoExp ? `${p.protoExp < T ? 'Expired' : 'Expires'} ${fmtD(p.protoExp, 'full')}` : 'No protocol date on the tracker';
   const paper = [
-    taskRow({ t: 'Protocol', d: pd, done: !needsProto(p), tone: !p.protoExp || p.protoExp < T ? 'bad' : 'warn', btn: ptBtn('protoRenew', mrn, 'Protocol renewed…') }),
+    taskRow({ t: 'Protocol', d: pd, done: !needsProto(p), tone: !needsProto(p) ? '' : !p.protoExp || p.protoExp < T ? 'bad' : 'warn', btn: ptBtn('protoRenew', mrn, 'Protocol renewed…') }),
     taskRow({ t: 'Consent', d: 'Signed with each protocol renewal. Printing it is not recorded.', btn: ptBtn('consent', mrn, 'Print consent') }),
-    taskRow({ t: 'MADRS', d: `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · ${p.authExp ? `${needsMadrs(p) ? 'due since' : 'next due'} ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : 'no auth date, so no MADRS due'}`, done: !needsMadrs(p), tone: 'bad', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
+    taskRow({ t: 'MADRS', d: `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · ${p.authExp ? `${needsMadrs(p) ? 'due since' : 'next due'} ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : 'no auth date, so no MADRS due'}`, done: !needsMadrs(p), tone: needsMadrs(p) ? 'bad' : '', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
   ].join('');
   const thru = scheduledThru(mrn); const sd = taskGet(mrn, 'sched'); const so = R.some(r => r.k === 'sched');
   const nextF = factsDL([
@@ -3978,7 +3992,7 @@ function ptPageHTML(mrn){
 function ptUpHTML(up){
   if (!up.length) return '<div class="muted small">Nothing booked.</div>';
   // A plain list (not a table) so it reads the same in the pane and full screen. Up to 12, cancelled / no-show / hold included.
-  return `<ul class="ptup">${up.map(a => `<li><span class="when"><b>${fmtD(a.date, 'dow')}</b> ${fmtT(a.time) || '—'}</span><span class="what muted">${esc(a.event)}</span><span class="ptst">${visitGet(a.key)?.out ? tag('ok', 'Discharged') : a.active ? `<span class="muted small">${esc(a.status)}</span>` : tag(a.cancelled ? 'bad' : 'warn', esc(a.hold ? 'Hold' : a.status || '—'))}</span></li>`).join('')}</ul>`;
+  return `<ul class="ptup">${up.map(a => `<li><span class="when"><b>${fmtD(a.date, 'dow')}</b> ${fmtT(a.time) || '—'}</span><span class="what muted">${esc(a.event)}</span><span class="ptst">${visitGet(a.key)?.out ? tag('ok', 'Discharged') : a.active ? `<span class="muted small">${esc(a.status)}</span>` : tag(a.cancelled ? 'bad' : 'warn', a.hold ? 'Hold' : a.status || '—')}</span></li>`).join('')}</ul>`;
 }
 // The old 12-column Patient guide, rows from S.P (duplicate MRN rows still show twice). Rows are buttons now, so the keyboard reaches them.
 function ptGuideHTML(){
@@ -3999,22 +4013,22 @@ function openPtEdit(mrn){
     ${editorHTML('patients', p.r)}
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button></div>`, true);
 }
-PAGES.patients = {
-  label: 'Patients',
-  title: () => 'Patients',
+// The page entry and handlers fill in the foundation stubs at the top of this region.
+Object.assign(PAGES.patients, {
   sub: () => { const L = curPatients().filter(ptCurrent); const N = ptNeedsAll(); const n = L.filter(p => N.has(p.mrn)).length; return `${L.length} current · ${n ? `<strong>${n} need${n === 1 ? 's' : ''} something</strong>` : 'nothing needed'}`; },
-  tools: () => `<button class="btn sm" data-act="ptTable" aria-pressed="${!!S.ptTable}">${S.ptTable ? 'List view' : 'Table view'}</button><button class="btn sm" data-act="expOpen">Export list…</button><button class="btn sm" data-act="print" data-t="guide">Print list</button><button class="btn sm" data-act="consent">Print consent</button>`,
-  html: () => patientsHTML(),
-  badge: () => null,
-};
-const ACT_PATIENTS = {
+  tools: () => `<button class="btn sm" data-act="ptTable" aria-pressed="${!!S.ptTable}">${S.ptTable ? 'List view' : 'Table view'}</button><button class="btn sm" data-act="expOpen">Export list…</button><button class="btn sm" data-act="print" data-t="guide">Print list</button><button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>`,
+});
+Object.assign(ACT_PATIENTS, {
   patient: el => openPatient(el.dataset.m),
   ptBack: () => { const v = S.ptFrom; S.ptFrom = null; S.ptPick = false; S.view = v || 'patients'; render(); window.scrollTo(0, 0); },
   ptList: () => { S.ptPick = false; render(); window.scrollTo(0, 0); },
   ptEdit: el => openPtEdit(el.dataset.m),
   ptTable: () => { S.ptTable = !S.ptTable; render(); },
   ptCopy: async el => { const ok = await copyText(el.dataset.m); toast(ok ? 'ok' : 'bad', ok ? 'MRN copied.' : 'Couldn’t copy the MRN.'); },
-};
+});
+// Leaving by the rail forgets the "Back to …" origin and the pane's open patient, so coming back by the rail shows the list.
+// Capture phase, so it runs before the shared click handler; it only touches Patients state and does not replace ACT.view.
+document.addEventListener('click', e => { if (e.target.closest?.('.rail [data-act="view"]')){ S.ptFrom = null; S.ptPick = false; } }, true);
 // ===== /page: patients =====
 
 // ===== page: access =====
