@@ -98,6 +98,9 @@ input.search,input.fld.search{width:300px;flex:0 1 300px;min-width:180px;min-hei
 .search::placeholder{color:var(--muted)}
 main{padding:4px 28px 32px;max-width:1500px;margin:0 auto}
 .page main{max-width:none;margin:0}
+main>.alert{margin:0 0 16px}
+.app.full main{padding-top:28px}
+@media (max-width:899px){main>.alert{margin-bottom:12px}.app.full .rail{padding-bottom:8px}.app.full main{padding-top:12px}}
 @media (max-width:899px){
   .rail{height:auto;overflow:visible;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 12px 0;background:var(--surface3);box-shadow:0 1px 0 var(--line)}
   .rail .brand{order:0;flex:1 0 auto;max-width:100%;flex-direction:row;align-items:center;gap:8px;padding:0;min-width:0}
@@ -380,6 +383,7 @@ button.tile:hover{background:color-mix(in srgb,var(--surface2),var(--ink) 7%)}
 .task.done>.d{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .task.done>.btn,.task.done>.tb{margin-left:auto;flex:none}
 .task.done>details,.task.done>.body{display:none}
+.task.bad>.d{color:var(--bad);font-weight:500} .task.warn>.d{color:var(--warn);font-weight:500} .task.ok>.d{color:var(--ok)} .task.info>.d{color:var(--info)}
 @media (max-width:899px){.task{gap:2px 10px;padding:11px 0}.task.current{margin:0 -8px;padding-left:8px;padding-right:8px}}
 
 /* ===== foundation: details folds ===== */
@@ -2117,21 +2121,21 @@ function render(){
   if (!PAGES[S.view]) S.view = 'today';
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id)); S._b = badges();
   const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
-  const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bname"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
-  const conn = `<div class="conn" role="status"><i aria-hidden="true"></i>${!S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook'}</div>`;
+  const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bt"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
+  const conn = `<div class="conn${!S.store.live ? ' demo' : ''}" role="status"><i aria-hidden="true"></i>${!S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook'}</div>`;
   if (S.full){
-    app.innerHTML = `<div class="app full" data-mode="${S.mode}"><aside class="rail">${brand}<div class="sec">${conn}</div></aside><div class="page"><main id="main" class="pg-full"><div class="card"><h2>Working in the full-screen view</h2><div class="small muted">Keep this panel open. It connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div></main></div></div>`;
+    app.innerHTML = `<div class="app full" data-mode="${S.mode}"><aside class="rail">${brand}<div class="sec">${conn}</div></aside><div class="page"><main id="main" class="pg-full"><div class="card"><h3>Working in the full-screen view</h3><div class="small muted">Keep this panel open. It connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div></main></div></div>`;
     return;
   }
-  const navBtn = v => { const p = PAGES[v]; if (!p) return ''; const b = p.badge ? p.badge() : null;
-    return `<button class="ni" data-act="view" data-v="${v}"${S.view === v ? ' aria-current="page"' : ''}><span class="nl">${esc(p.label)}</span>${b && b.n ? `<span class="badge n${b.tone === 'quiet' ? ' quiet' : ''}">${b.n}</span>` : ''}</button>`; };
+  const navBtn = (v, lo) => { const p = PAGES[v]; if (!p) return ''; const b = p.badge ? p.badge() : null;
+    return `<button class="ni${lo ? ' lo' : ''}" data-act="view" data-v="${v}"${S.view === v ? ' aria-current="page"' : ''}><span class="nl">${esc(p.label)}</span>${b && b.n ? `<span class="badge n${b.tone === 'quiet' ? ' quiet' : ''}">${b.n}</span>` : ''}</button>`; };
   const P = PAGES[S.view];
   const body = P.html(); const title = P.title ? P.title() : esc(P.label); const sub = P.sub ? P.sub() : ''; const tools = P.tools ? P.tools() : '';
   app.innerHTML = `<div class="app" data-mode="${S.mode}">
     <aside class="rail">
       ${brand}
-      <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(navBtn).join('')}</nav>
-      <div class="sec">${navBtn('access')}${navBtn('settings')}
+      <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('settings', 1)}</nav>
+      <div class="sec">
         ${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="ni rt" data-act="refresh" title="Read the workbook again">Refresh</button>
         ${conn}</div>
@@ -2143,6 +2147,8 @@ function render(){
         <div class="tools">${tools}<input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"></div></header>
       <main id="main" class="pg-${S.view}">${body}</main>
     </div></div>`;
+  { const nv = app.querySelector('.rail .nav'), cur = nv && nv.querySelector('[aria-current="page"]');   // pane: keep the current area visible in the scrolling nav row
+    if (cur && nv.scrollWidth > nv.clientWidth){ const r = cur.getBoundingClientRect(), n = nv.getBoundingClientRect(); if (r.right > n.right) nv.scrollLeft += r.right - n.right + 12; else if (r.left < n.left) nv.scrollLeft -= n.left - r.left + 12; } }
   if (keepId){ const el = document.getElementById(keepId); if (el){ el.focus(); if (keepVal != null && 'value' in el && el.value !== keepVal && el.tagName === 'INPUT' && el.type !== 'date') el.value = keepVal; try { if (selS != null) el.setSelectionRange(selS, selS); } catch {} } }
 }
 // Global find (#gq, Enter): a kit barcode or serial opens that kit on Meds; else an exact MRN or LASFIR opens the patient.
@@ -3691,12 +3697,14 @@ function confirmClear(){ if (S._clr && Date.now() - S._clr < 4000){ S._clr = 0; 
 //                                  sub()   = HTML summary line under the title ('' for none). tools() = HTML buttons left of the search box.
 //                                  html()  = page body, placed straight into <main id="main" class="pg-<view>"> (no wrapper div).
 //                                  badge() = { n, tone: 'bad'|'quiet' } or null (rail count).
-//   taskRow({ t, d, btn, done, id, body, open, tone, current, more })  -> '<div class="task ...">'
+//   taskRow({ t, d, btn, done, id, body, open, tone, current, more })
+//                                  -> '<div class="task [tone] [done] [current]"><div class="t">t</div><div class="d">d</div><div class="tb">btn</div><details class="tmore">…</details></div>'
 //                                  t = title HTML, d = detail line HTML, btn = one button as an HTML string,
 //                                  done = true: one muted line with ✓ (btn still shown if given, body hidden),
 //                                  body = HTML for an expandable <details data-open="<id>"> under the row (needs id),
 //                                  id = key for S.open, open = default open state before the user toggles it,
-//                                  tone = 'bad'|'warn'|'ok'|'info' class on the row, current = true adds aria-current="true" and class cur,
+//                                  tone = 'bad'|'warn'|'ok'|'info' class on the row (colours the detail line), current = true adds aria-current="true" and class current,
+//                                  done: do not put your own ✓ in t; the CSS adds it.
 //                                  more = summary text of the fold (default 'Show details').
 //   factsDL(pairs)               pairs = [[label, html], ...]; label is plain text (escaped); skips pairs whose html is null, '' or false
 //                                  -> '<dl class="facts"><div><dt>label</dt><dd>html</dd></div>...</dl>' ('' when nothing is left)
@@ -3711,12 +3719,13 @@ const TICKS = [];
 S.open = S.open || {};
 function formBusy(){ return !$('#modal').hidden || !$('#busy').hidden || !!S.editing; }
 function taskRow({ t = '', d = '', btn = '', done = false, id = '', body = '', open = false, tone = '', current = false, more = 'Show details' } = {}){
-  const cls = 'task' + (tone ? ' ' + tone : '') + (done ? ' done' : '') + (current ? ' cur' : '');
+  const cls = 'task' + (tone ? ' ' + tone : '') + (done ? ' done' : '') + (current ? ' current' : '');
   const cur = current ? ' aria-current="true"' : '';
-  if (done) return `<div class="${cls}"${cur}><div class="tmain"><div class="tt"><span class="ck" aria-hidden="true">✓</span> ${t}${d ? ` <span class="td">${d}</span>` : ''}</div></div>${btn ? `<div class="tb">${btn}</div>` : ''}</div>`;
+  const tb = btn ? `<div class="tb">${btn}</div>` : '';
+  if (done) return `<div class="${cls}"${cur}><div class="t">${t}</div>${d ? `<div class="d">${d}</div>` : ''}${tb}</div>`;   // the CSS adds the ✓ (.task.done>.t::before)
   const isOpen = id && Object.prototype.hasOwnProperty.call(S.open, id) ? S.open[id] : !!open;
   const fold = body && id ? `<details class="tmore" data-open="${esc(id)}"${isOpen ? ' open' : ''}><summary>${more}</summary><div class="tbody">${body}</div></details>` : '';
-  return `<div class="${cls}"${cur}><div class="tmain"><div class="tt">${t}</div>${d ? `<div class="td">${d}</div>` : ''}</div>${btn ? `<div class="tb">${btn}</div>` : ''}${fold}</div>`;
+  return `<div class="${cls}"${cur}><div class="t">${t}</div>${d ? `<div class="d">${d}</div>` : ''}${tb}${fold}</div>`;
 }
 function factsDL(pairs){
   const L = (pairs || []).filter(p => p && p[1] != null && p[1] !== '' && p[1] !== false);
