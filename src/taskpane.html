@@ -524,7 +524,90 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: today ===== */
 
 /* ===== page: schedule ===== */
-/* schedule styles */
+.pg-schedule .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pg-schedule .grow{flex:1;min-width:0}
+.pg-schedule .badText{color:var(--bad);font-weight:500}
+/* task list: rows separated by a hairline, no boxes inside the card */
+.pg-schedule .schtasks .lede{margin:-4px 0 4px}
+.pg-schedule .tasks .task .d{overflow-wrap:anywhere}
+/* rows whose button opens the list: that button is the only toggle */
+.pg-schedule .task:has(>.tb [data-act="schOpen"])>details>summary{display:none}
+.pg-schedule .task:has(>.tb [data-act="schOpen"])>details:not([open]){display:none}
+.pg-schedule .tbody>.small.muted:first-child{margin-bottom:4px}
+.pg-schedule .sitem{padding:10px 0;border-top:1px solid var(--line)}
+.pg-schedule .tbody{padding-left:12px}
+.pg-schedule .sitem.isdone{opacity:.6}
+.pg-schedule .sh{display:flex;align-items:center;gap:4px 8px;flex-wrap:wrap}
+.pg-schedule .sh>b{font-weight:600}
+.pg-schedule .sh .meta{flex:1 1 140px;min-width:0;color:var(--muted);font-size:13px}
+.pg-schedule .sh .ctl{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+.pg-schedule .sh .ctl .snz{margin-left:0}
+.pg-schedule .sl{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:6px}
+.pg-schedule .sl:empty{display:none}
+.pg-schedule .sl.small{display:block}
+.pg-schedule .sitem .line.row{margin-top:6px}
+.pg-schedule .sgrp{margin-top:14px}
+.pg-schedule .sgh{display:flex;align-items:baseline;gap:2px 8px;flex-wrap:wrap;list-style:none}
+.pg-schedule .sgh b{font-weight:600} .pg-schedule .sgh span{color:var(--muted);font-size:13px}
+.pg-schedule details.sgrp>summary{cursor:pointer;min-height:32px;align-items:center}
+.pg-schedule details.sgrp>summary::-webkit-details-marker{display:none}
+.pg-schedule details.sgrp>summary::after{content:"Show";margin-left:auto;color:var(--accent);font-size:13px;font-weight:500}
+.pg-schedule details.sgrp[open]>summary::after{content:"Hide"}
+.pg-schedule .sfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pg-schedule .snzfoot{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+/* treatment-start weeks: label + colour, never colour alone */
+.pg-schedule .wk{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:8px;padding:2px 9px;background:var(--surface2);font-size:12px}
+.pg-schedule .wk b{font-weight:500}
+.pg-schedule .wk.ok{background:var(--ok-soft);color:var(--ok)} .pg-schedule .wk.warn{background:var(--warn-soft);color:var(--warn)} .pg-schedule .wk.bad{background:var(--bad-soft);color:var(--bad)}
+.pg-schedule .wk .dot{font-size:12px;color:inherit;opacity:.7} .pg-schedule .wk .dot.on{opacity:1;font-weight:600}
+/* visit card */
+.pg-schedule .schnav{display:flex;align-items:center;justify-content:space-between;gap:10px 12px;flex-wrap:wrap}
+.pg-schedule .schstep{display:inline-flex;align-items:center;gap:6px}
+.pg-schedule .schstep b{font-weight:500;padding:0 4px;white-space:nowrap}
+.pg-schedule .schv>h3{margin:18px 0 12px} .pg-schedule .schv>h3 span{color:var(--muted);font-weight:400;font-size:15px}
+.pg-schedule .schv .tiles{margin-bottom:4px;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.pg-schedule .schv .tile{padding:12px 14px}
+@media(max-width:899px){.pg-schedule .schv .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pg-schedule .schbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 6px}
+.pg-schedule .schbar #fQ{flex:1 1 140px;min-width:130px;width:auto}
+.pg-schedule .schbar select.fld{width:auto;flex:0 1 auto}
+.pg-schedule table.t td{vertical-align:middle}
+.pg-schedule table.schtab{table-layout:fixed;min-width:600px}
+.pg-schedule table.schtab td{white-space:normal;overflow-wrap:anywhere}
+.pg-schedule table.schtab td.acts{overflow-wrap:normal}
+.pg-schedule .actw{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px}
+.pg-schedule .actw .btn{padding:0 10px} .pg-schedule .actw .btn.ghost{padding:0 6px}
+.pg-schedule .c-time{width:11%} .pg-schedule .c-pt{width:12%} .pg-schedule .c-visit{width:17%} .pg-schedule .c-med{width:16%} .pg-schedule .c-thru{width:8%} .pg-schedule .c-act{width:36%}
+.pg-schedule table.schtab th,.pg-schedule table.schtab td{padding-left:8px;padding-right:8px}
+.pg-schedule table.schtab td[data-l="Time"]{white-space:nowrap}
+.pg-schedule table.t .pt{padding:0;min-height:0;font-weight:600;color:var(--ink);font-size:14px;text-align:left}
+.pg-schedule table.t .mrn,.pg-schedule table.t .kd,.pg-schedule table.t .was,.pg-schedule table.t .clin{display:block;font-size:12px;color:var(--muted)}
+.pg-schedule table.t .clin{color:var(--ink);margin-top:2px}
+.pg-schedule table.t .tag+.kd{margin-top:2px}
+.pg-schedule .pdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.pg-schedule tr.off td{color:var(--muted)}
+.pg-schedule td.acts{text-align:right}
+.pg-schedule .schdoc{margin-top:6px;text-align:left;white-space:normal}
+.pg-schedule .schdoc>summary{cursor:pointer;color:var(--warn);font-size:13px;font-weight:500;min-height:32px;display:flex;align-items:center;justify-content:flex-end}
+.pg-schedule .schdocs{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:2px;font-size:13px}
+.pg-schedule .schdocs .linkbtn{padding:0 4px 0 0}
+.pg-schedule .schdocs .mute{color:var(--muted)}
+.pg-schedule .schdocs a{color:var(--accent);font-weight:500}
+.pg-schedule .dayhead{display:flex;align-items:center;gap:10px}
+.pg-schedule .schcx{margin-top:14px;font-size:13px}
+.pg-schedule .schcx>summary{cursor:pointer;color:var(--muted);min-height:32px}
+.pg-schedule .cxrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0}
+@media(max-width:899px){
+  .pg-schedule table.schtab{min-width:0;table-layout:auto}
+  .pg-schedule td.acts{text-align:left;white-space:normal;flex-wrap:wrap}
+  .pg-schedule .actw{justify-content:flex-start}
+  .pg-schedule .schdoc>summary{justify-content:flex-start}
+  .pg-schedule table.schtab td{flex-wrap:wrap;column-gap:8px;row-gap:2px}
+  .pg-schedule table.schtab td[data-l]:not([data-l=""])::before{min-width:84px}
+  .pg-schedule table.t .mrn,.pg-schedule table.t .kd,.pg-schedule table.t .was,.pg-schedule table.t .clin{display:inline;margin:0}
+  .pg-schedule table.t .cv>span{margin-left:8px}
+  .pg-schedule .schbar select.fld{flex:1 1 140px}
+}
 /* ===== /page: schedule ===== */
 
 /* ===== page: inventory ===== */
@@ -1381,16 +1464,16 @@ async function ptFixSave(mrn){
   if (await write('Saving to the tracker…', () => S.store.update('patients', p.r, t.snap(p.r), out), `Updated ${out.length} field${out.length > 1 ? 's' : ''} for ${esc(p.name)}.`)){ closeModal(); render(); }
 }
 function adminHTML(){
-  const m = adminModel(); const id = (k, x) => `adm|${k}|${x.p.mrn}`;
-  const nSnz = snzCount(ADMIN_KINDS.flatMap(([k]) => m[k].map(x => id(k, x)))); for (const [k] of ADMIN_KINDS) m[k] = m[k].filter(x => !hidden(id(k, x)));
-  const n = new Set(ADMIN_KINDS.flatMap(([k]) => m[k].map(x => x.p.mrn))).size;
+  // Schedule task row "Admin to-do" (decision 8): protocol dates, frequency check, MD/NP or rendering provider, reclassify. Closed by default.
+  const M = schModel(), a = M.a, n = M.nAdmin;
   const focus = { status: 'status', proto: 'protocolexpdate', freq: 'txfrequency', mdnp: 'coverageoptions' };
-  return `<details class="asec gray admin" data-sec="admin" ${S.adminOpen ? 'open' : ''}><summary>Admin to-do · ${n} patient${n === 1 ? '' : 's'}${n ? '' : ' ✓'}</summary>
-    ${n ? '' : '<div class="small" style="margin-top:6px">Nothing to clean up on the tracker.</div>'}
-    ${ADMIN_KINDS.filter(([k]) => m[k].length).map(([k, title, sub]) => `<div class="ah">${esc(title)} · ${m[k].length}</div><div class="small muted">${esc(sub)}</div>
-      ${m[k].map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.p.mrn)} · ${esc(x.p.status || 'no status')}${x.p.provider ? ' · ' + esc(x.p.provider) : ''}</span>${snzBtns(id(k, x))}</div><div class="line row small"><span class="chip ${k === 'status' || x.idx ? 'bad' : 'warn'}">${esc(x.text)}</span><span class="grow"></span><button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${focus[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button></div></div>`).join('')}`).join('')}
-    ${snzFoot(nSnz)}
-  </details>`;
+  const short = { status: 'reclassify', proto: 'protocol date', freq: 'frequency', mdnp: 'MD/NP' };
+  const kinds = ADMIN_KINDS.filter(([k]) => a[k].length);
+  const body = kinds.map(([k, title, sub]) => `<div class="sgrp"><div class="sgh"><b>${esc(title)}</b><span>${a[k].length}</span></div><div class="small muted">${esc(sub)}</div>
+    ${a[k].map(x => schItem(nm(x.p.mrn), `MRN ${esc(x.p.mrn)} · ${esc(x.p.status || 'no status')}${x.p.provider ? ' · ' + esc(x.p.provider) : ''}`, snzBtns(M.idA(k, x)),
+      `<div class="sl">${tag(k === 'status' || x.idx ? 'bad' : 'warn', x.text)}<span class="grow"></span><button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${focus[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button></div>`)).join('')}</div>`).join('');
+  return taskRow({ t: n ? `Admin to-do · ${n}` : 'Admin to-do', d: n ? `${schPl(n, 'patient')} to clean up on the tracker: ${kinds.map(([k]) => `${a[k].length} ${short[k]}`).join(', ')}` : 'Nothing to clean up on the tracker',
+    btn: n ? schFold('admin', 'Review') : '', done: !n, id: 'sch:admin', open: false, body });
 }
 // Meds for NEW visits: kits beyond what already-booked visits will use. Specialty pharmacy only: Besse is clinic stock,
 // ordered weekly and re-assignable to sooner visits (FIFO), so it is never flagged per patient.
@@ -1475,34 +1558,45 @@ function inductionModel(){
   return out.sort((a, b) => (a.start ?? 1e9) - (b.start ?? 1e9));
 }
 function startsHTML(){
-  const L = inductionModel(); S._ind = L; if (!L.length) return '';
-  const T = todaySerial();
-  return `<div class="card"><h2>Treatment starts <span class="chip ${L.some(x => x.issues.length) ? 'warn' : 'ok'}">${L.length}</span></h2>
-    <div class="small muted">6 visits: 56 mg first, then 84 mg, twice a week (weeks run from the start day). No back-to-back days; 2–3 days apart is ideal.</div>
-    ${L.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.p.mrn)}${x.start != null ? ` · started ${fmtD(x.start, 'dow')} · visit ${Math.min(x.done + 1, IND.visits)} of ${IND.visits}` : ''}</span></div>
-      ${x.start != null ? `<div class="line row small" style="gap:10px;flex-wrap:wrap">${x.weeks.map(wk => `<span class="wk ${wk.v.length >= 2 ? 'ok' : wk.to < T ? 'bad' : 'warn'}" title="Week ${wk.w}: ${fmtD(wk.from, 'dow')} – ${fmtD(wk.to, 'dow')}"><b>W${wk.w}</b> ${[0, 1].map(i => wk.v[i] ? `<span class="dot on" title="${fmtD(wk.v[i].date, 'dow')} ${fmtT(wk.v[i].time)}">${DOWS[dowOf(wk.v[i].date)]}</span>` : '<span class="dot">—</span>').join('')}</span>`).join('')}</div>` : ''}
-      ${x.issues.length ? `<div class="line row small">${x.issues.map(t => `<span class="chip ${/back-to-back|two visits|56 mg|starts at/i.test(t) ? 'bad' : 'warn'}">${esc(t)}</span>`).join('')}</div>` : '<div class="line small okText">On track</div>'}
-      ${(x.sugg || []).filter(g => g.days.length).map(g => `<div class="line small">Week ${g.w} — book ${g.days.map(d => `<b>${fmtD(d, 'dow')}</b>`).join(' / ')}${g.days.length < g.need ? ' <span class="warnText">(no other day fits the 2-day spacing)</span>' : ''}</div>`).join('')}
-      ${x.start == null ? `<div class="line small">Pending Start with no “Tx Start” appointment booked.${x.p.prefs ? ` Prefers: ${esc(x.p.prefs)}` : ''}</div>` : ''}</div>`).join('')}
-  </div>`;
+  if (S.view !== 'schedule') return '';   // Schedule-only rows (Admin to-do etc. are not a Today item); the interim Today body still calls this
+  // Schedule task row "Treatment starts": the first 6 visits of each new patient. Keeps S._ind current for the Access page.
+  const M = schModel(), L = M.ind, T = M.T; S._ind = L;
+  if (!L.length) return taskRow({ t: 'Treatment starts', d: 'No treatment starts in progress', done: true });
+  const nIss = L.filter(x => x.issues.length).length;
+  const body = `<div class="small muted">6 visits: 56 mg first, then 84 mg, twice a week (weeks run from the start day). No back-to-back days; 2–3 days apart is ideal.</div>
+    ${L.map(x => schItem(nm(x.p.mrn), `MRN ${esc(x.p.mrn)}${x.start != null ? ` · started ${fmtD(x.start, 'dow')} · visit ${Math.min(x.done + 1, IND.visits)} of ${IND.visits}` : ''}`,
+      `<button class="btn sm" data-act="patient" data-m="${esc(x.p.mrn)}">Open patient</button>`,
+      `${x.start != null ? `<div class="sl wks">${x.weeks.map(wk => { const tone = wk.v.length >= 2 ? 'ok' : wk.to < T ? 'bad' : 'warn';
+          return `<span class="wk ${tone}" title="Week ${wk.w}: ${fmtD(wk.from, 'dow')} – ${fmtD(wk.to, 'dow')}"><b>Week ${wk.w}</b> ${[0, 1].map(i => wk.v[i] ? `<span class="dot on">${DOWS[dowOf(wk.v[i].date)]}</span>` : '<span class="dot">—</span>').join(' ')}<span class="sr">${wk.v.length >= 2 ? 'booked' : wk.to < T ? 'short' : 'needs visits'}</span></span>`; }).join('')}</div>` : ''}
+      ${x.issues.length ? `<div class="sl">${x.issues.map(t => tag(/back-to-back|two visits|56 mg|starts at/i.test(t) ? 'bad' : 'warn', t)).join('')}</div>` : '<div class="sl small okText">On track</div>'}
+      ${(x.sugg || []).filter(g => g.days.length).map(g => `<div class="sl small">Week ${g.w}: book ${g.days.map(d => `<b>${fmtD(d, 'dow')}</b>`).join(' / ')}${g.days.length < g.need ? ' <span class="warnText">(no other day fits the 2-day spacing)</span>' : ''}</div>`).join('')}
+      ${x.start == null ? `<div class="sl small">Pending start with no “Tx Start” appointment booked.${x.p.prefs ? ` Prefers: ${esc(x.p.prefs)}` : ''}</div>` : ''}`)).join('')}`;
+  // All on track is not "done": the row stays open (green detail line) so the week-by-week list is still one click away.
+  return taskRow({ t: 'Treatment starts', d: `${schPl(L.length, 'patient')} in their first 3 weeks, ${nIss ? `${nIss} need${nIss === 1 ? 's' : ''} a booking fix` : 'all on track'}`,
+    btn: schFold('starts', 'Review'), tone: nIss ? '' : 'ok', id: 'sch:starts', open: false, body });
 }
 function schedHTML(){
-  const g = schedGaps(); const T = todaySerial(); const idD = x => `due|${x.mrn}`, idX = x => `sched|${x.mrn}|${x.a.date}`;
-  const nSnz = snzCount([...g.B.map(idD), ...g.days.filter(d => d.d !== T).flatMap(d => d.list.map(idX))]); g.B = g.B.filter(x => !hidden(idD(x))); for (const d of g.days) if (d.d !== T) d.list = d.list.filter(x => !hidden(idX(x)));
+  if (S.view !== 'schedule') return '';   // Schedule-only rows (Admin to-do etc. are not a Today item); the interim Today body still calls this
+  // Schedule task row "Needs scheduling" (decision 7): one count per patient, neutral, no consent / protocol / MD-NP chips.
+  // Open state persists in CFG.schedOpen (page toggle listener), as before.
+  const M = schModel(), g = M.g, T = M.T, n = M.nSched;
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
-    return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span>${snzBtns(idX(x))}</div>
-    <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${medChip(x.mrn)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, false)}</div>`; };
+    return `<div class="sitem${done && !mneed ? ' isdone' : ''}"><div class="sh"><b>${esc(nm(x.mrn))}</b><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)}${x.p?.freq ? ' · ' + esc(x.p.freq) : ''}</span><span class="ctl">${snzBtns(M.idX(x))}</span></div>
+      <div class="sl">${x.ns && !taskGet(x.mrn, 'sched') ? tag('warn', `Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}`) : ''}${medChip(x.mrn)}</div>${mneed ? '<div class="sl small badText">Scheduled out: order meds for the new visits (they won’t show as needing meds until the appointment list is updated).</div>' : ''}${x.p?.prefs ? `<div class="sl small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, false)}</div>`; };
   const sortDone = l => l.slice().sort((a, b) => taskDone(a.mrn, a.ns, a.np) - taskDone(b.mrn, b.ns, b.np));
-  const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
-  const n = new Set([...g.days.flatMap(d => d.list), ...g.B].filter(x => !taskGet(x.mrn, 'sched')).map(x => x.mrn)).size;   // one per patient, dismissed left out
-  return `<details class="card fold" data-sec="sched" ${CFG.schedOpen === false ? '' : 'open'}><summary><h2>Needs scheduling <span class="chip ${n ? 'warn' : 'ok'}">${n}</span></h2></summary>
-    <div class="small muted">One count per patient. Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}. Overdue more than ${OVERDUE_GRACE} days with nothing booked moves to Action needed › Admin to reclassify.</div>
-    ${g.B.length ? `<div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
-      ${g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span>${snzBtns(idD(x))}</div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${medChip(x.mrn)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('')}</div>` : ''}
-    ${today ? `<div class="dayblock today"><div class="bh"><b>Today</b><span>${today.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></div><div class="small muted">On each patient’s appointment card, under To do.</div></div>` : ''}
-    ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`).join('')}
-    ${snzFoot(nSnz)}
-  </details>`;
+  const open = l => l.filter(x => !taskDone(x.mrn, x.ns, x.np)).length;
+  const today = g.days.find(d => d.d === T), later = g.days.filter(d => d.d !== T);
+  const has = g.B.length || g.days.some(d => d.list.length);
+  const body = !has ? '' : `<div class="small muted">Book them at the visit shown. “Schedule out” means nothing is booked through ${fmtD(g.lim, 'full')}. Overdue more than ${OVERDUE_GRACE} days with nothing booked moves to Admin to-do to reclassify.</div>
+    ${g.B.length ? `<div class="sgrp"><div class="sgh"><b>Due for a visit, nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
+      ${g.B.map(x => `<div class="sitem"><div class="sh"><b>${esc(nm(x.mrn))}</b><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)}${x.p.freq ? ' · ' + esc(x.p.freq) : ''}</span><span class="ctl">${snzBtns(M.idD(x))}</span></div>
+        <div class="sl">${tag(x.due != null && x.due < T ? 'bad' : 'warn', x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow'))}${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${medChip(x.mrn)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="sl small badText">Scheduled: order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="sl small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('')}</div>` : ''}
+    ${today && today.list.length ? `<div class="sgrp"><div class="sgh"><b>Today</b><span>${open(today.list)} open</span></div><div class="small muted">Mark these in Today, under This visit. <button class="linkbtn" data-act="view" data-v="today">Open Today</button></div></div>` : ''}
+    ${later.filter(d => d.list.length).map(d => { const id = 'sch:sd:' + d.d; return `<details class="sgrp" data-open="${id}" ${S.open?.[id] ? 'open' : ''}><summary class="sgh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${open(d.list)} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`; }).join('')}`;
+  // The count in the title is one per patient. With nobody left but a list still there (all marked scheduled), the row
+  // stays open in green so Undo stays reachable.
+  return taskRow({ t: n ? `Needs scheduling · ${n}` : 'Needs scheduling', d: n ? `${schPl(n, 'patient')} not booked far enough ahead · next 7 days` : body ? 'Everyone in the next 7 days is booked ahead or marked scheduled' : 'Everyone seen in the next 7 days is booked ahead',
+    btn: body ? schFold('sched', 'Review', CFG.schedOpen !== false) : '', done: !body, tone: !n && body ? 'ok' : '', id: 'sch:sched', open: CFG.schedOpen !== false, body });
 }
 const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 async function savePull(){
@@ -2211,36 +2305,55 @@ function filterSort(list, stOf){
   return out.sort(cmp);
 }
 function toolbarHTML(){
-  const sel = (id, key, opts) => `<select id="${id}" class="fld" style="width:auto" data-f="${key}">${opts.map(([v, l]) => `<option value="${v}" ${S[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  return `<div class="row" style="margin-top:10px">
-    <input id="fQ" class="fld" style="flex:1;min-width:140px" data-input="fQ" placeholder="Find patient or MRN" value="${esc(S.fQ)}" aria-label="Find patient">
-    ${sel('fPh', 'fPh', [['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']])}
-    ${sel('fSt', 'fSt', [['all', 'All statuses'], ['attention', 'Needs attention'], ...(S.range === 'week' ? [['avail', 'Kit on hand'], ['ordered', 'On order'], ['need', 'Needs med'], ['pulled', 'Pulled']] : [['onhand', 'On hand'], ['check', 'Confirm (not in audit)'], ['bad', 'No kit']]), ['done', 'Given'], ['sched', 'Needs scheduling']])}
-    ${sel('sortBy', 'sortBy', [['time', 'Sort: time'], ['patient', 'Sort: patient'], ['pharmacy', 'Sort: pharmacy'], ['status', 'Sort: status']])}
-    ${S.fQ || S.fPh !== 'all' || S.fSt !== 'all' || S.sortBy !== 'time' ? '<button class="linkbtn" data-act="fClear">Clear</button>' : ''}</div>`;
+  // Schedule filters (S.fQ, S.fPh, S.fSt, S.sortBy). Day and week use the same table, so the status list is the same in both.
+  const sel = (id, key, label, opts) => `<select id="${id}" class="fld" data-f="${key}" aria-label="${label}">${opts.map(([v, l]) => `<option value="${v}" ${S[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  return `<div class="schbar">
+    <input id="fQ" class="fld" data-input="fQ" placeholder="Find patient or MRN" value="${esc(S.fQ)}" aria-label="Find patient or MRN">
+    ${sel('fPh', 'fPh', 'Pharmacy', [['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']])}
+    ${sel('fSt', 'fSt', 'Medication status', [['all', 'All statuses'], ['attention', 'Needs attention'], ['avail', 'Kit on hand'], ['ordered', 'On order'], ['need', 'Needs med'], ['pulled', 'Pulled'], ['done', 'Given'], ['sched', 'Needs scheduling']])}
+    ${sel('sortBy', 'sortBy', 'Sort', [['time', 'Sort: time'], ['patient', 'Sort: patient'], ['pharmacy', 'Sort: pharmacy'], ['status', 'Sort: status']])}
+    ${S.fQ || S.fPh !== 'all' || S.fSt !== 'all' || S.sortBy !== 'time' ? '<button class="btn sm ghost" data-act="fClear">Clear</button>' : ''}</div>`;
 }
 function weekHTML(){
-  const T = todaySerial(); const from = S.day, to = S.day + 6;
-  const all = rangeModel(from, to); const act = all.filter(r => r.a.active);
+  // Schedule visit card: day tabs (today + next 3 business days) or the Sunday–Saturday week around S.schDay.
+  const T = todaySerial(), d0 = S.schDay ?? T, wk = S.range === 'week';
+  const [from, to] = wk ? schWeekOf(d0) : [d0, d0];
+  const all = rangeModel(Math.min(from, T), to).filter(r => r.a.date >= from);   // future days start allocating from today, like the task list
+  const live = all.filter(r => !r.a.cancelled), act = live.filter(r => r.a.active), cx = all.filter(r => r.a.cancelled);
   const cnt = st => act.filter(r => r.st === st).length;
-  const list = filterSort(all, r => r.st);
-  const groups = []; if (S.sortBy === 'time'){ for (const r of list){ const g = groups[groups.length - 1]; if (g && g.d === r.a.date) g.rows.push(r); else groups.push({ d: r.a.date, rows: [r] }); } } else groups.push({ d: null, rows: list });
-  const row = r => { const [c, l] = ST_LABEL[r.st]; const k = r.adminKit || r.pulledKit || r.kit;
-    return `<tr><td data-l="When">${S.sortBy !== 'time' ? `<b>${fmtD(r.a.date, 'dow')}</b> ` : ''}${fmtT(r.a.time)}</td><td data-l="Patient"><button class="linkbtn" style="padding:0;font-weight:700;color:inherit" data-act="patient" data-m="${esc(r.a.mrn)}">${esc(nm(r.a.mrn))}</button></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Visit">${r.a.isStart ? 'Start' : r.a.isEFU ? 'EFU' : esc(r.a.event)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'}</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td>
-      <td data-l="Med"><span class="chip ${c}">${l}</span> <span class="small muted">${k ? (r.st === 'ordered' ? 'ordered ' + fmtD(k.ordered) : 'SN …' + esc(String(k.serial).slice(-5)) + ' · use by ' + fmtD(k.expDate)) : ''}</span></td>
-      <td data-l="Booked thru">${r.a.active ? `<span class="chip ${r.needsSched ? 'warn' : ''}">${r.thru ? fmtD(r.thru) : 'none'}</span>` : ''}</td></tr>`; };
-  return `
-  <div class="card">
-    <div class="row"><button class="btn sm" data-act="day" data-d="-7" aria-label="Previous week">◀</button>
-      <div class="grow" style="text-align:center"><b>${fmtD(from, 'dow')} – ${fmtD(to, 'dow')}</b></div>
-      <button class="btn sm" data-act="day" data-d="7" aria-label="Next week">▶</button>${from !== T ? '<button class="btn sm" data-act="day" data-d="0">This week</button>' : ''}
-      <div class="seg">${[['day', 'Day'], ['week', 'Week']].map(([v, l]) => `<button data-act="range" data-v="${v}" aria-pressed="${S.range === v}">${l}</button>`).join('')}</div></div>
-    <div class="stats" style="margin-top:10px"><div class="stat"><div class="n">${act.length}</div><div class="l">appointments</div></div><div class="stat"><div class="n" style="color:var(--ok)">${cnt('avail') + cnt('pulled') + cnt('done') + cnt('bstock')}</div><div class="l">med covered</div></div><div class="stat"><div class="n" style="color:var(--info)">${cnt('ordered')}</div><div class="l">covered by an order</div></div><div class="stat"><div class="n" style="color:var(--bad)">${cnt('need')}</div><div class="l">need a med</div></div><div class="stat"><div class="n" style="color:var(--warn)">${new Set(act.filter(r => r.needsSched).map(r => r.a.mrn)).size}</div><div class="l">need scheduling</div></div></div>
-    ${toolbarHTML()}
-  </div>
-  <div class="card">${list.length ? groups.map(g => `${g.d != null ? `<div class="dayhead"><b>${g.d === T ? 'Today' : DAYNAME[dowOf(g.d)]}</b><span>${fmtD(g.d, 'full')} · ${g.rows.filter(r => r.a.active).length} appts</span><span class="grow"></span>${g.d >= T ? `<button class="linkbtn" data-act="gotoDay" data-d="${g.d}">Open day</button>` : ''}</div>` : ''}
-    <div class="tw"><table class="t rt"><thead><tr><th>Time</th><th>Patient</th><th>MRN</th><th>Visit</th><th class="num">mg</th><th>Pharmacy</th><th>Med</th><th>Booked thru</th></tr></thead><tbody>${g.rows.map(row).join('')}</tbody></table></div>`).join('') : '<div class="empty">No appointments match.</div>'}
-  </div>`;
+  const list = filterSort(live, r => r.st);
+  const groups = []; if (wk && S.sortBy === 'time'){ for (const r of list){ const g = groups[groups.length - 1]; if (g && g.d === r.a.date) g.rows.push(r); else groups.push({ d: r.a.date, rows: [r] }); } } else groups.push({ d: null, rows: list });
+  const docs = new Map(); const itemOf = a => { if (!docs.has(a.date)) docs.set(a.date, todayModel(a.date)); return docs.get(a.date).find(i => i.a.key === a.key); };
+  const row = r => { const a = r.a, key = esc(a.key); const [c, l] = ST_LABEL[r.st] || ['', r.st]; const k = r.adminKit || r.pulledKit || r.kit;
+    const kd = !a.active ? esc(a.status || '') : k ? (r.st === 'ordered' ? 'ordered ' + fmtD(k.ordered) : 'SN …' + esc(String(k.serial).slice(-5)) + ' · use by ' + fmtD(k.expDate)) : '';
+    const acts = [];
+    if (a.active && a.date <= T && !r.adminKit) acts.push(`<button class="btn sm" data-act="schAdmin" data-k="${key}" data-d="${a.date}">Administer</button>`);
+    if (a.active) acts.push(`<button class="btn sm ghost" data-act="vEdit" data-k="${key}">Edit</button>`);
+    if (a.active && !r.adminKit && a.date >= T) acts.push(`<button class="btn sm ghost mute" data-act="apptCancel" data-k="${key}" aria-label="Patient cancelled">Cancelled</button>`);
+    let docRow = '';
+    if (a.active && a.date < T){ const i = itemOf(a); const ds = i && docState(i); if (ds && !ds.done){ const id = 'schdoc:' + a.key;
+      docRow = `<details class="schdoc" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Paperwork ${ds.n}/${ds.total}</summary>${schDocsHTML(i)}</details>`; } }
+    return `<tr class="${a.active ? '' : 'off'}"><td data-l="Time">${wk && S.sortBy !== 'time' ? `<b>${fmtD(a.date, 'dow')}</b> ` : ''}${fmtT(a.time)}${a.moved && a.origTime != null && a.origTime !== a.time ? `<span class="was">was ${fmtT(a.origTime)}</span>` : ''}</td>
+      <td data-l="Patient"><button class="linkbtn pt" data-act="patient" data-m="${esc(a.mrn)}">${esc(nm(a.mrn))}</button><span class="mrn">${esc(a.mrn)}</span></td>
+      <td data-l="Visit"><span class="cv">${a.isStart ? tag('acc', 'Start') : a.isEFU ? 'Follow-up' : esc(a.event)}<span class="kd"><b>${r.inf.mg ?? '?'} mg</b> · ${PH_LABEL[r.inf.pharm]}</span><span class="clin">${a.rendering ? `<span class="pdot" style="background:${provColor(a.rendering)}" aria-hidden="true"></span>${esc(a.rendering)}` : 'Clinician not set'}${a.moved && a.origRendering && a.origRendering !== a.rendering ? ` (was ${esc(a.origRendering)})` : ''}</span></span></td>
+      <td data-l="Medication">${tag(c, l)}${kd ? `<span class="kd">${kd}</span>` : ''}</td>
+      <td data-l="Booked thru">${a.active ? tag(r.needsSched ? 'warn' : '', r.thru ? fmtD(r.thru) : 'none') : ''}</td>
+      <td data-l="" class="acts"><div class="actw">${acts.join('')}</div>${docRow}</td></tr>`; };
+  const head = '<thead><tr><th>Time</th><th>Patient</th><th>Visit · clinician</th><th>Medication</th><th>Booked thru</th><th><span class="sr">Actions</span></th></tr></thead>';
+  const cols = '<colgroup><col class="c-time"><col class="c-pt"><col class="c-visit"><col class="c-med"><col class="c-thru"><col class="c-act"></colgroup>';   // same widths in every day group
+  const table = rows => `<div class="tw"><table class="t rt schtab">${cols}${head}<tbody>${rows.map(row).join('')}</tbody></table></div>`;
+  const tabs = [...new Set([...schTabs(), ...(!wk ? [d0] : [])])].sort((x, y) => x - y);
+  const seg = `<div class="seg" role="group" aria-label="Day or week">${tabs.map(d => `<button data-act="gotoDay" data-d="${d}" aria-pressed="${!wk && d === d0}">${d === T ? 'Today' : fmtD(d, 'dow')}</button>`).join('')}<button data-act="range" data-v="week" aria-pressed="${wk}">Week</button></div>`;
+  const step = wk ? `<div class="schstep"><button class="btn sm ghost mute" data-act="day" data-d="-7" aria-label="Previous week">◀</button><b>${fmtD(from, 'dow')} – ${fmtD(to, 'dow')}</b><button class="btn sm ghost mute" data-act="day" data-d="7" aria-label="Next week">▶</button>${from !== schWeekOf(T)[0] ? '<button class="btn sm ghost" data-act="day" data-d="0">This week</button>' : ''}</div>`
+    : `<div class="schstep"><button class="btn sm ghost mute" data-act="day" data-d="-1" aria-label="Previous day">◀</button><button class="btn sm ghost mute" data-act="day" data-d="1" aria-label="Next day">▶</button></div>`;
+  const am = act.filter(r => (r.a.time ?? 0) < 12 * 60).length;
+  const h = wk ? `<h3>Week of ${fmtD(from, 'dow')} <span>· ${schPl(act.length, 'visit')}</span></h3>`
+    : `<h3>${d0 === T ? 'Today' : DAYNAME[dowOf(d0)]}, ${fmtD(d0, 'full')} <span>· ${schPl(act.length, 'visit')}${act.length ? ` · ${am} AM · ${act.length - am} PM` : ''}</span></h3>`;
+  const tile = (n, l, tone) => `<div class="tile ${n ? tone : ''}"><b>${n}</b><span>${l}</span></div>`;
+  const tiles = wk ? `<div class="tiles">${tile(act.length, 'appointments', '')}${tile(cnt('avail') + cnt('pulled') + cnt('done') + cnt('bstock'), 'med covered', 'ok')}${tile(cnt('ordered'), 'covered by an order', '')}${tile(cnt('need'), 'need a med', 'bad')}${tile(new Set(act.filter(r => r.needsSched).map(r => r.a.mrn)).size, 'need scheduling', 'warn')}</div>` : '';
+  const body = list.length ? groups.map(g => `${g.d != null ? `<div class="dayhead"><b>${g.d === T ? 'Today' : DAYNAME[dowOf(g.d)]}</b><span>${fmtD(g.d, 'full')} · ${schPl(g.rows.filter(r => r.a.active).length, 'visit')}</span><span class="grow"></span><button class="btn sm ghost" data-act="gotoDay" data-d="${g.d}" aria-label="Show ${DAYNAME[dowOf(g.d)]} ${fmtD(g.d)}">Day</button></div>` : ''}${table(g.rows)}`).join('')
+    : `<div class="empty">${live.length ? 'No appointments match the filters.' : wk ? 'No appointments this week.' : 'No appointments on this day.'}</div>`;
+  return `<section class="card schv"><div class="schnav">${seg}${step}</div>${h}${tiles}${toolbarHTML()}${body}${schCancelHTML(cx, wk)}</section>`;
 }
 // ---------- dismiss, shared with the workbook (eskSnooze: id → { until: 0, by, at }). No snoozing in ESK; old timed snoozes are ignored. ----------
 const snzGet = id => { const s = (S.snooze || {})[id]; return s && !s.until ? s : null; };
@@ -2253,9 +2366,9 @@ async function snoozeSet(id, kind){
   if (kind === 'dismiss') toast('info', `Dismissed. <button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Undo</button>`);
 }
 // Dismiss control; when shown via "Show", a Restore link instead.
-const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">dismissed</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss">✕</button>`}</span>`; };
+const snzBtns = id => { const s = snzGet(id); return `<span class="snz noprint">${s ? `<span class="muted">dismissed</span><button class="linkbtn" data-act="unsnz" data-id="${esc(id)}">Restore</button>` : `<button class="linkbtn" data-act="dis" data-id="${esc(id)}" title="Dismiss" aria-label="Dismiss">✕</button>`}</span>`; };
 const snzCount = ids => ids.filter(id => snzGet(id)).length;
-const snzFoot = n => n ? `<div class="small muted snzfoot">${n} dismissed ·<button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show'}</button></div>` : '';
+const snzFoot = n => n ? `<div class="small muted snzfoot">${n} dismissed ·<button class="linkbtn" data-act="snzShow">${S.showSnz ? 'Hide them' : 'Show them'}</button></div>` : '';
 function bizDaysAhead(T, n){ let d = T, c = 0; while (c < n){ d++; const w = dowOf(d); if (w !== 0 && w !== 6) c++; } return d; }
 function actionModel(){
   const T = todaySerial(); const end = bizDaysAhead(T, 3);
@@ -2331,33 +2444,65 @@ async function madrsRemSent(){
   await S.store.setDoc('eskTasks', S.tasks); render();
 }
 function actionHTML(){
-  const m = actionModel(); const T = todaySerial();
+  if (S.view !== 'schedule') return '';   // Schedule-only rows (Admin to-do etc. are not a Today item); the interim Today body still calls this
+  // Schedule left card "Before these visits": one task row per job, one button each; lists fold out under the row; done rows are one line.
+  const M = schModel(), m = M.m, T = M.T, end = fmtD(m.end, 'dow');
   const when = a => `${a.date === T ? 'Today' : fmtD(a.date, 'dow')} ${fmtT(a.time)}`;
-  const idM = c => `madrs|${c}|${T}`, idO = r => `order|${r.a.key}`, idS = x => `smeds|${x.mrn}|${x.t.at}`, idT = x => `transit|${x.r.kit.id}`, idR = x => `reas|${x.k.id}`;
-  const nSnz = snzCount([...[...madrsByClin(m.madrs).keys()].map(idM), ...m.order.map(idO), ...m.schedMeds.map(idS), ...m.transit.map(idT), ...m.reassign.map(idR)]);
-  m.madrs = m.madrs.filter(x => !hidden(idM(x.by))); m.order = m.order.filter(r => !hidden(idO(r))); m.schedMeds = m.schedMeds.filter(x => !hidden(idS(x))); m.transit = m.transit.filter(x => !hidden(idT(x))); m.reassign = m.reassign.filter(x => !hidden(idR(x)));
-  const remSent = m.madrs.length && m.madrs.every(x => madrsRemGet(x.i.a.mrn));
-  const total = m.transit.length + m.order.length + m.schedMeds.length + (m.madrs.length && !remSent ? 1 : 0);
+  const B = (key, open, label, attrs) => open ? `<button class="${schBtn(key)}" ${attrs}>${label}</button>` : '';
+  const rows = [];
+  // 1. Order meds (specialty only; Besse is clinic stock, decision 11)
+  const nO = m.order.length + m.schedMeds.length; const first = m.order[0];
+  rows.push(taskRow({ t: 'Order meds', id: 'sch:order', done: !nO, more: 'Show who',
+    d: nO ? [m.order.length ? `${schPl(m.order.length, 'visit')} with no kit${first ? `, earliest ${when(first.a)} ${esc(nm(first.a.mrn))}` : ''}` : '', m.schedMeds.length ? `${schPl(m.schedMeds.length, 'patient')} scheduled out without meds` : ''].filter(Boolean).join(' · ') + ` · next 3 business days` : `Nothing to order for visits through ${end}`,
+    btn: B('order', nO, 'Order meds', 'data-act="goInv" data-v="order"'),
+    body: !nO ? '' : m.schedMeds.map(x => schItem(nm(x.mrn), `MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}`, snzBtns(M.idS(x)), `<div class="sl">${medChip(x.mrn)}</div>`)).join('')
+      + m.order.map(r => schItem(nm(r.a.mrn), `MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}`, snzBtns(M.idO(r)), '<div class="sl small muted">No kit on hand or on order.</div>')).join('') }));
+  // 2. Kits in transit for visits in the window
+  const nT = m.transit.length; const old = m.transit.map(x => x.r.kit.ordered).filter(v => v != null).sort((a, b) => a - b)[0];
+  rows.push(taskRow({ t: 'Kits in transit', id: 'sch:transit', done: !nT, more: nT === 1 ? 'Show the kit' : 'Show the kits',
+    d: nT ? `${schPl(nT, 'kit')} on order for visits through ${end}${old != null ? `, oldest ordered ${fmtD(old)} (${T - old}d ago)` : ''}` : `No kits on order for visits through ${end}`,
+    btn: B('transit', nT, 'Follow-up email', `data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}"`),
+    body: !nT ? '' : m.transit.map(x => schItem(nm(x.r.a.mrn), `needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}`, snzBtns(M.idT(x)), x.f?.fu ? `<div class="sl small muted">${esc(x.f.fu)}</div>` : '')).join('')
+      + '<div class="sfoot"><button class="btn sm ghost" data-act="goInv" data-v="transit">Open In transit</button></div>' }));
+  // 3. Assign Besse stock
+  rows.push(taskRow({ t: 'Assign Besse stock', id: 'sch:assign', done: !M.asgCan && !M.asgNone,
+    d: M.asgCan || M.asgNone ? [M.asgCan ? `${schPl(M.asgCan, 'Besse visit')} through ${end} need a kit labeled from stock` : '', M.asgNone ? `${M.asgNone} with no matching stock` : ''].filter(Boolean).join(' · ') : `Every Besse visit through ${end} has a labeled kit`,
+    btn: M.asgCan ? B('assign', true, 'Label &amp; assign…', 'data-act="asgOpen"') : B('assign', M.asgNone, 'Besse order', 'data-act="goInv" data-v="besse"') }));
+  // 4. Re-assign labeled Besse kits that will expire unused
+  const nR = m.reassign.length;
+  rows.push(taskRow({ t: 'Re-assign Besse kits', id: 'sch:reassign', done: !nR, more: 'Show the kit',
+    d: nR ? `${schPl(nR, 'labeled kit')} expiring within 3 weeks, patient has no visit in the next 7 days` : 'No labeled kits need re-assigning',
+    btn: nR === 1 ? B('reassign', true, 'Re-assign…', `data-act="reassign" data-id="${esc(m.reassign[0].k.id)}"`) : nR ? schFold('reassign', 'Review ' + nR) : '',
+    body: !nR ? '' : m.reassign.map(x => schItem(nm(x.from), `${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}`, snzBtns(M.idR(x)) + `<button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button>`,
+      `<div class="sl small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}</div>`)).join('') }));
+  // 5. Expired kits
+  const nX = m.expired.length;
+  rows.push(taskRow({ t: 'Expired kits to dispose', id: 'sch:dispose', done: !nX, d: nX ? `${schPl(nX, 'expired kit')} waiting for disposal` : 'No expired kits waiting',
+    btn: B('dispose', nX, 'Dispose…', 'data-act="goInv" data-v="dispose"') }));
+  // 6. MADRS reminders (decision 10: folds once sent, until tomorrow or a new patient)
   const byClin = madrsByClin(m.madrs); const nToday = m.madrs.filter(x => x.today).length;
-  return `<div class="card"><h2>Action needed <span class="chip ${total ? 'bad' : 'ok'}">${total}</span></h2>
-    <div class="small muted">Meds for visits through ${fmtD(m.end, 'dow')} (next 3 business days). Each patient’s schedule-out, protocol and MADRS to-dos are on their appointment card.</div>
-    ${m.madrs.length && remSent ? (() => { const s = madrsRemGet(m.madrs[0].i.a.mrn); return `<details class="asec gray"><summary style="cursor:pointer;font-weight:700"><span class="mpill">MADRS</span> Reminder sent ✓ <span class="small muted" style="font-weight:500">${s.ts ? new Date(s.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' ' : 'today '}${s.by ? 'by ' + esc(s.by) + ' ' : ''}· ${m.madrs.length} patient${m.madrs.length > 1 ? 's' : ''} · back tomorrow or when a new patient is due</span></summary>
-      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}</span></div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)}</div>`).join('')}</div>`).join('')}
-      <div class="row small" style="margin-top:8px"><button class="linkbtn" data-act="madrsRemSent">Undo — not sent</button></div></details>`; })() : ''}
-    ${m.madrs.length && !remSent ? `<div class="asec madrs"><h3><span class="mpill">MADRS</span> Remind the clinician · ${nToday} today${m.madrs.length > nToday ? ` · ${m.madrs.length - nToday} next ${MADRS_AHEAD} days` : ''}</h3>
-      ${[...byClin].map(([c, L]) => `<div class="srow"><div class="head"><span class="name">${esc(c)}</span><span class="meta">${L.length} patient${L.length > 1 ? 's' : ''}${provEmail(c) ? '' : (() => { const g = provEmailGuess(c); return g ? ` · <span class="muted" title="Suggested from the name — confirm or switch">to ${esc(g[0])}?</span> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[0])}">✓ correct</button> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[1])}">use @${EMAIL_DOMAINS[1]}</button>` : ' · <span class="warnText">no email in Settings</span>'; })()}</span>${snzBtns(idM(c))}${remSent ? '' : `<button class="btn sm hdrc" data-act="madrsRemMail" data-c="${esc(c)}" title="Email ${esc(c)}" aria-label="Email ${esc(c)}">✉<span class="hl"> Email</span></button>`}</div>${L.map(i => `<div class="line small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)} · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}</div>`).join('')}</div>`).join('')}
-      <div class="row small" style="margin-top:8px">${remSent ? `<span class="chip ok">Reminder sent ✓ ${esc(madrsRemGet(m.madrs[0].i.a.mrn).by)}</span><button class="linkbtn" data-act="madrsRemSent">Undo</button>` : `<button class="btn sm primary" data-act="madrsRemSent">Mark sent</button><button class="linkbtn" data-act="madrsRemCopy">Copy all instead</button><span class="muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email + practice leader not set (Settings)</span>'}</span>`}</div></div>` : ''}
-    ${m.order.length || m.schedMeds.length ? `<div class="asec red"><h3>Order now · ${m.order.length + m.schedMeds.length}</h3>${m.schedMeds.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · scheduled out ${fmtD(fromIso(x.t.at))}</span>${snzBtns(idS(x))}</div><div class="line row">${medChip(x.mrn)}</div></div>`).join('')}${m.order.length || m.schedMeds.length ? m.order.map(r => `<div class="srow"><div class="head"><span class="name">${esc(nm(r.a.mrn))}</span><span class="meta">MRN ${esc(r.a.mrn)} · ${when(r.a)} · ${r.inf.mg ?? '?'} mg ${PH_LABEL[r.inf.pharm]}</span>${snzBtns(idO(r))}</div><div class="line small">No kit on hand or on order.</div></div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="goInv" data-v="${m.order.some(r => PS(r.inf.pharm)) || m.schedMeds.some(x => PS(x.p?.pharm)) ? 'order' : 'besse'}">Go to ordering</button></div>` : ''}</div>` : ''}
-    ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span>${snzBtns(idT(x))}</div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
-    ${!m.madrs.length && !m.order.length && !m.schedMeds.length && !m.transit.length ? '<div class="asec gray small" style="margin-top:10px">All clear: nothing to order or chase for the next 3 business days, and no MADRS due today.</div>' : ''}
-    ${snzFoot(nSnz)}
-    ${adminHTML()}
-    <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
-      ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span>${snzBtns(idR(x))}</div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
-      ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
-      ${m.expired.length ? `<div class="srow"><div class="line small">${m.expired.length} expired kit${m.expired.length > 1 ? 's' : ''} waiting for disposal.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Open Stock</button></div></div>` : ''}
-    </details>
-  </div>`;
+  const clinList = sent => [...byClin].map(([c, L]) => { const g = !sent && !provEmail(c) ? provEmailGuess(c) : null;
+    const hint = sent || provEmail(c) ? '' : g ? ` · <span class="muted">to ${esc(g[0])}?</span> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[0])}">✓ correct</button> <button class="linkbtn" data-act="provEmailSave" data-n="${esc(c)}" data-e="${esc(g[1])}">use @${EMAIL_DOMAINS[1]}</button>` : ' · <span class="warnText">no email in Settings</span>';
+    return `<div class="sitem"><div class="sh"><b>${esc(c)}</b><span class="meta">${schPl(L.length, 'patient')}${hint}</span><span class="ctl">${sent ? '' : snzBtns(M.idM(c)) + `<button class="btn sm" data-act="madrsRemMail" data-c="${esc(c)}" aria-label="Email ${esc(c)}">Email</button>`}</span></div>
+      ${L.map(i => `<div class="sl small">${i.a.date === T ? '<b>Today</b>' : fmtD(i.a.date, 'dow')} ${fmtT(i.a.time)} · <b>${esc(nm(i.a.mrn))}</b> · MRN ${esc(i.a.mrn)}${sent ? '' : ` · auth ${i.p.authExp < T ? 'expired' : 'exp'} ${fmtD(i.p.authExp)}`}</div>`).join('')}</div>`; }).join('');
+  if (!m.madrs.length) rows.push(taskRow({ t: 'MADRS reminders', id: 'sch:madrs', done: true, d: `No MADRS due in the next ${MADRS_AHEAD} days` }));
+  else if (M.remSent){ const s = madrsRemGet(m.madrs[0].i.a.mrn);
+    rows.push(taskRow({ t: 'MADRS reminders', id: 'sch:madrs', done: true,
+      d: `Reminder sent ${s.ts ? new Date(s.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}${s.by ? ' by ' + esc(s.by) : ''} · ${schPl(m.madrs.length, 'patient')} · back tomorrow or when a new patient is due`,
+      btn: '<button class="btn sm ghost mute" data-act="madrsRemSent" title="Mark the reminder as not sent">Undo</button>' })); }
+  else rows.push(taskRow({ t: 'MADRS reminders', id: 'sch:madrs',
+    d: `${schPl(m.madrs.length, 'patient')}, ${schPl(byClin.size, 'clinician')}${nToday ? `, ${nToday} today` : ''} · next ${MADRS_AHEAD} days`,
+    btn: schFold('madrs', 'Email clinicians'),
+    body: `<div class="small muted">One email per clinician. Their clinician on the tracker does the MADRS, not whoever the visit is booked with.</div>${clinList(false)}
+      <div class="sfoot"><button class="btn sm" data-act="madrsRemSent">Mark sent</button><button class="btn sm ghost" data-act="madrsRemCopy">Copy all instead</button><span class="small muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email and practice leader not set (Settings)</span>'}</span></div>` }));
+  // 7–9. Needs scheduling, Treatment starts, Admin to-do
+  rows.push(schedHTML(), startsHTML(), adminHTML());
+  // 10. Daily audit
+  const la = M.la, aud = S.aud && S.aud.date === isoOf(T) ? S.aud : null; const lastAt = aud?.scans?.length ? Math.max(...aud.scans.map(x => x.at || 0)) : 0;
+  rows.push(la.date === T ? taskRow({ t: 'Daily audit', id: 'sch:audit', done: true, d: `Done today${lastAt ? ' ' + new Date(lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}${aud?.a1 ? ' by ' + esc(aud.a1) : la.src ? ' (' + esc(la.src) + ')' : ''}` })
+    : taskRow({ t: 'Daily audit', id: 'sch:audit', d: `Not done yet today${la.date != null ? ` · last audit ${fmtD(la.date)}` : ''}`, btn: B('audit', true, 'Start audit', 'data-act="goInv" data-v="audit"') }));
+  return `<section class="card schtasks"><h3>Before these visits</h3><div class="small muted lede">Next 3 business days, through ${end}. Day-of items (consent, MADRS collected, booked through) are in Today, under This visit.</div>
+    <div class="tasks">${rows.join('')}</div>${snzFoot(M.nSnz)}</section>`;
 }
 function todayHTML(){
   if (S.range === 'week') return weekHTML();
@@ -3757,6 +3902,110 @@ PAGES.schedule = {
   html(){ const r = S.range; S.range = 'week'; try { return actionHTML() + startsHTML() + schedHTML() + weekHTML(); } finally { S.range = r; } },
   badge: () => null,
 };
+// ----- Schedule v2. The interim entry above stays byte-identical for protect.js; Object.assign below replaces every key. -----
+// Schedule: what to get done before the next 3 business days (left) and the day / week visit table (right).
+// Owned area functions render the pieces: actionHTML (task list), schedHTML / startsHTML / adminHTML (their task rows),
+// weekHTML (visit card), toolbarHTML (filters). Models are untouched; schModel() only gathers them once per render.
+
+// Selected day and day/week mode. The existing day / gotoDay / range controls set S.day and S.range; while Schedule is on
+// screen schSync() takes those over into S.schDay / S.schRange, then pins S.day = S.schDay so Administer, the day sheet and
+// Copy med list read the day shown. Today resets S.day and S.range when it renders; Schedule keeps its own across visits.
+// render() calls html() before it swaps #main, so #main still holds the previous page here.
+function schSync(){
+  const T = todaySerial(); if (S.schDay == null) S.schDay = T;
+  const here = document.getElementById('main')?.classList.contains('pg-schedule');
+  if (here && S._schSet != null && S.day !== S._schSet) S.schDay = S.day;
+  // Only Schedule offers Week, and Today forces 'day': coming back with 'day' restores Schedule's own mode.
+  if (here || S.range === 'week' || S.schRange == null) S.schRange = S.range === 'week' ? 'week' : 'day'; else S.range = S.schRange;
+  S.day = S.schDay; S._schSet = S.day;
+}
+const schTabs = () => { const T = todaySerial(); return [T, bizDaysAhead(T, 1), bizDaysAhead(T, 2), bizDaysAhead(T, 3)]; };
+const schWeekOf = d => { const sun = d - dowOf(d); return [sun, sun + 6]; };   // weeks run Sunday to Saturday (display only)
+const schPl = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+
+// Everything the task list, the badge and the page sub line need, computed once per render (cleared after the current task).
+function schModel(){
+  const sig = [todaySerial(), nowMin(), S.A, S.K, S.P, S.showSnz, S.snooze, S.tasks, JSON.stringify(S.snooze || {}), JSON.stringify(S.tasks || {}), CFG.provEmails];
+  if (S._schM && S._schM.sig.every((v, i) => v === sig[i])) return S._schM;
+  const T = todaySerial(); const m = actionModel();
+  const idM = c => `madrs|${c}|${T}`, idO = r => `order|${r.a.key}`, idS = x => `smeds|${x.mrn}|${x.t.at}`, idT = x => `transit|${x.r.kit.id}`, idR = x => `reas|${x.k.id}`;
+  const snz = [...[...madrsByClin(m.madrs).keys()].map(idM), ...m.order.map(idO), ...m.schedMeds.map(idS), ...m.transit.map(idT), ...m.reassign.map(idR)];
+  m.madrs = m.madrs.filter(x => !hidden(idM(x.by))); m.order = m.order.filter(r => !hidden(idO(r))); m.schedMeds = m.schedMeds.filter(x => !hidden(idS(x))); m.transit = m.transit.filter(x => !hidden(idT(x))); m.reassign = m.reassign.filter(x => !hidden(idR(x)));
+  const remSent = !!m.madrs.length && m.madrs.every(x => madrsRemGet(x.i.a.mrn));
+  const asg = assignModel().filter(r => r.a.date <= m.end); const asgCan = asg.filter(r => r.kit).length, asgNone = asg.length - asgCan;
+  // Needs scheduling: the same lists and dismiss filtering as before; one count per patient
+  const g = schedGaps(); const idD = x => `due|${x.mrn}`, idX = x => `sched|${x.mrn}|${x.a.date}`;
+  snz.push(...g.B.map(idD), ...g.days.filter(d => d.d !== T).flatMap(d => d.list.map(idX)));
+  g.B = g.B.filter(x => !hidden(idD(x))); for (const d of g.days) if (d.d !== T) d.list = d.list.filter(x => !hidden(idX(x)));
+  const nSched = new Set([...g.days.flatMap(d => d.list), ...g.B].filter(x => !taskGet(x.mrn, 'sched')).map(x => x.mrn)).size;
+  // Admin to-do
+  const a = adminModel(); const idA = (k, x) => `adm|${k}|${x.p.mrn}`;
+  snz.push(...ADMIN_KINDS.flatMap(([k]) => a[k].map(x => idA(k, x)))); for (const [k] of ADMIN_KINDS) a[k] = a[k].filter(x => !hidden(idA(k, x)));
+  const nAdmin = new Set(ADMIN_KINDS.flatMap(([k]) => a[k].map(x => x.p.mrn))).size;
+  const ind = inductionModel(); S._ind = ind;   // same cache the Access page (and its template-tool export) reads
+  const la = S._la || lastAudit();
+  const M = { T, m, idM, idO, idS, idT, idR, idD, idX, idA, remSent, asgCan, asgNone, g, nSched, a, nAdmin, ind, la, nSnz: snzCount(snz) };
+  M.open = { order: m.order.length + m.schedMeds.length > 0, transit: m.transit.length > 0, assign: asgCan + asgNone > 0, reassign: m.reassign.length > 0, dispose: m.expired.length > 0,
+    madrs: m.madrs.length > 0 && !remSent, sched: nSched > 0, starts: ind.some(x => x.issues.length), admin: nAdmin > 0, audit: la.date !== T };
+  M.nOpen = Object.values(M.open).filter(Boolean).length; M.first = Object.keys(M.open).find(k => M.open[k]) || null;
+  M.sig = sig; S._schM = M; queueMicrotask(() => { if (S._schM === M) S._schM = null; });
+  return M;
+}
+// One entry in a task's fold-out list: name, meta line, controls (dismiss, buttons), then extra lines.
+const schItem = (name, meta, ctl, rest = '') => `<div class="sitem"><div class="sh"><b>${esc(name)}</b><span class="meta">${meta}</span><span class="ctl">${ctl}</span></div>${rest}</div>`;
+// Button that opens or closes a task's list (the row's one button when the list itself is the work). The row's own
+// "Show details" summary is hidden by the page CSS when this button is there, so there is one toggle, not two.
+function schFold(key, label, open){ const id = 'sch:' + key, on = S.open && Object.prototype.hasOwnProperty.call(S.open, id) ? !!S.open[id] : !!open;
+  return `<button class="btn sm ${schModel().first === key ? 'primary' : 'ghost'}" data-act="schOpen" data-id="${esc(id)}" aria-expanded="${on}">${on ? 'Hide' : label}</button>`; }
+// The first open task (top to bottom) gets the primary button; the rest are plain.
+const schBtn = key => schModel().first === key ? 'btn sm primary' : 'btn sm';
+
+// Documentation back-fill for past visits (Tx report, REMS form, rescue med); same toggles as Today.
+function schDocsHTML(i){
+  const d = docState(i), key = esc(i.a.key), medInv = (S.shared || {}).medInvUrl;
+  const it = ([t, l]) => {
+    if (t === 'tracker' || t === 'logs') return `<li class="auto">${d[t] ? '✓ ' : ''}${esc(l)} <span class="muted">(automatic)</span></li>`;
+    const g = docGet(i.a.key, t);
+    const link = t === 'rems' ? ` <a href="${REMS_URL}" target="_blank" rel="noopener">REMS site</a>` : t === 'medinv' && medInv ? ` <a href="${esc(medInv)}" target="_blank" rel="noopener">Medication Inventory</a>` : '';
+    return `<li><button class="linkbtn" data-act="docTog" data-k="${key}" data-t="${t}" aria-pressed="${!!g}">${g ? '✓ ' : ''}${esc(l)}${t === 'tx' ? ' (NextGen)' : ''}</button>${g ? ` <span class="muted">${esc(g.by || '')}</span>` : ''}${link}</li>`;
+  };
+  const own = todosFor(i.a.key).map((x, n) => `<li><button class="linkbtn" data-act="todoTog" data-k="${key}" data-i="${n}" aria-pressed="${!!x.done}">${x.done ? '✓ ' : ''}${esc(x.t)}</button><button class="linkbtn mute" data-act="todoDel" data-k="${key}" data-i="${n}" aria-label="Remove to-do">Remove</button></li>`).join('');
+  return `<ul class="schdocs">${docItems(i).map(it).join('')}${own}</ul>`;
+}
+
+// Cancelled visits in the range shown, with Undo for the ones marked here.
+function schCancelHTML(rows, wk){
+  if (!rows.length) return '';
+  return `<details class="schcx noprint" data-open="sch:cx" ${S.open?.['sch:cx'] ? 'open' : ''}><summary>Cancelled · ${rows.length}</summary>${rows.map(r => `<div class="cxrow"><span>${wk ? fmtD(r.a.date, 'dow') + ' ' : ''}${fmtT(r.a.time)}</span><b>${esc(nm(r.a.mrn))}</b><span class="muted">${r.a.marked ? 'marked in the tracker' : 'cancelled in NextGen'}</span>${r.a.marked ? `<button class="btn sm ghost" data-act="apptUncancel" data-k="${esc(r.a.key)}">Undo</button>` : ''}</div>`).join('')}</details>`;
+}
+
+// Needs scheduling keeps its open / closed state across sessions, as before (CFG.schedOpen, saved on this device).
+function schToggle(e){ const d = e.target; if (d.dataset?.open === 'sch:sched' && CFG.schedOpen !== d.open){ CFG.schedOpen = d.open; saveLocal(); } }
+document.addEventListener('toggle', schToggle, true);
+
+Object.assign(PAGES.schedule, {
+  label: 'Schedule',
+  // The end date sits in the sub line, not the h1 subtitle, so the title stays on one line next to the tools.
+  title(){ schSync(); return 'Schedule <span>next 3 business days</span>'; },
+  sub(){ schSync(); const M = schModel(); const T = M.T;
+    const n = S.A.filter(a => a.active && a.date >= T && a.date <= M.m.end).length;
+    return `${schPl(n, 'visit')} through ${fmtD(M.m.end, 'dow')} · ${M.nOpen ? schPl(M.nOpen, 'thing') + ' to do first' : 'nothing to do first'}`; },
+  tools(){ schSync(); const T = todaySerial(), d = S.schDay; const n = S.A.filter(a => a.date === d && a.active && !a.cancelled).length;
+    const on = d === T ? '' : ` (${fmtD(d, 'dow')})`;
+    return `${S.store?.live ? '<button class="btn sm" data-act="upAppt" title="Upload the 1 ESK Ordering - B export">Upload appointment list</button>' : ''}<button class="btn sm" data-act="schBays" ${n ? '' : 'disabled'}>Print day sheet${on}</button><button class="btn sm" data-act="schCopy" ${n ? '' : 'disabled'}>Copy med list${on}</button>`; },
+  html(){ schSync(); return pageCols('t', actionHTML(), weekHTML()); },
+  badge(){ const n = schModel().nOpen; return n ? { n, tone: 'quiet' } : null; },
+});
+
+Object.assign(ACT_SCHEDULE, {
+  // Administer back-fill from the table: openAdmin reads S.day, so point it at the row's date first.
+  schAdmin: el => { S.day = +el.dataset.d; S._schSet = S.day; ACT.admin(el); },
+  // Day sheet and med list for the day selected on Schedule.
+  schBays: el => { S.day = S.schDay ?? todaySerial(); S._schSet = S.day; ACT.bays(el); },
+  schCopy: el => { S.day = S.schDay ?? todaySerial(); S._schSet = S.day; return ACT.copyPull(el); },
+  // Open or close a task's list.
+  schOpen: el => { const id = el.dataset.id; S.open = S.open || {}; const d = [...document.querySelectorAll('details[data-open]')].find(x => x.dataset.open === id); S.open[id] = !(d ? d.open : S.open[id]); if (id === 'sch:sched'){ CFG.schedOpen = S.open[id]; saveLocal(); } render(); },
+});
 // ===== /page: schedule =====
 
 // ===== page: inventory =====
