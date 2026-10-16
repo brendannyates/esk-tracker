@@ -177,7 +177,7 @@ button.doc{cursor:pointer} button.doc:hover{border-color:var(--accent)}
 .subnav button[aria-pressed="true"] .badge{background:var(--accent-ink);color:var(--accent)}
 .badge.neutral{background:var(--muted)}
 .dayblock{background:var(--surface2);border-radius:14px;padding:10px 12px;margin:10px 0}
-.dayblock.today{background:var(--accent-soft)} .dayblock.due{background:var(--bad-soft)}
+.dayblock.today{background:var(--accent-soft)} .dayblock.due{background:var(--surface2);border:1px solid var(--line)}
 .dayblock .bh{display:flex;align-items:baseline;gap:8px;cursor:default;list-style:none}
 details.dayblock>summary.bh{cursor:pointer} details.dayblock>summary::-webkit-details-marker{display:none}
 details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--muted)} details.dayblock[open]>summary.bh::after{content:"▾"}
@@ -189,6 +189,11 @@ details.dayblock>summary.bh::after{content:"▸";margin-left:auto;color:var(--mu
 .asec.red{background:var(--bad-soft)} .asec.blue{background:var(--info-soft)} .asec.amber{background:var(--warn-soft)} .asec.gray{background:var(--surface2)} .asec.madrs{background:var(--bad-soft);border:1.5px solid var(--bad)} .asec.madrs h3{display:flex;align-items:center;gap:8px}
 .asec h3{margin:0 0 6px;color:inherit;text-transform:none;letter-spacing:0;font-size:14px}
 .asec .srow{margin-top:6px}
+details.fold>summary{list-style:none;cursor:pointer} details.fold>summary::-webkit-details-marker{display:none} details.fold>summary h2{margin-bottom:0} details.fold[open]>summary h2{margin-bottom:8px}
+details.fold>summary h2::after{content:"▸";margin-left:auto;color:var(--muted);font-weight:400} details.fold[open]>summary h2::after{content:"▾"}
+.asec.admin>summary{cursor:pointer;font-weight:700} .asec .ah{margin:10px 0 2px;font-size:12.5px;font-weight:800}
+.vstat{display:inline-flex;align-items:baseline;gap:4px;font-size:12px} .vdue{background:none;border:0;padding:0;cursor:pointer;font:inherit} .vdue .chip{border:1px dashed currentColor}
+.floor .fl .bay{font-weight:800;color:var(--info)}
 .emailprev{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;color:#222;max-height:55vh;overflow:auto}
 iframe.print{width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;margin-bottom:12px}
@@ -947,6 +952,8 @@ function derive(){
     const marked = !!(S.cancel || {})[key];   // cancelled in the tracker before the next NextGen list shows it
     A.push({ r, key, mrn, patient: String(ta.get(r,'patient') ?? ''), date, time, event: ev, dose: num(ta.get(r,'dose')), status: marked ? 'Cancelled' : st, hold, marked, rendering: canonProv(ta.get(r,'rendering') ?? ta.get(r,'renderingprovider') ?? ta.get(r,'provider')),
       cancelled: marked || /cancel/i.test(st), active: !marked && !hold && !/no.?show|cancel|resched|delet/i.test(st), isStart: /start/i.test(ev), isEFU: /follow|efu/i.test(ev) });
+    const mv = (S.visit || {})[key]?.mv; const a = A[A.length - 1];   // moved in the tracker (card › edit): new time and/or clinician; the key keeps the NextGen time
+    if (mv){ a.origTime = a.time; a.origRendering = a.rendering; if (mv.time != null) a.time = mv.time; if (mv.prov) a.rendering = canonProv(mv.prov); a.moved = true; }
   });
   const tk = S.tables.kits; const ids = new Map();
   if (tk) tk.values.forEach((_, r) => {
@@ -1052,16 +1059,78 @@ function reassignModel(){
 }
 const FREQ_DAYS = f => { const r = freqRate(f); return r ? 7 / r : 7; };   // days between visits (Access › Merge frequencies can set labels it can't read)
 function lastKept(mrn){ let m = null; for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && (m == null || a.date > m)) m = a.date; for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && (m == null || k.adminDate > m)) m = k.adminDate; return m; }
+// One entry per patient: the tracker can hold more than one row per MRN (byMrn keeps the first).
+const curPatients = () => [...S.byMrn.values()];
+// Nothing booked and past due by more than this many days: no longer a scheduling task; Admin › Reclassify status instead.
+const OVERDUE_GRACE = 7;
+function dueInfo(p){ const last = lastKept(p.mrn); const due = last != null ? Math.round(last + FREQ_DAYS(p.freq)) : null; return { last, due }; }
 function schedGaps(){
   const T = todaySerial(), end = T + 6, lim = T + CFG.schedDays;
   const first = new Map();
   for (const a of S.A){ if (!a.active || a.date < T || a.date > end) continue; const f = first.get(a.mrn); if (!f || a.date < f.date || (a.date === f.date && (a.time ?? 0) < (f.time ?? 0))) first.set(a.mrn, a); }
   const groups = new Map();
-  for (const [mrn, a] of first){ const p = S.byMrn.get(mrn); const thru = scheduledThru(mrn); const ns = thru == null || thru < lim, np = needsProto(p); if (!ns && !np) continue; if (!groups.has(a.date)) groups.set(a.date, []); groups.get(a.date).push({ mrn, a, thru, p, ns, np }); }
+  for (const [mrn, a] of first){ const p = S.byMrn.get(mrn); const thru = scheduledThru(mrn); if (!(thru == null || thru < lim)) continue; if (!groups.has(a.date)) groups.set(a.date, []); groups.get(a.date).push({ mrn, a, thru, p, ns: true, np: false }); }
   const days = [...groups.entries()].sort((x, y) => x[0] - y[0]).map(([d, list]) => ({ d, list: list.sort((x, y) => (x.a.time ?? 0) - (y.a.time ?? 0)) }));
-  const B = S.P.filter(p => /^(active|pending)/i.test(p.status) && scheduledThru(p.mrn) == null).map(p => { const last = lastKept(p.mrn); const due = last != null ? Math.round(last + FREQ_DAYS(p.freq)) : null; return { mrn: p.mrn, p, last, due }; }).sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
-  const count = days.reduce((n, g) => n + g.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length, 0) + B.filter(x => !taskGet(x.mrn, 'sched')).length;
-  return { days, B, lim, count };
+  const B = curPatients().filter(p => /^(active|pending)/i.test(p.status) && scheduledThru(p.mrn) == null).map(p => ({ mrn: p.mrn, p, ...dueInfo(p) })).filter(x => !(x.due != null && x.due < T - OVERDUE_GRACE)).sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
+  const open = new Set([...days.flatMap(g => g.list), ...B].filter(x => !taskGet(x.mrn, 'sched')).map(x => x.mrn));   // each patient counts once
+  return { days, B, lim, count: open.size };
+}
+// ---------- Admin to-do (Action needed): tracker clean-up, one row per patient per kind ----------
+// proto: protocol expired or no date · freq: not seen at the tracker frequency over the last 2 weeks (2x/week = protocol update)
+// mdnp: MD/NP or rendering provider blank · status: overdue with nothing booked → Paused / Discontinued
+const FREQ_WEEKS = 2;
+function seenDates(mrn, from, to){ const s = new Set(); for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && a.date >= from && a.date <= to) s.add(a.date); for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate >= from && k.adminDate <= to) s.add(k.adminDate); return s.size; }
+function firstSeen(mrn){ let m = null; for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && (m == null || a.date < m)) m = a.date; for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && (m == null || k.adminDate < m)) m = k.adminDate; return m; }
+function adminModel(){
+  const T = todaySerial(), from = T - FREQ_WEEKS * 7, to = T - 1; const out = { proto: [], freq: [], mdnp: [], status: [] };
+  for (const p of curPatients()){
+    const cur = /^(active|pending)/i.test(p.status);
+    if (cur && (!p.protoExp || p.protoExp < T)) out.proto.push({ p, text: p.protoExp ? `Protocol expired ${fmtD(p.protoExp, 'full')}` : 'No protocol exp date' });
+    if (/^(active|pending|paused)/i.test(p.status) && (!p.coverage || !p.provider)) out.mdnp.push({ p, text: [!p.coverage && 'MD/NP blank', !p.provider && 'Rendering provider blank'].filter(Boolean).join(' · ') });
+    if (cur && scheduledThru(p.mrn) == null){ const { last, due } = dueInfo(p); if (due != null && due < T - OVERDUE_GRACE){ out.status.push({ p, text: `Overdue since ${fmtD(due, 'full')} · last seen ${fmtD(last)} · nothing booked` }); continue; } }
+    const rate = freqRate(p.freq); const fs = firstSeen(p.mrn);
+    if (/^active/i.test(p.status) && rate >= 1 / FREQ_WEEKS && fs != null && fs <= from){   // at least every 2 weeks (less often is the overdue check), seen before the window so a full 2 weeks to judge
+      const want = Math.round(rate * FREQ_WEEKS), n = seenDates(p.mrn, from, to);
+      if (n < want) out.freq.push({ p, idx: rate >= 2, text: `${p.freq} · seen ${n} of ${want} in the last ${FREQ_WEEKS} weeks${rate >= 2 ? ' — update the protocol' : ''}` });
+    }
+  }
+  return out;
+}
+const ADMIN_KINDS = [['status', 'Reclassify status (Paused / Discontinued)', 'Overdue more than ' + OVERDUE_GRACE + ' days with nothing booked.'], ['proto', 'Update expired protocol dates', 'Active / Pending Start with an expired or missing Protocol Exp Date.'], ['freq', 'Verify frequency', `Not seen at their tracker frequency over the last ${FREQ_WEEKS} weeks. 2x per week (index) patients need an updated protocol.`], ['mdnp', 'Add MD/NP or rendering provider', 'Blank on the Master Patient Tracker.']];
+// One dialog for every admin fix: writes only the fields that changed to the patient's Master Patient Tracker row.
+const PT_FIX = [['status', 'Status', 'status'], ['txfrequency', 'Tx Frequency', 'treatmentfrequency'], ['coverageoptions', 'MD/NP', 'coverageoptions'], ['renderingprovider', 'Rendering Provider', 'renderingprovider'], ['protocolexpdate', 'Protocol Exp Date', null]];
+function openPtFix(mrn, focus){
+  const p = S.byMrn.get(mrn); const t = S.tables.patients; if (!p) return; let dl = '';
+  const f = PT_FIX.filter(([k]) => t.cols[k] != null).map(([k, l, ref]) => { const c = t.cols[k]; const v = t.values[p.r][c];
+    if (k === 'protocolexpdate') return `<div><label class="lbl" for="pf_${k}">${esc(t.headers[c].trim() || l)}</label><input id="pf_${k}" class="fld" type="date" data-pf="${k}" value="${isoOf(toSerial(v))}"></div>`;
+    const opts = [...(S.ref[ref] || []), ...distinct('patients', k, 25)]; if (opts.length) dl += datalist('dl_pf_' + k, opts);
+    return `<div><label class="lbl" for="pf_${k}">${esc(t.headers[c].trim() || l)}</label><input id="pf_${k}" class="fld" data-pf="${k}" ${opts.length ? `list="dl_pf_${k}"` : ''} value="${esc(v ?? '')}" autocomplete="off"></div>`; }).join('');
+  const issues = Object.entries(adminModel()).flatMap(([kind, L]) => L.filter(x => x.p.mrn === mrn).map(x => `<span class="chip warn">${esc(x.text)}</span>`));
+  openModal(`<h2>Update tracker — ${esc(p.name)}</h2><div class="small muted">MRN ${esc(mrn)} · Master Patient Tracker row ${p.r + 3} · only changed fields are written</div>
+    ${issues.length ? `<div class="row small" style="margin-top:6px;gap:6px">${issues.join('')}</div>` : ''}
+    <div class="form2" style="margin-top:8px">${f}</div>${dl}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="ptFixSave" data-m="${esc(mrn)}">Save to tracker</button></div>`);
+  setTimeout(() => $('#pf_' + (focus || 'status'))?.focus(), 30);
+}
+async function ptFixSave(mrn){
+  const p = S.byMrn.get(mrn); const t = S.tables.patients; const out = [];
+  document.querySelectorAll('[data-pf]').forEach(el => { const c = t.cols[el.dataset.pf]; const old = t.values[p.r][c];
+    if (el.type === 'date'){ const s = fromIso(el.value); if (s !== toSerial(old)) out.push([c, s == null ? '' : { date: s }]); return; }
+    const v = el.value.trim(); if (String(old ?? '').trim() !== v) out.push([c, v]); });
+  if (!out.length) return toast('info', 'No changes.');
+  if (await write('Saving to the tracker…', () => S.store.update('patients', p.r, t.snap(p.r), out), `Updated ${out.length} field${out.length > 1 ? 's' : ''} for ${esc(p.name)}.`)){ closeModal(); render(); }
+}
+function adminHTML(){
+  const m = adminModel(); const id = (k, x) => `adm|${k}|${x.p.mrn}`;
+  const nSnz = snzCount(ADMIN_KINDS.flatMap(([k]) => m[k].map(x => id(k, x)))); for (const [k] of ADMIN_KINDS) m[k] = m[k].filter(x => !hidden(id(k, x)));
+  const n = new Set(ADMIN_KINDS.flatMap(([k]) => m[k].map(x => x.p.mrn))).size;
+  const focus = { status: 'status', proto: 'protocolexpdate', freq: 'txfrequency', mdnp: 'coverageoptions' };
+  return `<details class="asec gray admin" data-sec="admin" ${S.adminOpen ? 'open' : ''}><summary>Admin to-do · ${n} patient${n === 1 ? '' : 's'}${n ? '' : ' ✓'}</summary>
+    ${n ? '' : '<div class="small" style="margin-top:6px">Nothing to clean up on the tracker.</div>'}
+    ${ADMIN_KINDS.filter(([k]) => m[k].length).map(([k, title, sub]) => `<div class="ah">${esc(title)} · ${m[k].length}</div><div class="small muted">${esc(sub)}</div>
+      ${m[k].map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.p.mrn)} · ${esc(x.p.status || 'no status')}${x.p.provider ? ' · ' + esc(x.p.provider) : ''}</span>${snzBtns(id(k, x))}</div><div class="line row small"><span class="chip ${k === 'status' || x.idx ? 'bad' : 'warn'}">${esc(x.text)}</span><span class="grow"></span><button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${focus[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button></div></div>`).join('')}`).join('')}
+    ${snzFoot(nSnz)}
+  </details>`;
 }
 // Meds for NEW visits: kits beyond what already-booked visits will use. Specialty pharmacy only: Besse is clinic stock,
 // ordered weekly and re-assignable to sooner visits (FIFO), so it is never flagged per patient.
@@ -1091,8 +1160,8 @@ function openProto(mrn){
   openModal(`<h2>Protocol renewed — ${esc(p.name)}</h2><div class="muted small">MRN ${esc(mrn)} · current protocol exp ${p.protoExp ? fmtD(p.protoExp, 'full') : '—'}</div>
     <label class="lbl" for="protoDate">New protocol expiration date</label><input id="protoDate" type="date" class="fld" value="">
     <div class="writes"><b>Will write to Master Patient Tracker row ${p.r + 3}:</b><div><code>${esc(colLetterFor('patients', t.cols.protocolexpdate))}</code> ${esc(t.headers[t.cols.protocolexpdate].trim())} = the date above</div></div>
-    <div class="msg warn" style="margin-top:8px">Consent due: print a fresh consent for the patient to sign with this protocol.</div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="consent" data-m="${esc(mrn)}">Print consent</button><button class="btn primary" data-act="protoSave" data-m="${esc(mrn)}">Save date</button></div>`);
+    <div class="small muted" style="margin-top:8px">The patient signs a fresh consent at their next visit (it’s on their appointment card that day).</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="protoSave" data-m="${esc(mrn)}">Save date</button></div>`);
   setTimeout(() => $('#protoDate')?.focus(), 30);
 }
 async function protoSave(mrn){
@@ -1106,8 +1175,6 @@ function taskBtns(mrn, ns, np, nmd){
 }
 const taskDone = (mrn, ns, np) => (!ns || taskGet(mrn, 'sched')) && !np;
 const covChip = p => !p ? '' : p.coverage ? `<span class="small muted">${esc(p.coverage)}</span>` : '<span class="chip warn">MD/NP not set</span>';
-// a renewed consent is due whenever the protocol renewal is due
-const protoFlag = p => needsProto(p) ? `<span class="chip bad">New protocol · consent due · ${p.protoExp ? (p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(p.protoExp) : 'no date'}</span><button class="linkbtn noprint" data-act="consent" data-m="${esc(p.mrn)}">Print consent</button>` : '';
 const insChip = p => !p ? '' : p.insurance ? `<span class="chip">${esc(p.insurance)}</span>` : '<span class="chip warn">Insurance not set</span>';
 function protoChip(p, lim){ if (!p?.protoExp) return '<span class="chip warn">No protocol date</span>'; const T = todaySerial(); const cls = p.protoExp < T ? 'bad' : p.protoExp < lim ? 'warn' : ''; return `<span class="chip ${cls}">${p.protoExp < T ? 'Protocol expired' : 'Protocol exp'} ${fmtD(p.protoExp, 'full')}</span>`; }
 // ---------- treatment starts (induction) ----------
@@ -1164,17 +1231,18 @@ function schedHTML(){
   const nSnz = snzCount([...g.B.map(idD), ...g.days.filter(d => d.d !== T).flatMap(d => d.list.map(idX))]); g.B = g.B.filter(x => !hidden(idD(x))); for (const d of g.days) if (d.d !== T) d.list = d.list.filter(x => !hidden(idX(x)));
   const row = x => { const done = taskDone(x.mrn, x.ns, x.np); const mneed = taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need;
     return `<div class="srow" style="${done && !mneed ? 'opacity:.6' : ''}"><div class="head"><span class="name">${esc(nm(x.mrn))}</span><span class="meta">MRN ${esc(x.mrn)} · ${fmtT(x.a.time)} · ${esc(x.p?.freq || '')}</span>${snzBtns(idX(x))}</div>
-    <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, x.np)}</div>`; };
+    <div class="line row">${x.ns && !taskGet(x.mrn, 'sched') ? `<span class="chip warn">Schedule out · booked thru ${x.thru ? fmtD(x.thru) : '—'}</span>` : ''}${medChip(x.mrn)}</div>${mneed ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled out — order meds for the new visits (they won’t show as needing meds until the appointment report is updated).</div>' : ''}${x.p?.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, x.ns, false)}</div>`; };
   const sortDone = l => l.slice().sort((a, b) => taskDone(a.mrn, a.ns, a.np) - taskDone(b.mrn, b.ns, b.np));
   const today = g.days.find(d => d.d === T); const later = g.days.filter(d => d.d !== T);
-  return `<div class="card"><h2>Needs scheduling <span class="chip ${g.count ? 'warn' : 'ok'}">${g.count}</span></h2>
-    <div class="small muted">Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}.</div>
+  const n = new Set([...g.days.flatMap(d => d.list), ...g.B].filter(x => !taskGet(x.mrn, 'sched')).map(x => x.mrn)).size;   // one per patient, dismissed left out
+  return `<details class="card fold" data-sec="sched" ${CFG.schedOpen === false ? '' : 'open'}><summary><h2>Needs scheduling <span class="chip ${n ? 'warn' : 'ok'}">${n}</span></h2></summary>
+    <div class="small muted">One count per patient. Book them at the visit shown. “Schedule out” = not booked through ${fmtD(g.lim, 'full')}. Overdue more than ${OVERDUE_GRACE} days with nothing booked moves to Action needed › Admin to reclassify.</div>
     ${g.B.length ? `<div class="dayblock due"><div class="bh"><b>Due for a visit — nothing booked</b><span>Active / Pending Start · ${g.B.length}</span></div>
-      ${g.B.length ? g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span>${snzBtns(idD(x))}</div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${protoFlag(x.p)}${medChip(x.mrn)}${covChip(x.p)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('') : ''}</div>` : ''}
+      ${g.B.map(x => `<div class="srow"><div class="head"><span class="name">${esc(x.p.name)}</span><span class="meta">MRN ${esc(x.mrn)} · ${esc(x.p.status)} · ${esc(x.p.freq)}</span>${snzBtns(idD(x))}</div><div class="line row"><span class="chip ${x.due != null && x.due < T ? 'bad' : 'warn'}">${x.due == null ? 'Never seen' : x.due < T ? 'Overdue since ' + fmtD(x.due) : 'Due ' + fmtD(x.due, 'dow')}</span>${x.last ? `<span class="small muted">last seen ${fmtD(x.last)}</span>` : ''}${medChip(x.mrn)}</div>${taskGet(x.mrn, 'sched') && medOutlook(x.mrn)?.need ? '<div class="line small" style="color:var(--bad);font-weight:600">Scheduled — order meds for the new visits.</div>' : ''}${x.p.prefs ? `<div class="line small muted">Prefers: ${esc(x.p.prefs)}</div>` : ''}${taskBtns(x.mrn, true, false)}</div>`).join('')}</div>` : ''}
     ${today ? `<div class="dayblock today"><div class="bh"><b>Today</b><span>${today.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></div><div class="small muted">On each patient’s appointment card, under To do.</div></div>` : ''}
     ${later.map(d => `<details class="dayblock" ${S.openDays?.has(d.d) ? 'open' : ''} data-day="${d.d}"><summary class="bh"><b>${DAYNAME[dowOf(d.d)]}</b><span>${fmtD(d.d, 'full')} · ${d.list.filter(x => !taskDone(x.mrn, x.ns, x.np)).length} open</span></summary>${sortDone(d.list).map(row).join('')}</details>`).join('')}
     ${snzFoot(nSnz)}
-  </div>`;
+  </details>`;
 }
 const DAYNAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 async function savePull(){
@@ -1798,7 +1866,6 @@ function render(){
         ${S.mode === 'pane' && S.canFull ? '<button class="btn sm hdrc" data-act="full" title="Open full screen over Excel" aria-label="Full screen">⛶<span class="hl"> Full screen</span></button>' : ''}${S.mode === 'dialog' ? '<button class="btn sm hdrc" data-act="exitFull" title="Exit full screen" aria-label="Exit full screen">⤢<span class="hl"> Exit full screen</span></button>' : ''}
         <button class="btn sm hdrc" data-act="consent" title="Print the consent for esketamine treatment" aria-label="Print consent">🖨<span class="hl"> Print consent</span></button>
         ${S.store.live ? '<button class="btn sm hdrc" data-act="upAppt" title="Upload the 1 ESK Ordering - B export" aria-label="Upload appt list">⇪<span class="hl"> Upload appt list</span></button>' : ''}
-        <button class="btn sm hdrc" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab" aria-label="Import Sohar benefits">⇪<span class="hl"> Import Sohar benefits</span></button>
         <button class="iconbtn" data-act="refresh" title="Refresh from workbook" aria-label="Refresh">⟳</button>
         <button class="iconbtn" data-act="settings" title="Settings" aria-label="Settings">⚙</button></div>
       <nav class="tabs" role="tablist">${VIEWS.map(([k, l]) => { const b = (S._b || {})[k]; return `<button role="tab" data-act="view" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${l}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('')}</nav>
@@ -1995,6 +2062,7 @@ function actionHTML(){
     ${m.transit.length ? `<div class="asec blue"><h3>In transit — follow up · ${m.transit.length}</h3>${m.transit.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.r.a.mrn))}</span><span class="meta">needed ${when(x.r.a)} · ordered ${fmtD(x.r.kit.ordered)}${x.r.kit.ordered != null ? ' (' + (T - x.r.kit.ordered) + 'd ago)' : ''}</span>${snzBtns(idT(x))}</div>${x.f?.fu ? `<div class="line small muted">${esc(x.f.fu)}</div>` : ''}</div>`).join('') + `<div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(m.transit.map(x => x.r.kit.id).join(','))}">Follow-up email</button><button class="btn sm" data-act="goInv" data-v="transit">Open In transit</button></div>`}</div>` : ''}
     ${!m.madrs.length && !m.order.length && !m.schedMeds.length && !m.transit.length ? '<div class="asec gray small" style="margin-top:10px">All clear: nothing to order or chase for the next 3 business days, and no MADRS due today.</div>' : ''}
     ${snzFoot(nSnz)}
+    ${adminHTML()}
     <details class="asec gray"><summary style="cursor:pointer;font-weight:700">Re-assign Besse kits · ${m.reassign.length} &nbsp;·&nbsp; Assign stock · ${assignModel().filter(r => r.kit && r.a.date <= m.end).length} &nbsp;·&nbsp; Expired to dispose · ${m.expired.length}</summary>
       ${m.reassign.length ? `<div class="small muted" style="margin-top:6px">Labeled kits expiring within 3 weeks whose patient has no visit in the next 7 days.</div>${m.reassign.map(x => `<div class="srow"><div class="head"><span class="name">${esc(nm(x.from))}</span><span class="meta">${x.k.recv} mg · SN …${esc(x.k.serial.slice(-5))} · use by ${fmtD(x.k.expDate)}</span>${snzBtns(idR(x))}</div><div class="line row small">${x.target ? `Suggested: <b>${esc(nm(x.target.mrn))}</b> ${fmtD(x.target.date, 'dow')} ${fmtT(x.target.time)}` : 'No upcoming Besse visit before it expires'}<span class="grow"></span><button class="btn sm" data-act="reassign" data-id="${esc(x.k.id)}">Re-assign…</button></div></div>`).join('')}` : '<div class="small" style="margin-top:6px">No labeled kits need re-assigning.</div>'}
       ${(() => { const n = assignModel().filter(r => r.kit && r.a.date <= m.end).length; return n ? `<div class="srow"><div class="line small">${n} Besse visit${n > 1 ? 's' : ''} through ${fmtD(m.end, 'dow')} need a kit labeled from stock.</div><div class="line"><button class="btn sm" data-act="goInv" data-v="stock">Assign Besse stock</button></div></div>` : ''; })()}
@@ -2022,8 +2090,12 @@ function todayHTML(){
     ${schedHTML()}
   </div><div>
     <div class="card"><h2>Appointments <span class="apptcount">${act.length}</span><span class="small muted" style="font-weight:500">${am} AM · ${pm} PM</span><span class="sp"></span><button class="btn sm hdrc" data-act="bays" ${act.length ? '' : 'disabled'} title="Vitals Tracker &amp; bays" aria-label="Vitals Tracker and bays">🖨<span class="hl"> Vitals Tracker &amp; bays</span></button><button class="btn sm hdrc" data-act="copyPull" ${act.length ? '' : 'disabled'} title="Copy med list" aria-label="Copy med list">⧉<span class="hl"> Copy med list</span></button></h2>${toolbarHTML()}
-      ${(() => { if (day !== T) return ''; const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out).map(x => ({ ...x, due: visitDue(x.v) })).sort((p, q) => p.due.at - q.due.at);
-        return inC.length ? `<div class="floor"><b>In clinic now · ${inC.length}</b>${inC.map(x => `<span class="fl"><span class="name">${esc(nm(x.i.a.mrn))}</span>${x.v.bay ? `<span class="muted">Bay ${esc(x.v.bay)}</span>` : ''}${dueChip(x.due, true)}</span>`).join('')}</div>` : ''; })()}
+      ${(() => { if (day !== T) return ''; const now = nowMin();
+        // roomed and not discharged; gone an hour after final vitals were due, or once someone newer is roomed in the same bay
+        const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out && now <= disAt(x.v.start) + 60);
+        const bay = new Map(); for (const x of inC){ const b = String(x.v.bay || '').trim().toLowerCase() || 'k:' + x.i.a.key; const o = bay.get(b); if (!o || x.v.start > o.v.start) bay.set(b, x); }
+        const L = [...bay.values()].sort((p, q) => String(p.v.bay || '~').localeCompare(String(q.v.bay || '~'), undefined, { numeric: true }) || p.v.start - q.v.start);
+        return L.length ? `<div class="floor"><b>In clinic</b>${L.map(x => `<span class="fl" data-exp="${disAt(x.v.start) + 60}">${x.v.bay ? `<span class="bay">Bay ${esc(x.v.bay)}</span>` : ''}<span class="name">${esc(nm(x.i.a.mrn))}</span></span>`).join('')}</div>` : ''; })()}
       ${(() => { const live = items.filter(i => !i.a.cancelled), shown = filterSort(live, itemState); return live.length ? (shown.length ? `<div class="list" style="margin-top:10px">${shown.map(itemHTML).join('')}</div>` : '<div class="empty">No appointments match the filters.</div>') : '<div class="empty">No appointments on this day.</div>'; })()}
       ${cancelledHTML(items)}
     </div>
@@ -2202,7 +2274,6 @@ function visitMarks(v, key){
   const has = w => key && vitGet(key, w);
   return [{ what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40', w: 'mid' }, { what: 'Final vitals', at: disAt(v.start), kind: 'dis', w: 'fin' }].filter(m => !has(m.w));
 }
-function visitDue(v){ const m = visitMarks(v); if (!m.length) return null; return m[0].at + GRACE > nowMin() ? m[0] : m[1]; }
 function dueText(due, isToday){
   if (!due) return '';
   if (!isToday) return `${due.what} ${fmtT(due.at)}`;
@@ -2226,19 +2297,25 @@ function kitRowHTML(i){
 }
 const txBtnLabel = v => v?.out ? 'Tx report' : finalDue(v) ? 'Check out / Tx report' : 'Tx report';
 const txBtn = (key, v) => `<button class="btn sm ${finalDue(v) && !v.out ? 'primary' : ''}" data-act="vOut" data-k="${esc(key)}" ${v?.start != null && !v.out ? `data-coat="${disAt(v.start)}"` : ''}>${txBtnLabel(v)}${v?.savedAt && !v.out ? ' · draft saved' : ''}</button>`;
-function vitBtns(a){
-  return VIT().map(([w, l]) => { const x = vitGet(a.key, w); return `<button class="vit ${x ? 'on' : ''}" data-act="vit" data-k="${esc(a.key)}" data-w="${w}" title="${x ? `${l} vitals ${vitText(x)}${x.at != null ? ' at ' + fmtT(x.at) : ''} — click to edit` : `Record ${l.toLowerCase()} vitals`}">${x ? '✓' : '+'} ${l}${x ? ` <span class="muted">${esc(vitText(x))}</span>` : ''}</button>`; }).join('');
-}
+// Recorded vitals replace their prompt; click to edit.
+const vitShow = (key, w, l) => { const x = vitGet(key, w); return `<button class="vit on" data-act="${w === 'fin' ? 'vOut' : 'vit'}" data-k="${esc(key)}" data-w="${w}" title="${esc(l)} vitals — click to edit">${esc(l)} <span class="muted">${esc(vitText(x))}${x.at != null ? ' · ' + fmtT(x.at) : ''}</span></button>`; };
+// Card flow for today: Room time + Initial vitals → the 40-min pill (its countdown is the reminder; click to record) →
+// final vitals in Check out / Tx report → once discharged, only the discharge time is left.
 function visitRowHTML(i){
-  const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T;
-  if (!isToday) return `<div class="vrow small">${kitRowHTML(i)}</div>`;
+  const a = i.a; const v = visitGet(a.key); const T = todaySerial(); const isToday = a.date === T; const k = esc(a.key);
+  const edit = `<button class="linkbtn" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room or discharge times">edit</button>`;
+  if (!isToday) return `<div class="vrow small">${kitRowHTML(i)}<span class="grow"></span>${edit}</div>`;
+  if (v?.out) return `<div class="vrow small">${kitRowHTML(i)}<span class="chip ok">Discharged ${fmtT(v.out.at)}</span><span class="grow"></span>${txBtn(a.key, v)}${edit}</div>`;
   const rescue = (v?.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : '';
   if (!v || v.start == null){ const iv = { what: 'Expected', at: a.time, kind: 'arr' };   // awaiting arrival
-    return `<div class="vrow small">${kitRowHTML(i)}${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}${rescue}<span class="grow"></span>${vitBtns(a)}<button class="btn sm" data-act="vStart" data-k="${esc(a.key)}">▶ Start treatment</button>${txBtn(a.key, v)}</div>`; }
-  return `<div class="vrow small">${kitRowHTML(i)}<span><b>Started ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
-    ${v.out ? `<span class="chip ok">Checked out ${fmtT(v.out.at)}</span>` : visitMarks(v, a.key).map(m => dueChip(m, isToday)).join('')}
-    ${rescue}<span class="grow"></span>${vitBtns(a)}${txBtn(a.key, v)}
-    <button class="linkbtn" data-act="vStart" data-k="${esc(a.key)}" title="Edit start time / bay">edit</button></div>`;
+    return `<div class="vrow small">${kitRowHTML(i)}${a.time != null && !i.adminKit ? dueChip(iv, isToday) : ''}${v?.bay ? `<span>Bay ${esc(v.bay)} <span class="muted">(planned)</span></span>` : ''}${rescue}<span class="grow"></span><button class="btn sm primary" data-act="vStart" data-k="${k}">+ Room time + Initial vitals</button>${txBtn(a.key, v)}${edit}</div>`; }
+  const md = { what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40', w: 'mid' }, fd = { what: 'Final vitals', at: disAt(v.start), kind: 'dis', w: 'fin' };
+  const mid = vitGet(a.key, 'mid'), fin = vitGet(a.key, 'fin');
+  return `<div class="vrow small">${kitRowHTML(i)}<span class="vstat"><b>Room ${fmtT(v.start)}</b>${v.bay ? ` · Bay ${esc(v.bay)}` : ''}</span>
+    ${vitGet(a.key, 'init') ? vitShow(a.key, 'init', 'Initial') : `<button class="vit" data-act="vit" data-k="${k}" data-w="init">+ Initial vitals</button>`}
+    ${mid ? vitShow(a.key, 'mid', `${CFG.vitalsMin}-min`) : `<button class="vdue" data-act="vit" data-k="${k}" data-w="mid" title="Record the ${esc(CFG.vitalsMin)}-min vitals">${dueChip(md, true)}</button>`}
+    ${fin ? vitShow(a.key, 'fin', 'Final') : mid || nowMin() > md.at + GRACE ? `<button class="vdue" data-act="vOut" data-k="${k}" title="Final vitals are entered in Check out / Tx report">${dueChip(fd, true)}</button>` : ''}
+    ${rescue}<span class="grow"></span>${txBtn(a.key, v)}${edit}</div>`;
 }
 function openVit(key, w){
   const x = (visitGet(key)?.vit || {})[w] || {}; const it = S.A.find(a => a.key === key); const l = VIT().find(y => y[0] === w)[1];
@@ -2256,13 +2333,43 @@ async function vitSave(key, w, x){
   await visitSet(key, { vit }); render();
 }
 function openStart(key){
-  const v = visitGet(key) || {}; const it = S.A.find(a => a.key === key);
-  openModal(`<h2>Start treatment</h2><div class="small muted">${esc(nm(it?.mrn))} · ${fmtT(it?.time)} appointment</div>
-    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="vsT">Treatment start time (provider administers)</label><input id="vsT" class="fld" type="time" value="${hhmm(v.start ?? nowMin())}"></div>
-    <div><label class="lbl" for="vsB">Bay #</label><input id="vsB" class="fld" value="${esc(v.bay || '')}" placeholder="optional"></div></div>
-    <div class="small muted" style="margin-top:8px">Timers: ${esc(CFG.vitalsMin)}-min vitals after start, final vitals ${esc(CFG.disAfter)} min after that (change in Settings).</div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end">${v.start != null ? '<button class="btn ghost" data-act="vClear" data-k="' + esc(key) + '">Clear start</button><span class="grow"></span>' : ''}<button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
-  setTimeout(() => $('#vsT')?.focus(), 30);
+  const v = visitGet(key) || {}; const it = S.A.find(a => a.key === key); const x = (v.vit || {}).init || {};
+  openModal(`<h2>Room time + Initial vitals</h2><div class="small muted">${esc(nm(it?.mrn))} · ${fmtT(it?.time)} appointment</div>
+    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="vsT">Room time</label><input id="vsT" class="fld" type="time" value="${hhmm(v.start ?? nowMin())}"></div>
+    <div><label class="lbl" for="vsB">Bay #</label><input id="vsB" class="fld" value="${esc(v.bay || '')}" placeholder="optional"></div>
+    <div><label class="lbl" for="vtBp">Initial BP</label><input id="vtBp" class="fld" value="${esc(x.bp || '')}" placeholder="120/80" inputmode="numeric" autocomplete="off"></div>
+    <div><label class="lbl" for="vtHr">Pulse (BPM)</label><input id="vtHr" class="fld" type="number" min="0" value="${esc(x.hr || '')}"></div>
+    <div><label class="lbl" for="vtO2">O2 sat (%)</label><input id="vtO2" class="fld" type="number" min="0" max="100" value="${esc(x.o2 || '')}"></div></div>
+    <div class="small muted" style="margin-top:8px">Timers run from the room time: ${esc(CFG.vitalsMin)}-min vitals, then final vitals ${esc(CFG.disAfter)} min later (change in Settings). Initial vitals are timed at the room time.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
+  setTimeout(() => $('#vtBp')?.focus(), 30);
+}
+// Card › edit: move the visit to another clinician and/or time (kept in the tracker, not NextGen), fix room / discharge times.
+function openVisitEdit(key){
+  const a = S.A.find(x => x.key === key); if (!a) return; const v = visitGet(key) || {}; const isToday = a.date === todaySerial();
+  const provs = [...new Set([...apptProviders(), ...S.P.map(p => p.provider).filter(Boolean)])].sort((x, y) => x.localeCompare(y));
+  openModal(`<h2>Edit visit</h2><div class="small muted">${esc(nm(a.mrn))} · ${fmtD(a.date, 'dow')} · NextGen: ${fmtT(a.origTime ?? a.time)} with ${esc(a.origRendering ?? a.rendering ?? '—')}</div>
+    <div class="form2" style="margin-top:8px"><div><label class="lbl" for="veP">Clinician</label><input id="veP" class="fld" list="dlVeP" value="${esc(a.rendering || '')}" autocomplete="off">${datalist('dlVeP', provs)}</div>
+    <div><label class="lbl" for="veT">Appointment time</label><input id="veT" class="fld" type="time" value="${hhmm(a.time)}"></div>
+    ${isToday ? `<div><label class="lbl" for="veR">Room time <span class="muted">(blank = not roomed)</span></label><input id="veR" class="fld" type="time" value="${hhmm(v.start)}"></div>
+    <div><label class="lbl" for="veB">Bay #</label><input id="veB" class="fld" value="${esc(v.bay || '')}"></div>` : ''}
+    ${v.out ? `<div><label class="lbl" for="veO">Discharge time</label><input id="veO" class="fld" type="time" value="${hhmm(v.out.at)}"></div><label class="opt" style="align-self:end"><input type="checkbox" id="veU"> Undo discharge</label>` : ''}</div>
+    <div class="small muted" style="margin-top:8px">A move only changes this tracker; change it in NextGen too. It stays until you reset it here.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">${a.moved ? `<button class="btn ghost" data-act="veReset" data-k="${esc(key)}">Reset to NextGen</button><span class="grow"></span>` : ''}<button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="veSave" data-k="${esc(key)}">Save</button></div>`);
+}
+async function visitEditSave(key, reset){
+  const a = S.A.find(x => x.key === key); if (!a) return; S.visit = S.visit || {}; const v = { ...(S.visit[key] || {}) };
+  const o = { time: a.origTime ?? a.time, prov: a.origRendering ?? a.rendering ?? '' };
+  if (reset) delete v.mv;
+  else {
+    const t = fromHHMM($('#veT')?.value), p = ($('#veP')?.value || '').trim();
+    const mv = {}; if (t != null && t !== o.time) mv.time = t; if (p && canonProv(p) !== canonProv(o.prov)) mv.prov = p;
+    if (Object.keys(mv).length) v.mv = { ...mv, by: CFG.me || '', at: new Date().toISOString() }; else delete v.mv;
+    if ($('#veR')){ const r = fromHHMM($('#veR').value); if (r == null) delete v.start; else v.start = r; const b = $('#veB').value.trim(); if (b) v.bay = b; else delete v.bay; }
+    if (v.out){ if ($('#veU')?.checked) delete v.out; else { const d = fromHHMM($('#veO')?.value); if (d != null) v.out = { ...v.out, at: d }; } }
+  }
+  if (Object.keys(v).length) S.visit[key] = v; else delete S.visit[key];
+  closeModal(); await saveVisit(); derive(); render();
 }
 // ----- plan bays ahead (prints on the Vitals Tracker) -----
 function bayClashes(day){
@@ -2274,7 +2381,7 @@ function bayClashes(day){
 function openBays(){
   const day = S.day; const rows = todayModel(day).filter(i => i.a.active);
   const draw = () => { const bad = bayClashes(day);
-    openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after treatment start; discharge vitals ${esc(CFG.disAfter)} min after that.</div>
+    openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after room time; final vitals ${esc(CFG.disAfter)} min after that.</div>
       <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
       ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td><b>${esc(nm(i.a.mrn))}</b> <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
       </tbody></table></div>
@@ -3227,7 +3334,7 @@ function openSettings(){
       <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
       <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
       <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
-      <div><label class="lbl" for="sV40">2nd vitals after treatment start (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
+      <div><label class="lbl" for="sV40">2nd vitals after room time (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
       <div><label class="lbl" for="sDis">Final vitals after 2nd vitals (min)</label><input id="sDis" class="fld" type="number" data-cfg="disAfter" value="${CFG.disAfter}"></div>
       <div style="grid-column:1/-1"><label class="lbl" for="sMedInv">Medication Inventory Tracker link (saved in this workbook for everyone)</label><input id="sMedInv" class="fld" value="${esc((S.shared || {}).medInvUrl || '')}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"></div>
       <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -3237,6 +3344,7 @@ function openSettings(){
     <div class="row small" style="margin-top:4px;gap:8px;padding-left:24px"><label for="sVitS">Sound</label><select id="sVitS" class="fld" style="width:auto;min-height:30px;padding:2px 8px">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${CFG.vitSound === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="vitTest">Test</button><span class="muted">${notifyHint()}</span></div>
     ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open full screen automatically when the panel opens</label>` : ''}
     ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
+    <div class="row small" style="margin-top:12px;gap:8px"><button class="btn sm" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">⇪ Import Sohar benefits</button><span class="muted">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN.${S.ben?.size ? ` ${S.ben.size} patients imported so far.` : ""}</span></div>
     <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn primary" data-act="cfgSave">Done</button></div>`);
 }
@@ -3301,7 +3409,13 @@ const ACT = {
   taskDoX: el => taskSet(el.dataset.m, 'sched', true),
   docTog: el => docToggle(el.dataset.k, el.dataset.t),
   vStart: el => openStart(el.dataset.k),
-  vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the start time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim(); closeModal(); await visitSet(key, { start: m, bay }); render(); },
+  vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the room time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim();
+    const bp = ($('#vtBp')?.value || '').trim(), hr = ($('#vtHr')?.value || '').trim(), o2 = ($('#vtO2')?.value || '').trim(); const vit = { ...(visitGet(key)?.vit || {}) };
+    if (bp || hr || o2) vit.init = { bp, hr, o2, at: m, by: CFG.me || '' };
+    closeModal(); await visitSet(key, { start: m, bay, vit }); render(); },
+  vEdit: el => openVisitEdit(el.dataset.k),
+  veSave: el => visitEditSave(el.dataset.k, false),
+  veReset: el => visitEditSave(el.dataset.k, true),
   vClear: async el => { const key = el.dataset.k; const v = visitGet(key); if (v){ delete v.start; } closeModal(); await saveVisit(); render(); },
   vOut: el => openCheckout(el.dataset.k),
   vit: el => openVit(el.dataset.k, el.dataset.w),
@@ -3357,6 +3471,8 @@ const ACT = {
   oAddr: () => { const e = orderEmail(); copyAddr(e.to, e.subj); },
   fuAddr: () => { const e = followEmail(followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id))); copyAddr(e.to, e.subj); },
   fuMail: async () => { const e = followEmail(followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id))); await copyText(e.text, e.html); openMail(e.to, e.subj); toast('info', 'Email opened with To, Cc and Subject — paste (Ctrl+V) the follow-up into the body.'); },
+  ptFix: el => openPtFix(el.dataset.m, el.dataset.f),
+  ptFixSave: el => ptFixSave(el.dataset.m),
   reassign: el => openReassign(el.dataset.id),
   asgOpen: () => openAssign(),
   asgAll: () => { S.asg.rows.forEach((_, i) => S.asg.ok.add(i)); S.asg.draw(); },
@@ -3438,7 +3554,7 @@ document.addEventListener('input', e => {
   if (el.dataset.adm){ S.adm[el.dataset.adm] = el.value; clearTimeout(S._a); S._a = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderAdmin(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
   if (el.dataset.disp){ S.disp[el.dataset.disp] = el.value; clearTimeout(S._d); S._d = setTimeout(() => { const id = el.id, pos = el.selectionStart; renderDispose(); const n = document.getElementById(id); if (n){ n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }, 300); }
 });
-document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'sched' && CFG.schedOpen !== d.open){ CFG.schedOpen = d.open; saveLocal(); } if (d.dataset?.sec === 'admin') S.adminOpen = d.open; if (d.dataset?.day){ S.openDays = S.openDays || new Set(); d.open ? S.openDays.add(+d.dataset.day) : S.openDays.delete(+d.dataset.day); } }, true);
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
@@ -3519,6 +3635,8 @@ function vitAlert(id, d, v){
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
 setInterval(() => {
   const now = nowMin();
+  document.querySelectorAll('.floor [data-exp]').forEach(el => { if (now > +el.dataset.exp) el.remove(); });
+  document.querySelectorAll('.floor').forEach(el => { if (!el.querySelector('.fl')) el.remove(); });
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = 'chip ' + dueCls(due, true); });
   document.querySelectorAll('[data-coat]').forEach(el => { if (now >= +el.dataset.coat && !/Check out/.test(el.textContent)){ el.textContent = 'Check out / Tx report' + (/draft saved/.test(el.textContent) ? ' · draft saved' : ''); el.classList.add('primary'); } });   // final vitals now due
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
@@ -3551,7 +3669,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles();
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
