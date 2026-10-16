@@ -540,7 +540,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .group > .none{margin:0 12px;color:var(--muted);font-size:14px}
 .pg-patients .qdot.none{background:var(--line)}
 .pg-patients .facts dd{overflow-wrap:anywhere}
-.pg-patients .qrow .tags{display:flex;gap:4px;flex:none}
+.pg-patients .qrow .tags{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:none}
 .pg-patients .snzfoot{margin:10px 12px 0}
 .pg-patients .ptp > .card,.pg-patients .ptp > .cols2{margin:0 0 16px}
 .pg-patients .ptp .cols2{gap:16px}
@@ -561,8 +561,9 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .ptup{list-style:none;margin:0;padding:0}
 .pg-patients .ptup li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:7px 0}
 .pg-patients .ptup li + li{border-top:1px solid var(--line)}
-.pg-patients .ptup .when{min-width:140px}
-.pg-patients .ptup .what{flex:1;min-width:0}
+.pg-patients .ptup .when{flex:none;min-width:140px}
+.pg-patients .ptup .what{flex:1 1 120px;min-width:0;overflow-wrap:anywhere}
+.pg-patients .ptup .ptst{flex:none;margin-left:auto}
 .pg-patients .facts{margin-top:12px}
 .pg-patients .ptup + .facts{margin-top:14px}
 .pg-patients .facts dd .chip,.pg-patients .facts dd .tag{white-space:normal}
@@ -3924,11 +3925,11 @@ function ptHistRow(h){
   const tone = h.k || v.out ? 'ok' : /cancel|no.?show/i.test(st) ? 'bad' : /kept/i.test(st) ? 'ok' : '';
   const by = v.out?.by || vit.init?.by || h.k?.tech || '';
   const td = (l, v, num) => `<td class="${num ? 'num' : ''}${v === '—' ? ' nil' : ''}" data-l="${l}">${v}</td>`;   // nil cells fold away in the pane
-  return `<tr>${td('Date', `${fmtD(h.date, 'dow')}${h.time != null ? ` <span class="muted">${fmtT(h.time)}</span>` : ''}`)}${td('Visit', h.a ? esc(h.a.isStart ? 'Start' : h.a.isEFU ? 'Follow-up' : h.a.event || 'Treatment') : '—')}${td('Status', st ? tag(tone, st) : '—')}${td('mg', h.k?.admin != null ? String(h.k.admin) : '—', true)}${td('Kit', h.k ? `<span class="mono">SN …${esc(String(h.k.serial || '').slice(-5) || '—')}</span>` : '—')}${td('Initial', bp('init'))}${td('40-min', bp('mid'))}${td('Final', bp('fin'))}${td('In chair', chair)}${td('By', esc(by) || '—')}</tr>`;
+  return `<tr>${td('Date', `${fmtD(h.date, 'dow')}${h.time != null ? ` <span class="muted">${fmtT(h.time)}</span>` : ''}`)}${td('Visit', h.a ? esc(h.a.isStart ? 'Start' : h.a.isEFU ? 'Follow-up' : h.a.event || 'Treatment') : '—')}${td('Status', st ? tag(tone, st) : '—')}${td('Kit given', h.k ? `${h.k.admin != null ? esc(String(h.k.admin)) + ' mg · ' : ''}<span class="mono">SN …${esc(String(h.k.serial || '').slice(-5) || '—')}</span>` : '—')}${td('BP', ['init', 'mid', 'fin'].some(w => vit[w]?.bp) ? ['init', 'mid', 'fin'].map(bp).join(' · ') : '—')}${td('In chair', chair)}${td('By', esc(by) || '—')}</tr>`;
 }
 function ptHistoryHTML(mrn){
   const H = ptHistory(mrn); if (!H.length) return '<div class="muted small">No past visits on the appointment list and no kits given.</div>';
-  const head = '<thead><tr><th>Date</th><th>Visit</th><th>Status</th><th class="num">mg</th><th>Kit</th><th>Initial</th><th>40-min</th><th>Final</th><th>In chair</th><th>By</th></tr></thead>';
+  const head = '<thead><tr><th>Date</th><th>Visit</th><th>Status</th><th>Kit given</th><th title="Initial · 40-min · final">BP: initial · 40-min · final</th><th>In chair</th><th>By</th></tr></thead>';
   const first = H.slice(0, 8), more = H.slice(8); const id = 'pth:' + mrn;
   return `<div class="tw"><table class="t rt">${head}<tbody>${first.map(ptHistRow).join('')}</tbody></table></div>
     ${more.length ? `<details class="fold" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Show ${more.length} older</summary><div class="tw"><table class="t rt">${head}<tbody>${more.map(ptHistRow).join('')}</tbody></table></div></details>` : ''}
@@ -3969,7 +3970,7 @@ function ptPageHTML(mrn){
   const paper = [
     taskRow({ t: 'Protocol', d: pd, done: !needsProto(p), tone: !needsProto(p) ? '' : !p.protoExp || p.protoExp < T ? 'bad' : 'warn', btn: ptBtn('protoRenew', mrn, 'Protocol renewed…') }),
     taskRow({ t: 'Consent', d: 'Signed with each protocol renewal. Printing it is not recorded.', btn: ptBtn('consent', mrn, 'Print consent') }),
-    taskRow({ t: 'MADRS', d: `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · ${p.authExp ? `${needsMadrs(p) ? 'due since' : 'next due'} ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : 'no auth date, so no MADRS due'}`, done: !needsMadrs(p), tone: needsMadrs(p) ? 'bad' : '', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
+    taskRow({ t: 'MADRS', d: needsMadrs(p) ? `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · due since ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : `Not due${p.lastMadrs != null ? ` · last ${fmtD(p.lastMadrs, 'full')}` : ''}`, done: !needsMadrs(p), tone: needsMadrs(p) ? 'bad' : '', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
   ].join('');
   const thru = scheduledThru(mrn); const sd = taskGet(mrn, 'sched'); const so = R.some(r => r.k === 'sched');
   const nextF = factsDL([
