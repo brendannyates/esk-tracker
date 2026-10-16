@@ -110,7 +110,8 @@ main>.alert{margin:0 0 16px}
   .rail .brand small,.rail .brand .bt>span{flex:0 1 auto;min-width:0}
   .rail .sec{order:1;flex:0 1 auto;min-width:0;flex-direction:row;align-items:center;gap:4px;margin:0;padding:0;overflow-x:auto;scrollbar-width:none}
   .rail .sec>button,.rail .sec>.btn{width:auto;flex:none;min-height:36px;padding:0 10px;font-size:14px}
-  .rail .conn{order:9;padding:0 4px;font-size:0;gap:0}
+  .rail .conn{order:9;padding:0 4px;gap:0}
+  .rail .conn .ct{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .rail .nav{order:2;flex:1 0 100%;flex-direction:row;gap:4px;overflow-x:auto;scrollbar-width:none;padding:6px 0 8px;margin:0 -12px;padding-left:12px;padding-right:12px}
   .rail .nav::-webkit-scrollbar,.rail .sec::-webkit-scrollbar{display:none}
   .rail .nav button{width:auto;flex:none;min-height:38px;padding:0 12px;font-size:14px}
@@ -2564,7 +2565,8 @@ function render(){
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id));   // rail counts come from PAGES.<view>.badge()
   const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
   const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bt"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
-  const conn = `<div class="conn${!S.store.live ? ' demo' : ''}" role="status"><i aria-hidden="true"></i>${!S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook'}</div>`;
+  const connT = !S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook';
+  const conn = `<div class="conn${!S.store.live ? ' demo' : ''}" role="status" title="${connT}"><i aria-hidden="true"></i><span class="ct">${connT}</span></div>`;   // the pane shows only the dot; the text stays for screen readers and as the tooltip
   if (S.full){
     app.innerHTML = `<div class="app full" data-mode="${S.mode}"><aside class="rail">${brand}<div class="sec">${conn}</div></aside><div class="page"><main id="main" class="pg-full"><div class="card"><h3>Working in the full-screen view</h3><div class="small muted">Keep this panel open. It connects the full-screen view to the workbook.</div><div class="row" style="margin-top:10px"><button class="btn primary" data-act="full">Reopen full screen</button></div></div></main></div></div>`;
     return;
