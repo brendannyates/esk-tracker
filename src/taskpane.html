@@ -528,7 +528,73 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: schedule ===== */
 
 /* ===== page: inventory ===== */
-/* inventory styles */
+.pg-inventory .inv-left,.pg-inventory .inv-ws{min-width:0}
+.pg-inventory .inv-routine h3{margin-bottom:4px}
+.pg-inventory .inv-routine .task + .task{border-top:1px solid var(--line)}
+.pg-inventory .inv-routine .task[aria-current="true"]{background:var(--accent-soft);margin:0 -12px;padding-left:12px;padding-right:12px;border-radius:12px;border-top-color:transparent}
+.pg-inventory .inv-routine .task[aria-current="true"] + .task{border-top-color:transparent}
+.pg-inventory .inv-routine .task.bad:not(.done) .d{color:var(--bad)}
+.pg-inventory .inv-routine .task.warn:not(.done) .d{color:var(--warn)}
+.pg-inventory .inv-routine .task.done>.d{white-space:normal}
+.pg-inventory .inv-ws > .card + .card{margin-top:16px}
+.pg-inventory .inv-wshead{display:flex;align-items:center;gap:12px;min-height:44px;margin:18px 2px 8px}
+.pg-inventory .inv-wst{margin:0;font-size:17px;font-weight:600;color:var(--ink)}
+.pg-inventory .inv-back{margin-left:auto}
+.pg-inventory .inv-narrow{display:none}
+.pg-inventory .inv-ch{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pg-inventory .inv-ch h3{margin:0 auto 0 0;display:flex;align-items:center;gap:8px}
+.pg-inventory .inv-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.pg-inventory .inv-filters .fld{flex:1 1 200px;width:auto}
+.pg-inventory table.t td{white-space:normal}
+.pg-inventory table.t td .mono,.pg-inventory table.t td.mono,.pg-inventory table.t td.num{white-space:nowrap}
+.pg-inventory table.t td.inv-acts,.pg-inventory table.t td.inv-nw{text-align:right;white-space:nowrap}
+.pg-inventory table.t td.inv-nw{text-align:left}
+.pg-inventory span.inv-nw{white-space:nowrap}
+.pg-inventory td.inv-acts .btn + .btn,.pg-inventory td.inv-acts .btn + .linkbtn{margin-left:6px}
+.pg-inventory .inv-lines{list-style:none;margin:8px 0 0;padding:0}
+.pg-inventory .inv-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.pg-inventory .inv-lmain{display:grid;gap:3px;min-width:0}
+.pg-inventory .inv-lhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pg-inventory .inv-lacts{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap;max-width:340px}
+.pg-inventory .inv-tilecard .tiles{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:10px}
+.pg-inventory .inv-tilecard .tile{padding:12px 14px}
+.pg-inventory .inv-compact{padding-top:14px;padding-bottom:14px}
+.pg-inventory .inv-compact .tile{padding:8px 12px}
+.pg-inventory .inv-compact .tile b{font-size:20px}
+.pg-inventory td.inv-wrap{white-space:normal;min-width:140px;max-width:260px}
+.pg-inventory td.inv-wrap .chip,.pg-inventory td.inv-wrap .tag{white-space:normal}
+.pg-inventory .inv-stale{margin-top:4px;color:var(--warn)}
+.pg-inventory .inv-status{display:flex;gap:8px 10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.pg-inventory .inv-gap{margin-top:12px}
+.pg-inventory .inv-holds{display:block}
+.pg-inventory .inv-hold{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.pg-inventory .inv-hold .fld{flex:1 1 160px;width:auto}
+.pg-inventory tr.inv-hl td{background:var(--warn-soft)}
+.pg-inventory tr.inv-next td{background:var(--accent-soft)}
+.pg-inventory .inv-win{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.pg-inventory .inv-win .fld,.pg-inventory .inv-od .fld{width:auto}
+.pg-inventory .inv-od{display:inline-flex;gap:8px;align-items:center}
+.pg-inventory .inv-foot2{display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:12px}
+.pg-inventory .inv-foot2 > .small{flex:1 1 220px}
+.pg-inventory .inv-short{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pg-inventory .inv-cb{width:44px}
+.pg-inventory .inv-cb input{width:20px;height:20px;margin:0}
+.pg-inventory .inv-agroups{margin-top:12px}
+.pg-inventory input.ov{max-width:76px;font-size:17px}
+.pg-inventory .check{margin-top:12px}
+@media (max-width:899px){
+  .pg-inventory .inv-off{display:none}
+  .pg-inventory .inv-wide{display:none}
+  .pg-inventory .inv-narrow{display:inline}
+  .pg-inventory .inv-wshead{margin-top:6px}
+  .pg-inventory .inv-ws > .inv-off + .inv-wshead{margin-top:0}
+  .pg-inventory .tiles,.pg-inventory .inv-tilecard .tiles{grid-template-columns:1fr 1fr}
+  .pg-inventory table.t td.inv-acts{justify-content:flex-start;flex-wrap:wrap;white-space:normal;gap:6px}
+  .pg-inventory td.inv-acts .btn + .btn,.pg-inventory td.inv-acts .btn + .linkbtn{margin-left:0}
+  .pg-inventory td.inv-wrap{max-width:none}
+  .pg-inventory .inv-line{grid-template-columns:1fr}
+  .pg-inventory .inv-lacts{justify-content:flex-start;max-width:none}
+}
 /* ===== /page: inventory ===== */
 
 /* ===== page: patients ===== */
@@ -1529,10 +1595,10 @@ function openReassign(id){
     const a = toA(S.re.to); const newName = S.re.to ? nm(S.re.to) : '';
     const { out } = changesFor('kits', { mrn: S.re.to ? mrnVal(S.re.to) : '', comments: `${newName} | Re-assigned from ${nm(k.mrn)} ${fmtD(T)} by ${CFG.me || 'PCT'}` });
     openModal(`<h2>Re-assign Besse kit</h2>
-      <div class="item" style="margin-top:6px"><div class="line">${kitLine(k)}</div><div class="line small">Labeled for <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}) · ${(() => { const n = S.A.filter(x => x.mrn === k.mrn && x.active && x.date >= T).sort((x, y) => x.date - y.date)[0]; return n ? 'next visit ' + fmtD(n.date, 'dow') : 'no visit booked'; })()}</div></div>
+      <div class="small">${kitLine(k)}</div><div class="small muted">Labeled for <b>${esc(nm(k.mrn))}</b> (MRN ${esc(k.mrn)}) · ${(() => { const n = S.A.filter(x => x.mrn === k.mrn && x.active && x.date >= T).sort((x, y) => x.date - y.date)[0]; return n ? 'next visit ' + fmtD(n.date, 'dow') : 'no visit booked'; })()}</div>
       <label class="lbl" for="reTo">Re-assign to</label>
       <select id="reTo" class="fld" data-re="to">${uniq.length ? uniq.map(x => `<option value="${esc(x.mrn)}" ${x.mrn === S.re.to ? 'selected' : ''}>${esc(nm(x.mrn))} · MRN ${esc(x.mrn)} · ${fmtD(x.date, 'dow')} ${fmtT(x.time)}${S.K.some(y => besseOwner(y) === x.mrn && y.available && y.recv === k.recv) ? ' (already has a labeled kit)' : ''}</option>`).join('') : '<option value="">No Besse appointment before this kit expires</option>'}</select>
-      <label class="row" style="margin-top:12px;align-items:flex-start;gap:10px"><input type="checkbox" id="reOk" ${S.re.ok ? 'checked' : ''} style="width:20px;height:20px;margin-top:2px"><span><b>I re-labeled this kit</b> for ${esc(newName || '—')} (MRN, name and received date ${fmtD(k.received, 'full')}) and crossed out the old label.</span></label>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="reOk" ${S.re.ok ? 'checked' : ''}><span><b>I re-labeled this kit</b> for ${esc(newName || '—')} (MRN, name and received date ${fmtD(k.received, 'full')}) and crossed out the old label.</span></label>
       <div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>
       <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="reSave" ${S.re.ok && S.re.to ? '' : 'disabled'}>Confirm re-label &amp; re-assign</button></div>`);
   };
@@ -1566,13 +1632,15 @@ function assignModel(){
   return rows;
 }
 function assignHTML(compact){
-  const rows = assignModel(); const T = todaySerial(); const can = rows.filter(r => r.kit);
-  if (!rows.length) return compact ? '' : `<div class="card"><h2>Assign Besse stock</h2><div class="small">Every Besse visit in the next ${ASSIGN_DAYS} days already has a labeled kit.</div></div>`;
-  return `<div class="card"><h2>Assign Besse stock <span class="chip ${can.length ? 'warn' : ''}">${rows.length}</span><span class="sp"></span>${can.length ? '<button class="btn sm primary" data-act="asgOpen">Label &amp; assign…</button>' : ''}</h2>
-    <div class="small muted" style="margin-bottom:6px">Besse visits with no kit labeled for them — all visits in the next 7 days, then each patient’s next visit up to ${ASSIGN_DAYS} days out — matched to unlabeled stock (oldest received first, not expired by the visit).</div>
+  const rows = assignModel(); const T = todaySerial(); const can = rows.filter(r => r.kit); const short = rows.filter(r => !r.kit);
+  if (!rows.length) return compact ? '' : `<div class="card"><div class="inv-ch"><h3>Besse visits to label</h3></div><div class="msg ok">Every Besse visit in the next ${ASSIGN_DAYS} days already has a labeled kit.</div></div>`;
+  const sh = [84, 56].map(mg => [mg, short.filter(r => r.mg === mg).length]).filter(x => x[1]);
+  return `<div class="card"><div class="inv-ch"><h3>Besse visits to label ${tag(can.length ? 'warn' : '', String(rows.length))}</h3>${can.length ? '<button class="btn sm primary" data-act="asgOpen">Label &amp; assign…</button>' : ''}</div>
+    <p class="small muted">Besse visits with no kit labeled for them: every visit in the next 7 days, then each patient’s next visit up to ${ASSIGN_DAYS} days out. Each is matched to unlabeled stock, oldest received first, that doesn’t expire before the visit.</p>
+    ${sh.length ? `<div class="msg warn inv-short"><span>No unlabeled stock for ${sh.map(([mg, n]) => `${n} × ${mg} mg`).join(' and ')}.</span><button class="linkbtn" data-act="goInv" data-v="besse">Besse order</button></div>` : ''}
     <div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>Visit</th><th>Dose</th><th>Suggested kit</th><th>Received</th><th>Use by</th></tr></thead><tbody>
     ${rows.map(r => `<tr><td data-l="Patient"><b>${esc(nm(r.mrn))}</b> <span class="muted small">${esc(r.mrn)}</span></td><td data-l="Visit">${r.a.date === T ? 'Today' : fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Dose">${r.mg} mg</td>
-      ${r.kit ? `<td data-l="Kit" class="mono">${esc(r.kit.serial)}</td><td data-l="Received">${fmtD(r.kit.received)}</td><td data-l="Use by">${fmtD(r.kit.expDate)}</td>` : `<td data-l="Kit" colspan="3"><span class="chip bad">No unlabeled ${r.mg} mg in stock</span> <button class="linkbtn" data-act="goInv" data-v="besse">Besse order</button></td>`}</tr>`).join('')}
+      ${r.kit ? `<td data-l="Kit" class="mono">${esc(r.kit.serial)}</td><td data-l="Received">${fmtD(r.kit.received)}</td><td data-l="Use by">${fmtD(r.kit.expDate)}</td>` : `<td data-l="Kit" colspan="3" class="muted">No unlabeled ${r.mg} mg in stock</td>`}</tr>`).join('')}
     </tbody></table></div></div>`;
 }
 function openAssign(){
@@ -1581,9 +1649,9 @@ function openAssign(){
   const draw = () => {
     const T = todaySerial(); const n = S.asg.ok.size;
     openModal(`<h2>Label &amp; assign Besse kits</h2>
-      <div class="small muted">Label each kit (MRN, name, received date), then tick it. Only ticked kits are written to the Inventory.</div>
+      <div class="small muted">Label each kit with the MRN, name and received date, then tick it. Only ticked kits are written to the Inventory.</div>
       <div class="row small" style="margin:8px 0"><button class="linkbtn" data-act="asgAll">Tick all</button><button class="linkbtn" data-act="asgNone">Clear</button></div>
-      ${S.asg.rows.map((r, i) => `<label class="item row" style="align-items:flex-start;gap:10px;margin-top:6px"><input type="checkbox" data-asg="${i}" ${S.asg.ok.has(i) ? 'checked' : ''} style="width:20px;height:20px;margin-top:2px"><span class="grow"><b>${esc(nm(r.mrn))}</b> · MRN ${esc(r.mrn)} · visit ${r.a.date === T ? 'today' : fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}<br><span class="small">${r.mg} mg · <span class="mono">SN ${esc(r.kit.serial)}</span> · rec ${fmtD(r.kit.received, 'full')} · use by ${fmtD(r.kit.expDate)} · row ${r.kit.r + 3}</span></span></label>`).join('')}
+      ${S.asg.rows.map((r, i) => `<label class="check"><input type="checkbox" data-asg="${i}" ${S.asg.ok.has(i) ? 'checked' : ''}><span><b>${esc(nm(r.mrn))}</b> · MRN ${esc(r.mrn)} · visit ${r.a.date === T ? 'today' : fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}<br><span class="small muted">${r.mg} mg · <span class="mono">SN ${esc(r.kit.serial)}</span> · received ${fmtD(r.kit.received, 'full')} · use by ${fmtD(r.kit.expDate)} · row ${r.kit.r + 3}</span></span></label>`).join('')}
       <div class="writes"><b>Writes to each ticked Inventory row:</b> MRN, and Comments = “Name | Assigned ${fmtD(T)} by ${esc(CFG.me || 'PCT')}”.</div>
       <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="asgSave" ${n ? '' : 'disabled'}>Assign ${n || ''} labeled kit${n === 1 ? '' : 's'}</button></div>`);
   };
@@ -2110,7 +2178,7 @@ async function write(label, fn, okText){
 
 // ---------- rendering ----------
 const VIEWS = [['today','Dashboard'],['patients','Patients'],['inventory','Inventory'],['access','Access']];
-const INV_TABS = [['stock','Stock'],['receive','Receive'],['order','To order'],['transit','In transit'],['besse','Besse order'],['audit','Daily audit']];
+const INV_TABS = [['stock','Stock'],['audit','Daily audit'],['receive','Receive'],['assign','Assign Besse stock'],['order','Order Genoa'],['besse','Besse weekly order'],['transit','In transit'],['dispose','Dispose']];
 function setMsg(k, kind, html){ S[k] = { kind, html }; render(); }
 function msgHTML(m){ return m ? `<div class="msg ${m.kind}" role="status">${m.html}</div>` : ''; }
 function render(){
@@ -2171,13 +2239,17 @@ function badges(){
   return d;
 }
 function invShellHTML(){
-  const ib = S._ib || {}; const open = S.K.filter(k => k.openOrder).length;
-  const sub = { stock: ib.stock, receive: open ? open : 0, order: ib.order, transit: ib.transit };
-  return `<div class="subnav" role="tablist">${INV_TABS.map(([k, l]) => `<button data-act="invTab" data-v="${k}" aria-pressed="${S.invTab === k}">${l}${sub[k] ? `<span class="badge ${k === 'receive' ? 'neutral' : ''}">${sub[k]}</span>` : ''}</button>`).join('')}</div>
-    ${S.invTab === 'stock' ? assignHTML() + inventoryHTML() : S.invTab === 'receive' ? receiveHTML() : S.invTab === 'order' ? needHTML(genoaModel()) + windowHTML() : S.invTab === 'transit' ? followHTML(followModel()) : S.invTab === 'besse' ? besseHTML() : auditHTML()}`;
+  const tab = INV_TABS.some(([k]) => k === S.invTab) ? S.invTab : 'stock'; const open = tab !== 'stock';
+  const label = INV_TABS.find(([k]) => k === tab)[1];
+  const body = tab === 'stock' ? inventoryHTML() : tab === 'audit' ? auditHTML() : tab === 'receive' ? receiveHTML() : tab === 'assign' ? assignHTML() + invReassignHTML()
+    : tab === 'order' ? needHTML(genoaModel()) + windowHTML() : tab === 'besse' ? besseHTML() : tab === 'transit' ? followHTML(followModel()) : invDisposeHTML();
+  return pageCols('m', `<div class="inv-left">${invRoutineHTML(invRoutine(), tab)}</div>`, `<div class="inv-ws">
+    <div class="card inv-tilecard${open ? ' inv-off inv-compact' : ''}">${invTilesHTML()}</div>
+    <div class="inv-wshead"><h2 class="inv-wst">${label}</h2>${open ? '<button class="btn sm ghost inv-back" data-act="invTab" data-v="stock"><span class="inv-wide">Back to stock</span><span class="inv-narrow">Back to routine</span></button>' : ''}</div>
+    ${body}</div>`);
 }
 function windowHTML(){ return ''; }
-function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''} · <span class="mono">SN ${esc(k.serial || '—')}</span> · rec ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
+function kitLine(k){ return `${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg${S._re?.has(k.id) ? ' <span class="chip warn">Re-assign</span>' : ''} · <span class="mono">SN ${esc(k.serial || '—')}</span> · received ${fmtD(k.received)} · use by ${fmtD(k.expDate)} · row ${k.r + 3}`; }
 // look-ahead: allocate kits across a date range (Besse from shared stock oldest-first; Genoa per patient, then open orders)
 function rangeModel(from, to){
   const T = todaySerial();
@@ -3029,21 +3101,22 @@ function receiveHTML(){
   const q = (S.scanQ || []).filter(x => x.k === 'recv').length + (S.scanBusy === 'recv' ? 1 : 0);
   const up = openLines[0];
   return `<div class="card">
-    <div class="row"><div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p}</button>`).join('')}</div><span class="small muted grow">Expiration, serial, lot and mg are filled in by the workbook’s formulas from the scan.</span></div>
-    <div class="scan" style="margin-top:10px"><input id="scanRecv" data-scan="recv" placeholder="${genoa ? 'Scan Genoa kits in the order listed below' : 'Scan each Besse kit as it’s unpacked'}" autocomplete="off" aria-label="Scan kit to receive"></div>
-    <div class="row small" style="margin-top:6px">${q ? `<span class="chip warn">Saving… ${q} scan${q > 1 ? 's' : ''} in line</span>` : '<span class="chip ok">Ready — keep scanning</span>'}
-      ${genoa ? (up ? `<span>Next up: <b>${esc(up.mrn ? nm(up.mrn) : 'Genoa stock')}</b>${lineMg(up) ? ` · ${lineMg(up)} mg` : ''}</span>` : '<span class="muted">Nothing awaiting receipt — any scan is set aside for you to assign a patient.</span>')
+    <div class="seg" role="group" aria-label="Pharmacy">${['Genoa', 'Besse'].map(p => `<button data-act="recvPh" data-p="${p}" aria-pressed="${S.recvPharm === p}">${p === 'Genoa' ? 'Genoa or specialty' : 'Besse'}</button>`).join('')}</div>
+    <div class="scan inv-gap"><input id="scanRecv" data-scan="recv" placeholder="${genoa ? 'Scan Genoa kits in the order listed below' : 'Scan each Besse kit as it’s unpacked'}" autocomplete="off" aria-label="Scan kit to receive"></div>
+    <div class="inv-status small">${q ? tag('warn', `Saving… ${q} scan${q > 1 ? 's' : ''} in line`) : tag('ok', 'Ready, keep scanning')}
+      ${genoa ? (up ? `<span>Next up: <b>${esc(up.mrn ? nm(up.mrn) : 'Genoa stock')}</b>${lineMg(up) ? ` · ${lineMg(up)} mg` : ''}</span>` : '<span class="muted">Nothing awaiting receipt. Any scan is set aside so you can choose the patient.</span>')
         : '<span class="muted">Each scan fills the oldest open Besse order line for that dose, or starts a new Inventory line. New kits are unlabeled stock until assigned.</span>'}</div>
+    <p class="small muted">The workbook fills in expiration, serial, lot and mg from the scan.</p>
     ${msgHTML(S.recvMsg)}
-    ${holds.length ? `<div class="msg warn" style="display:block"><b>Not awaiting receipt (${holds.length}).</b> These kits had no open order line. Choose the patient and add each to Inventory — it’s flagged as received without an order.
-      ${holds.map((h, i) => `<div class="row" style="margin-top:6px"><span class="mono small">${h.mg ?? '?'} mg · ${esc(h.serial)}</span><input id="hold${i}" class="fld grow" list="dlPts" placeholder="Short name or MRN"><button class="btn sm primary" data-act="rcvAdd" data-i="${i}">Add to inventory</button><button class="btn sm ghost" data-act="rcvDrop" data-i="${i}">Set aside</button></div>`).join('')}</div>` : ''}
-    ${log.length ? `<div class="tw" style="margin-top:10px"><table class="t rt"><thead><tr><th>Received this session · check against the box</th><th>Dose</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Row</th></tr></thead><tbody>${log.slice().reverse().map(x => { const k = S.K.find(y => y.id === x.id); return `<tr${x.warn ? ' style="background:var(--warnbg,#fff6e0)"' : ''}><td data-l="Patient"><b>${esc(x.who)}</b>${x.warn ? ` <span class="chip warn">${esc(x.warn)}</span>` : ''}</td><td data-l="Dose">${x.mg} mg</td><td data-l="Serial" class="mono">${esc(x.serial)}</td><td data-l="Lot" class="mono">${esc(k?.lot ?? '')}</td><td data-l="Use by">${k ? fmtD(k.useBy ?? k.expDate) : ''}</td><td data-l="Row">${k ? k.r + 3 : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+    ${holds.length ? `<div class="msg warn inv-holds"><div><b>Not awaiting receipt (${holds.length}).</b> These kits had no open order line. Choose the patient and add each one to Inventory. It is flagged as received without an order.</div>
+      ${holds.map((h, i) => `<div class="inv-hold"><span class="mono">${h.mg ?? '?'} mg · ${esc(h.serial)}</span><input id="hold${i}" class="fld" list="dlPts" placeholder="LASFIR or MRN" aria-label="Patient for ${esc(h.serial)}"><button class="btn sm primary" data-act="rcvAdd" data-i="${i}">Add to inventory</button><button class="btn sm ghost" data-act="rcvDrop" data-i="${i}">Set aside</button></div>`).join('')}</div>` : ''}
+    ${log.length ? `<div class="tw inv-gap"><table class="t rt"><thead><tr><th>Received this session · check against the box</th><th>Dose</th><th>Serial</th><th>Lot</th><th>Use by</th><th>Row</th></tr></thead><tbody>${log.slice().reverse().map(x => { const k = S.K.find(y => y.id === x.id); return `<tr${x.warn ? ' class="inv-hl"' : ''}><td data-l="Patient"><b>${esc(x.who)}</b>${x.warn ? ` ${tag('warn', x.warn)}` : ''}</td><td data-l="Dose">${x.mg} mg</td><td data-l="Serial" class="mono">${esc(x.serial)}</td><td data-l="Lot" class="mono">${esc(k?.lot ?? '')}</td><td data-l="Use by">${k ? fmtD(k.useBy ?? k.expDate) : ''}</td><td data-l="Row">${k ? k.r + 3 : ''}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
     ${datalist('dlPts', S.P.filter(p => p.pharm !== 'BESSE').map(p => `${p.name} · ${p.mrn}`))}
   </div>
   ${genoa ? '' : assignHTML(true)}
-  <div class="card"><h2>Awaiting receipt · ${S.recvPharm} <span class="chip">${openLines.length}</span></h2>
-    ${genoa && openLines.length ? '<div class="small muted" style="margin-bottom:6px">Pull the bags in this order and scan each kit. Use <b>Move to top</b> if a different bag is in your hand.</div>' : ''}
-    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr>${genoa ? '<th>#</th>' : ''}<th>Patient</th><th>MRN</th><th>Dose</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map((k, i) => { const n = k.mrn ? next(k.mrn) : null; return `<tr${genoa && i === 0 ? ' style="background:var(--accbg,#eef4ff)"' : ''}>${genoa ? `<td data-l="#">${i === 0 ? '<b>Next</b>' : i + 1}</td>` : ''}<td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b>${!k.mrn && k.comments ? ` <span class="small muted">${esc(k.comments)}</span>` : ''}</td><td data-l="MRN">${esc(k.mrn || '—')}</td><td data-l="Dose">${lineMg(k) ? lineMg(k) + ' mg' : '—'}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${k.mrn ? (n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : '<span class="chip warn">None booked</span>') : '—'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" style="text-align:right">${genoa && i > 0 ? `<button class="btn sm" data-act="rcvTop" data-id="${esc(k.id)}">Move to top</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">Nothing awaiting receipt.</div>`}
+  <div class="card"><div class="inv-ch"><h3>Awaiting receipt · ${genoa ? 'Genoa or specialty' : 'Besse'} ${tag('', String(openLines.length))}</h3></div>
+    ${genoa && openLines.length ? '<p class="small muted">Pull the bags in this order and scan each kit. Use <b>Move to top</b> if a different bag is in your hand.</p>' : ''}
+    ${openLines.length ? `<div class="tw"><table class="t rt"><thead><tr>${genoa ? '<th>#</th>' : ''}<th>Patient</th><th>Dose</th><th>Ordered</th><th>Next appointment</th><th>Row</th><th></th></tr></thead><tbody>${openLines.map((k, i) => { const n = k.mrn ? next(k.mrn) : null; return `<tr${genoa && i === 0 ? ' class="inv-next"' : ''}>${genoa ? `<td data-l="#">${i === 0 ? '<b>Next</b>' : i + 1}</td>` : ''}<td data-l="Patient"><b>${esc(k.mrn ? nm(k.mrn) : PH_LABEL[k.pharm] + ' stock')}</b> <span class="small muted">${k.mrn ? esc(k.mrn) : esc(k.comments ?? '')}</span></td><td data-l="Dose">${lineMg(k) ? lineMg(k) + ' mg' : '—'}</td><td data-l="Ordered">${fmtD(k.ordered, 'dow')} <span class="muted small">(${k.ordered != null ? T - k.ordered + 'd' : '?'})</span></td><td data-l="Next appt">${k.mrn ? (n ? `${fmtD(n.date, 'dow')} ${fmtT(n.time)}` : tag('warn', 'None booked')) : '—'}</td><td data-l="Row">${k.r + 3}</td><td data-l="" class="inv-acts">${genoa && i > 0 ? `<button class="btn sm" data-act="rcvTop" data-id="${esc(k.id)}">Move to top</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="muted small">Nothing awaiting receipt.</div>`}
   </div>`;
 }
 function rcvLogAdd(x){ (S.rcvLog = S.rcvLog || []).push({ ...x, ph: S.recvPharm }); if (S.rcvLog.length > 60) S.rcvLog.shift(); }
@@ -3092,56 +3165,56 @@ function mrnFromInput(v){ const m = String(v || '').match(/(\d{3,})\s*$/); if (m
 function needHTML(g){
   const T = todaySerial(); const need = g.rows.filter(r => r.cover === 'need'); const covered = g.rows.filter(r => r.cover !== 'need');
   const sel = need.filter(r => S.genoaSel.has(r.a.key)).length;
-  const urg = r => r.a.date - T <= 2 ? '<span class="chip bad">Urgent</span>' : r.a.date - T <= 5 ? '<span class="chip warn">Soon</span>' : '';
-  return `<div class="card"><div class="row small"><label class="muted" for="winFrom">Order window</label><input id="winFrom" type="date" class="fld" style="width:auto" data-win="from" value="${isoOf(S.win.from)}"><span class="muted">to</span><input id="winTo" type="date" class="fld" style="width:auto" data-win="to" value="${isoOf(S.win.to)}"><button class="linkbtn" data-act="winReset">Through next Friday</button></div></div>
-  <div class="card"><h2>Patient meds to order <span class="chip ${need.length ? 'bad' : 'ok'}">${need.length}</span><span class="sp"></span>
-      <button class="btn sm" data-act="gselAll" ${need.length ? '' : 'disabled'}>Select all</button><button class="btn sm primary" data-act="orderEmail" data-p="GENOA">Genoa order email…</button></h2>
-    <div class="small muted" style="margin-bottom:10px">Genoa and other specialty-pharmacy appointments from ${fmtD(g.from, 'dow')} through ${fmtD(g.to, 'dow')} with no kit on hand and nothing on order for that patient.</div>
-    ${need.length ? `<div class="tw"><table class="t rt"><thead><tr><th style="width:36px"><input type="checkbox" data-gall ${sel === need.length ? 'checked' : ''} aria-label="Select all"></th><th>Needed by</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th></th></tr></thead><tbody>
-      ${need.map(r => `<tr><td data-l="Select"><input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}" style="width:18px;height:18px"></td><td data-l="Needed by"><b>${fmtD(r.a.date, 'dow')}</b> ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="">${urg(r)}</td></tr>`).join('')}
+  const urg = r => r.a.date - T <= 2 ? tag('bad', 'Urgent') : r.a.date - T <= 5 ? tag('warn', 'Soon') : '';
+  const sm = scheduledNeedingMeds().filter(x => PS(x.p?.pharm));
+  return `<div class="card"><div class="inv-ch"><h3>Patient meds to order ${tag(need.length ? 'bad' : 'ok', String(need.length))}</h3><button class="btn sm" data-act="gselAll" ${need.length ? '' : 'disabled'}>Select all</button><button class="btn sm" data-act="orderEmail" data-p="GENOA">Genoa order email…</button></div>
+    <div class="inv-win"><label class="small muted" for="winFrom">Order window</label><input id="winFrom" type="date" class="fld" data-win="from" value="${isoOf(S.win.from)}"><span class="muted">to</span><input id="winTo" type="date" class="fld" data-win="to" value="${isoOf(S.win.to)}" aria-label="Order window end"><button class="linkbtn" data-act="winReset">Through next Friday</button></div>
+    <p class="small muted">Genoa and other specialty-pharmacy visits from ${fmtD(g.from, 'dow')} through ${fmtD(g.to, 'dow')} with no kit on hand and nothing on order for that patient.</p>
+    ${need.length ? `<div class="tw"><table class="t rt"><thead><tr><th class="inv-cb"><input type="checkbox" data-gall ${sel === need.length ? 'checked' : ''} aria-label="Select all"></th><th>Needed by</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th></th></tr></thead><tbody>
+      ${need.map(r => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}"></td><td data-l="Needed by"><b>${fmtD(r.a.date, 'dow')}</b> ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="">${urg(r)}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><span class="small muted grow">Marking as ordered opens one Inventory line per kit (MRN, Pharmacy, Date Ordered). It then shows under <b>On order</b> until received.</span><button class="btn primary" data-act="genoaOrder" ${sel ? '' : 'disabled'}>Mark ${sel || ''} as ordered today</button></div>`
-    : '<div class="msg ok">Nothing to order for this window — every appointment is covered.</div>'}
+    <div class="inv-foot2"><span class="small muted">Marking as ordered opens one Inventory line per kit (MRN, Pharmacy, Date Ordered). It then shows under <b>On order</b> until received.</span><button class="btn primary" data-act="genoaOrder" ${sel ? '' : 'disabled'}>Mark ${sel || ''} as ordered today</button></div>`
+    : '<div class="msg ok">Nothing to order for this window. Every visit is covered.</div>'}
   </div>
-  ${(() => { const sm = scheduledNeedingMeds().filter(x => PS(x.p?.pharm)); return sm.length ? `<div class="card"><h2>Scheduled in clinic — no meds yet <span class="chip bad">${sm.length}</span></h2><div class="small muted" style="margin-bottom:8px">Marked scheduled, but their new visits aren’t in the appointment report yet and there are no spare kits on hand or on order.</div>
-    <div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>MRN</th><th>Pharmacy</th><th class="num">Dose</th><th>Scheduled</th><th>Meds</th><th></th></tr></thead><tbody>${sm.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.mrn))}</b></td><td data-l="MRN">${esc(x.mrn)}</td><td data-l="Pharmacy">${PH_LABEL[x.p.pharm]}</td><td data-l="Dose" class="num">${x.p.mg ?? '?'} mg</td><td data-l="Scheduled">${fmtD(fromIso(x.t.at))} · ${esc(x.t.by)}</td><td data-l="Meds">${medChip(x.mrn)}</td><td data-l="" style="text-align:right"><button class="btn sm primary" data-act="orderFor" data-m="${esc(x.mrn)}">Mark ordered today</button></td></tr>`).join('')}</tbody></table></div></div>` : ''; })()}
-  <div class="card"><details class="sec"><summary>Covered appointments <span class="chip">${covered.length}</span></summary>
-    ${covered.length ? `<div class="tw" style="margin-top:10px"><table class="t rt"><thead><tr><th>Date</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th>Covered by</th></tr></thead><tbody>
-      ${covered.map(r => `<tr><td data-l="Date">${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="Covered by">${r.cover === 'onhand' ? `<span class="chip ok">On hand</span> <span class="small muted">SN …${esc(r.k.serial.slice(-5))} · use by ${fmtD(r.k.expDate)}</span>` : `<span class="chip info">Ordered ${fmtD(r.k.ordered)}</span>`}</td></tr>`).join('')}
-    </tbody></table></div>` : '<div class="muted small" style="margin-top:8px">None.</div>'}
+  ${sm.length ? `<div class="card"><div class="inv-ch"><h3>Scheduled in clinic, no meds yet ${tag('bad', String(sm.length))}</h3></div><p class="small muted">Marked scheduled, but their new visits aren’t in the appointment report yet and there are no spare kits on hand or on order.</p>
+    <div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>Kit</th><th>Scheduled</th><th>Meds</th><th></th></tr></thead><tbody>${sm.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.mrn))}</b> <span class="small muted">${esc(x.mrn)}</span></td><td data-l="Kit" class="inv-nw">${PH_LABEL[x.p.pharm]} ${x.p.mg ?? '?'} mg</td><td data-l="Scheduled">${fmtD(fromIso(x.t.at))} · ${esc(x.t.by)}</td><td data-l="Meds" class="inv-wrap">${medChip(x.mrn)}</td><td data-l="" class="inv-acts"><button class="btn sm primary" data-act="orderFor" data-m="${esc(x.mrn)}">Mark ordered today</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
+  <div class="card"><details class="sec" data-open="inv:covered" ${S.open?.['inv:covered'] ? 'open' : ''}><summary>Covered appointments ${tag('', String(covered.length))}</summary>
+    ${covered.length ? `<div class="tw inv-gap"><table class="t rt"><thead><tr><th>Date</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th>Covered by</th></tr></thead><tbody>
+      ${covered.map(r => `<tr><td data-l="Date">${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="Covered by">${r.cover === 'onhand' ? `${tag('ok', 'On hand')} <span class="small muted">SN …${esc(r.k.serial.slice(-5))} · use by ${fmtD(r.k.expDate)}</span>` : tag('info', `Ordered ${fmtD(r.k.ordered)}`)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="muted small inv-gap">None.</div>'}
   </details></div>`;
 }
 function followHTML(fm){
-  return `<div class="card"><h2>In transit <span class="chip">${fm.length}</span><span class="sp"></span><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(fm.map(f => f.k.id).join(','))}" ${fm.length ? '' : 'disabled'}>Follow-up email</button></h2>
-    <div class="small muted" style="margin-bottom:10px">Every Inventory line with an MRN and no scan yet. Kits already on hand cover the earliest visits first; each order is matched to the first visit they don’t cover. Log calls to the pharmacy here — notes are added to the line’s Comments.</div>
-    ${fm.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient</th><th>MRN</th><th>Pharmacy</th><th class="num">On hand</th><th>Ordered</th><th>Needed for</th><th>Last follow-up</th><th></th></tr></thead><tbody>
-      ${fm.map(f => `<tr><td data-l="Status"><span class="chip ${f.cls}">${esc(f.st)}</span>${f.waited >= 5 && f.need != null ? ' <span class="chip warn">Waiting ' + f.waited + ' days</span>' : ''}${f.stale ? `<div class="small" style="margin-top:4px;color:var(--warn);white-space:normal">A kit for this patient was received ${fmtD(f.stale.received)} (row ${f.stale.r + 3}), after this order. If that was this order, cancel this line.</div>` : ''}</td><td data-l="Patient"><b>${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))}</b>${f.stock && f.k.comments ? ` <span class="small muted">${esc(String(f.k.comments).split('|')[0])}</span>` : ''}</td><td data-l="MRN">${esc(f.k.mrn || '—')}</td><td data-l="Pharmacy">${PH_LABEL[f.k.pharm] || '—'}</td><td data-l="On hand" class="num">${f.onhand}</td><td data-l="Ordered">${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` <span class="muted small">(${f.waited}d)</span>` : ''}</td><td data-l="Needed for">${f.next ? `${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : '—'}</td><td data-l="Follow-up" style="white-space:normal;max-width:260px" class="small">${esc(f.fu) || '<span class="muted">—</span>'}</td>
-        <td data-l="" style="text-align:right"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn sm primary" data-act="recvGo" data-id="${esc(f.k.id)}">Receive</button><button class="btn sm" data-act="fuEmail" data-ids="${esc(f.k.id)}">Follow up</button><button class="btn sm" data-act="fuLog" data-id="${esc(f.k.id)}">Log note</button><button class="linkbtn" data-act="cancelLine" data-id="${esc(f.k.id)}">Cancel</button></div></td></tr>`).join('')}
-    </tbody></table></div>` : '<div class="msg ok">Nothing on order.</div>'}
+  return `<div class="card"><div class="inv-ch"><h3>On order ${tag('', String(fm.length))}</h3><button class="btn sm primary" data-act="fuEmail" data-ids="${esc(fm.map(f => f.k.id).join(','))}" ${fm.length ? '' : 'disabled'}>Follow-up email</button></div>
+    <p class="small muted">Every Inventory line that was ordered and hasn’t been scanned in. Kits already on hand cover the earliest visits first, and each order is matched to the first visit they don’t cover. Notes you log are added to the line’s Comments.</p>
+    ${fm.length ? `<ul class="inv-lines">${fm.map(f => `<li class="inv-line"><div class="inv-lmain">
+        <div class="inv-lhead">${tag(f.cls, f.st)}${f.waited >= 5 && f.need != null ? ' ' + tag('warn', 'Waiting ' + f.waited + ' days') : ''} <b>${f.stock ? PH_LABEL[f.k.pharm] + ' stock' : esc(nm(f.k.mrn))}</b> <span class="small muted">${f.stock ? esc(String(f.k.comments ?? '').split('|')[0]) : esc(f.k.mrn)}</span></div>
+        <div class="small muted">${PH_LABEL[f.k.pharm] || '—'} · ordered ${fmtD(f.k.ordered, 'dow')}${f.waited != null ? ` (${f.waited}d ago)` : ''} · ${f.next ? `for ${fmtD(f.next.date, 'dow')} ${fmtT(f.next.time)}` : 'no visit it’s needed for'} · ${f.onhand} on hand</div>
+        <div class="small">${f.fu ? `Last follow-up: ${esc(f.fu)}` : '<span class="muted">No follow-up logged</span>'}</div>
+        ${f.stale ? `<div class="small inv-stale">A kit for this patient was received ${fmtD(f.stale.received)} (row ${f.stale.r + 3}), after this order. If that was this order, cancel this line.</div>` : ''}</div>
+      <div class="inv-lacts"><button class="btn sm" data-act="recvGo" data-id="${esc(f.k.id)}">Receive</button><button class="btn sm" data-act="fuEmail" data-ids="${esc(f.k.id)}">Follow up</button><button class="btn sm" data-act="fuLog" data-id="${esc(f.k.id)}">Log note</button><button class="linkbtn" data-act="cancelLine" data-id="${esc(f.k.id)}">Cancel</button></div></li>`).join('')}</ul>` : '<div class="msg ok">Nothing on order.</div>'}
   </div>`;
 }
 function besseHTML(){
   const m = besseModel(); const [w1, w2] = m.w;
   const rows = [56, 84].map(mg => ({ mg, ...m.rows[mg] }));
   const diff = rows.filter(r => r.expiredFull);
-  const h = findHistRow();
-  return `<div class="cols"><div>
-  <div class="card print-target" id="besseTbl"><h2>Besse weekly order<span class="sp"></span><label class="small muted noprint" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld noprint" style="width:auto" data-act-change="orderDate" value="${isoOf(S.orderDate)}"><button class="btn sm primary noprint" data-act="orderEmail" data-p="BESSE">Besse order email…</button></h2>
-    <div class="small muted" style="margin-bottom:10px">Next week ${fmtD(w1[0], 'dow')}–${fmtD(w1[1], 'dow')} · 2 weeks out ${fmtD(w2[0], 'dow')}–${fmtD(w2[1], 'dow')}</div>
+  const h = findHistRow(); const tot = rows.reduce((n, r) => n + r.order, 0);
+  return `<div class="card print-target" id="besseTbl"><div class="inv-ch"><h3>Order quantities</h3><span class="inv-od noprint"><label class="small muted" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld" data-act-change="orderDate" value="${isoOf(S.orderDate)}"></span><button class="btn sm noprint" data-act="orderEmail" data-p="BESSE">Besse order email…</button></div>
+    <p class="small muted">Counts Monday to Friday visits. Next week ${fmtD(w1[0], 'dow')}–${fmtD(w1[1], 'dow')} · 2 weeks out ${fmtD(w2[0], 'dow')}–${fmtD(w2[1], 'dow')}</p>
     <div class="tw"><table class="t rt"><thead><tr><th>Dose</th><th class="num">On hand</th><th class="num">Next week</th><th class="num">2 weeks out</th><th class="num">Overage</th><th class="num">To be ordered</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td data-l="Dose"><b>${r.mg} mg</b></td><td data-l="On hand" class="num">${r.oh}</td><td data-l="Next week" class="num">${r.w1}</td><td data-l="2 weeks out" class="num">${r.w2}</td><td data-l="Overage" class="num"><input class="ov" type="number" step="1" data-ov="${r.mg}" value="${r.ov}" aria-label="Overage ${r.mg} mg" style="font-size:14px;max-width:70px"></td><td data-l="To be ordered" class="num"><span class="big">${r.order}</span></td></tr>`).join('')}
+      ${rows.map(r => `<tr><td data-l="Dose"><b>${r.mg} mg</b></td><td data-l="On hand" class="num">${r.oh}</td><td data-l="Next week" class="num">${r.w1}</td><td data-l="2 weeks out" class="num">${r.w2}</td><td data-l="Overage" class="num"><input class="ov" type="number" step="1" data-ov="${r.mg}" value="${r.ov}" aria-label="Overage ${r.mg} mg"></td><td data-l="To be ordered" class="num"><span class="big">${r.order}</span></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="small muted" style="margin-top:8px">To be ordered = next week + 2 weeks out + overage − on hand (never below 0). On hand counts full, unexpired Besse kits.</div>
+    <p class="small muted">To be ordered = next week + 2 weeks out + overage − on hand (never below 0). On hand counts full, unexpired Besse kits.</p>
     ${diff.length ? `<div class="msg warn">${diff.map(r => `${r.expiredFull} expired ${r.mg} mg kit${r.expiredFull > 1 ? 's are' : ' is'} left out of on hand (the Besse Order tab still counts ${r.expiredFull > 1 ? 'them' : 'it'}).`).join(' ')}</div>` : ''}
     ${rows.some(r => r.expSoon) ? `<div class="msg info">${rows.filter(r => r.expSoon).map(r => `${r.expSoon} on-hand ${r.mg} mg kit${r.expSoon > 1 ? 's expire' : ' expires'} before ${fmtD(w2[1])}.`).join(' ')}</div>` : ''}
-    <div class="row noprint" style="margin-top:12px"><label class="row small" style="gap:6px"><input type="checkbox" id="logLines" ${S.logLines !== false ? 'checked' : ''} data-flag="logLines"> Add ${rows.reduce((n, r) => n + r.order, 0)} kit${rows.reduce((n, r) => n + r.order, 0) === 1 ? '' : 's'} to Inventory as “in transit”</label></div>
-    <div class="row noprint" style="margin-top:8px"><button class="btn primary" data-act="saveBesse">Record order</button><span class="small muted grow">${S.besse ? `Writes the date, counts and overage to the Besse Order tab${h ? ` and logs the quantities for the week of ${fmtD(h.d, 'dow')}` : ''}` : 'Besse Order tab not found'}${S.logLines !== false ? '; opens in-transit lines so the kits can be followed up and received' : ''}.</span></div>
+    <label class="check noprint"><input type="checkbox" id="logLines" ${S.logLines !== false ? 'checked' : ''} data-flag="logLines"><span>Add ${tot} kit${tot === 1 ? '' : 's'} to Inventory as “in transit”</span></label>
+    <div class="inv-foot2 noprint"><span class="small muted">${S.besse ? `Writes the date, counts and overage to the Besse Order tab${h ? ` and logs the quantities for the week of ${fmtD(h.d, 'dow')}` : ''}` : 'Besse Order tab not found'}${S.logLines !== false ? '; opens in-transit lines so the kits can be followed up and received' : ''}.</span><button class="btn primary" data-act="saveBesse">Record order</button></div>
   </div>
-  ${m.review.length ? `<div class="card"><h2>Needs review <span class="chip bad">${m.review.length}</span></h2><div class="tw"><table class="t rt"><tbody>${m.review.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.a.mrn))}</b></td><td data-l="Date">${fmtD(x.a.date, 'dow')}</td><td data-l="Issue">${esc(x.why)} — not counted</td></tr>`).join('')}</tbody></table></div></div>` : ''}
-  </div><div>
-  <div class="card"><h2>Appointments counted <span class="chip">${m.list.length}</span></h2>
-    ${m.list.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Week</th><th>Date</th><th>Patient</th><th>Visit</th><th class="num">mg</th></tr></thead><tbody>${m.list.map(x => `<tr><td data-l="Week">${x.wk === 1 ? 'Next' : '2 out'}</td><td data-l="Date">${fmtD(x.a.date, 'dow')} ${fmtT(x.a.time)}</td><td data-l="Patient"><b>${esc(nm(x.a.mrn))}</b></td><td data-l="Visit">${x.a.isStart ? 'Start' : 'EFU'}</td><td data-l="mg" class="num">${x.mg}${x.verify ? ' <span class="chip warn">verify</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No Besse appointments in these weeks.</div>'}
-  </div></div></div>`;
+  ${m.review.length ? `<div class="card"><div class="inv-ch"><h3>Needs review ${tag('bad', String(m.review.length))}</h3></div><div class="tw"><table class="t rt"><tbody>${m.review.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.a.mrn))}</b></td><td data-l="Date">${fmtD(x.a.date, 'dow')}</td><td data-l="Issue" class="inv-wrap">${esc(x.why)}, not counted</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+  <div class="card"><div class="inv-ch"><h3>Appointments counted ${tag('', String(m.list.length))}</h3></div>
+    ${m.list.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Week</th><th>Date</th><th>Patient</th><th>Visit</th><th class="num">mg</th></tr></thead><tbody>${m.list.map(x => `<tr><td data-l="Week">${x.wk === 1 ? 'Next' : '2 out'}</td><td data-l="Date">${fmtD(x.a.date, 'dow')} ${fmtT(x.a.time)}</td><td data-l="Patient"><b>${esc(nm(x.a.mrn))}</b></td><td data-l="Visit">${x.a.isStart ? 'Start' : 'Follow-up'}</td><td data-l="mg" class="num">${x.mg}${x.verify ? ' ' + tag('warn', 'verify') : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No Besse appointments in these weeks.</div>'}
+  </div>`;
 }
 async function genoaOrder(){
   const g = genoaModel(); const rows = g.rows.filter(r => r.cover === 'need' && S.genoaSel.has(r.a.key)); if (!rows.length) return;
@@ -3323,24 +3396,22 @@ function auditModel(){
 function auditHTML(){
   const m = auditModel(); const A = m.A; const hasWeekly = !!S.tables.audit;
   const pt = k => k?.mrn ? esc(nm(k.mrn)) : k ? `${PH_LABEL[k.pharm]} stock` : '—';
-  return `<div class="card"><h2>Daily audit · ${fmtD(todaySerial(), 'full')}<span class="sp"></span><button class="btn sm" data-act="audPrint" ${A.scans.length ? '' : 'disabled'}>🖨 Print audit sheet</button><button class="btn sm primary" data-act="audFill" ${A.scans.length && hasWeekly && !A.filled ? '' : 'disabled'}>${A.filled ? 'Filled to Weekly Audit ✓' : 'Fill to Weekly Audit'}</button></h2>
-    <div class="row"><div class="grow"><label class="lbl" for="aud1">Auditor 1</label><input id="aud1" class="fld" data-aud="a1" list="dlAud" value="${esc(A.a1)}"></div><div class="grow"><label class="lbl" for="aud2">Auditor 2</label><input id="aud2" class="fld" data-aud="a2" list="dlAud" value="${esc(A.a2)}"></div></div>
+  return `<div class="card"><div class="inv-ch"><h3>Audit for ${fmtD(todaySerial(), 'full')}</h3><button class="btn sm" data-act="audPrint" ${A.scans.length ? '' : 'disabled'}>Print audit sheet</button><button class="btn sm primary" data-act="audFill" ${A.scans.length && hasWeekly && !A.filled ? '' : 'disabled'}>${A.filled ? 'Filled to Weekly Audit ✓' : 'Fill to Weekly Audit'}</button></div>
+    <div class="form2"><div><label class="lbl" for="aud1">Auditor 1</label><input id="aud1" class="fld" data-aud="a1" list="dlAud" value="${esc(A.a1)}"></div><div><label class="lbl" for="aud2">Auditor 2</label><input id="aud2" class="fld" data-aud="a2" list="dlAud" value="${esc(A.a2)}"></div></div>
     ${datalist('dlAud', [...distinct('kits', 'loggingpct'), ...(S.tables.audit ? distinct('audit', 'auditornamefirstandlast') : [])])}
-    <div class="scan" style="margin-top:10px"><input id="scanAudit" data-scan="audit" placeholder="${A.a1 ? 'Scan every kit in the med locker' : 'Enter Auditor 1 above to start scanning'}" autocomplete="off" aria-label="Scan kit for audit" ${A.a1 ? '' : 'disabled'}></div>
-    ${(() => { if (!S.tables.daily) return '<div class="msg warn small" style="margin-top:6px">The Daily Count scan table wasn’t found in this workbook, so scans stay in the add-in.</div>'; const pend = A.scans.filter(x => !x.sheet).length; const q = (S.scanQ || []).filter(x => x.k === 'aud').length + (S.scanBusy === 'aud' ? 1 : 0);
-      return `<div class="row small" style="margin-top:6px">${q ? `<span class="chip warn">Writing to Daily Count… ${q}</span>` : pend ? `<span class="chip bad">${pend} scan${pend > 1 ? 's' : ''} not on the Daily Count tab</span><button class="btn sm" data-act="audSync">Send to Daily Count</button>` : A.scans.length ? '<span class="chip ok">All scans are on the Daily Count tab</span>' : ''}<span class="muted">Each scan goes to the next row of the Daily Count tab; auditor names, date and location fill C2–C5.</span></div>`; })()}
-    <div class="small muted" style="margin-top:6px">${hasWeekly ? '“Fill to Weekly Audit” adds each scan to the SN Audit tab with today’s date and both auditors.' : 'The SN Audit table wasn’t found, so filling the weekly audit is off.'}</div>
-    <div class="stats" style="margin-top:10px">${Object.entries(m.groups).map(([g, v]) => `<div class="stat"><div class="n" style="color:${v.ok === v.exp ? 'var(--ok)' : 'var(--bad)'}">${v.ok}/${v.exp}</div><div class="l">${g}</div></div>`).join('')}<div class="stat"><div class="n" style="color:${m.flags ? 'var(--bad)' : 'var(--ok)'}">${m.flags}</div><div class="l">flags</div></div></div>
+    <div class="scan inv-gap"><input id="scanAudit" data-scan="audit" placeholder="${A.a1 ? 'Scan every kit in the med locker' : 'Enter Auditor 1 above to start scanning'}" autocomplete="off" aria-label="Scan kit for audit" ${A.a1 ? '' : 'disabled'}></div>
+    ${(() => { if (!S.tables.daily) return '<div class="msg warn">The Daily Count scan table wasn’t found in this workbook, so scans stay in the add-in.</div>'; const pend = A.scans.filter(x => !x.sheet).length; const q = (S.scanQ || []).filter(x => x.k === 'aud').length + (S.scanBusy === 'aud' ? 1 : 0);
+      return `<div class="inv-status small">${q ? tag('warn', `Writing to Daily Count… ${q}`) : pend ? `${tag('bad', `${pend} scan${pend > 1 ? 's' : ''} not on the Daily Count tab`)}<button class="btn sm" data-act="audSync">Send to Daily Count</button>` : A.scans.length ? tag('ok', 'All scans are on the Daily Count tab') : ''}<span class="muted">Each scan goes to the next row of the Daily Count tab. Auditor names, date and location fill C2 to C5.</span></div>`; })()}
+    <p class="small muted">${hasWeekly ? '“Fill to Weekly Audit” adds each scan to the SN Audit tab with today’s date and both auditors.' : 'The SN Audit table wasn’t found, so filling the weekly audit is off.'}</p>
+    <div class="tiles inv-agroups">${Object.entries(m.groups).map(([g, v]) => `<div class="tile${v.ok === v.exp ? ' ok' : ''}"><b>${v.ok}/${v.exp}</b><span>${g}${v.ok === v.exp ? ' ✓' : ''}</span></div>`).join('')}${A.scans.length ? `<div class="tile ${m.flags ? 'bad' : 'ok'}"><b>${m.flags}</b><span>${m.flags === 1 ? 'flag' : 'flags'}</span></div>` : ''}</div>
   </div>
-  <div class="cols"><div>
-    <div class="card"><h2>Scanned <span class="chip">${m.rows.length}</span><span class="sp"></span>${m.rows.length ? '<button class="linkbtn" data-act="audClear">Clear audit</button>' : ''}</h2>
-      ${m.rows.length ? `<div class="tw"><table class="t rt"><thead><tr><th>#</th><th>Status</th><th>Serial</th><th class="num">mg</th><th>Pharmacy</th><th>Patient</th><th>Use by</th><th></th></tr></thead><tbody>${m.rows.slice().reverse().map(r => `<tr><td data-l="#">${r.i + 1}</td><td data-l="Status"><span class="chip ${r.cls}">${esc(r.st)}</span></td><td data-l="Serial" class="mono">${esc(r.p?.serial || r.k?.serial || cleanScan(r.sc.raw).slice(0, 18))}</td><td data-l="mg" class="num">${r.k?.recv ?? r.p?.mg ?? ''}</td><td data-l="Pharmacy">${r.k ? PH_LABEL[r.k.pharm] : '—'}</td><td data-l="Patient">${pt(r.k)}</td><td data-l="Use by">${r.k ? fmtD(r.k.expDate) : '—'}</td><td data-l="" style="text-align:right"><button class="linkbtn" data-act="audRemove" data-i="${r.i}">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing scanned yet.</div>'}
-    </div></div><div>
-    <div class="card"><h2>Not scanned yet <span class="chip ${m.missing.length ? 'bad' : 'ok'}">${m.missing.length}</span></h2>
-      <div class="small muted" style="margin-bottom:8px">Kits the Inventory says should be in the locker (received, not disposed, not fully used).</div>
-      ${m.missing.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Pharmacy</th><th class="num">mg</th><th>Serial</th><th>Patient</th><th>Received</th><th>Row</th></tr></thead><tbody>${m.missing.map(k => `<tr><td data-l="Pharmacy">${PH_LABEL[k.pharm]}</td><td data-l="mg" class="num">${k.recv ?? ''}</td><td data-l="Serial" class="mono">${esc(k.serial)}</td><td data-l="Patient">${pt(k)}</td><td data-l="Received">${fmtD(k.received)}</td><td data-l="Row">${k.r + 3}</td></tr>`).join('')}</tbody></table></div>` : '<div class="msg ok">Everything expected has been scanned.</div>'}
-    </div>
-  </div></div>`;
+  <div class="card"><div class="inv-ch"><h3>Scanned ${tag('', String(m.rows.length))}</h3>${m.rows.length ? '<button class="linkbtn" data-act="audClear">Clear audit</button>' : ''}</div>
+    ${m.rows.length ? `<div class="tw"><table class="t rt"><thead><tr><th>#</th><th>Status</th><th>Serial</th><th class="num">mg</th><th>Pharmacy</th><th>Patient</th><th>Use by</th><th></th></tr></thead><tbody>${m.rows.slice().reverse().map(r => `<tr><td data-l="#">${r.i + 1}</td><td data-l="Status">${tag(r.cls, r.st)}</td><td data-l="Serial" class="mono">${esc(r.p?.serial || r.k?.serial || cleanScan(r.sc.raw).slice(0, 18))}</td><td data-l="mg" class="num">${r.k?.recv ?? r.p?.mg ?? ''}</td><td data-l="Pharmacy">${r.k ? PH_LABEL[r.k.pharm] : '—'}</td><td data-l="Patient">${pt(r.k)}</td><td data-l="Use by">${r.k ? fmtD(r.k.expDate) : '—'}</td><td data-l="" class="inv-acts"><button class="linkbtn" data-act="audRemove" data-i="${r.i}">Remove</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing scanned yet.</div>'}
+  </div>
+  <div class="card"><div class="inv-ch"><h3>Not scanned yet ${tag(m.missing.length ? 'bad' : 'ok', String(m.missing.length))}</h3></div>
+    <p class="small muted">Kits the Inventory says should be in the locker: received, not disposed, not fully used.</p>
+    ${m.missing.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Pharmacy</th><th class="num">mg</th><th>Serial</th><th>Patient</th><th>Received</th><th>Row</th></tr></thead><tbody>${m.missing.map(k => `<tr><td data-l="Pharmacy">${PH_LABEL[k.pharm]}</td><td data-l="mg" class="num">${k.recv ?? ''}</td><td data-l="Serial" class="mono">${esc(k.serial)}</td><td data-l="Patient">${pt(k)}</td><td data-l="Received">${fmtD(k.received)}</td><td data-l="Row">${k.r + 3}</td></tr>`).join('')}</tbody></table></div>` : '<div class="msg ok">Everything expected has been scanned.</div>'}
+  </div>`;
 }
 const LOGO_URI = 'data:image/png;base64,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';
 const locName = () => CFG.locName || ({ SRL: 'San Rafael', CAS: 'Castro', SF: 'San Francisco' }[String(CFG.clinic || '').toUpperCase()] || CFG.clinic || '');
@@ -3547,24 +3618,21 @@ function ptSchedDoc(mrn){
 // ---------- inventory ----------
 function inventoryHTML(){
   const K = S.K; const q = S.invQ.trim().toLowerCase();
-  const cnt = f => K.filter(f).length;
   const F = { attention: k => k.needsDisposal || k.partialOpen, available: k => k.available, ordered: k => k.openOrder, recent: k => k.administered && k.adminDate >= todaySerial() - 14, all: () => true };
-  let list = K.filter(F[S.invFilter]); if (q) list = list.filter(k => [k.serial, k.lot, k.mrn, nm(k.mrn), k.comments].some(v => String(v ?? '').toLowerCase().includes(q)));
-  list = list.sort((a, b) => b.r - a.r).slice(0, 150);
-  const chip = k => k.openOrder ? '<span class="chip info">On order</span>' : k.needsDisposal ? '<span class="chip bad">Expired — dispose</span>' : k.partialOpen ? '<span class="chip warn">Partial</span>' : k.disposed ? '<span class="chip">Disposed</span>' : k.administered ? '<span class="chip">Administered</span>' : k.available ? '<span class="chip ok">Available</span>' : '<span class="chip">—</span>';
-  return `<div class="card"><div class="stats">
-      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 84)}</div><div class="l">Besse 84 mg</div></div>
-      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 56)}</div><div class="l">Besse 56 mg</div></div>
-      <div class="stat"><div class="n">${cnt(k => k.available && k.pharm === 'GENOA')}</div><div class="l">Genoa on hand</div></div>
-      <div class="stat"><div class="n">${cnt(k => k.openOrder)}</div><div class="l">on order</div></div>
-      <div class="stat"><div class="n" style="color:var(--bad)">${cnt(k => k.needsDisposal)}</div><div class="l">expired, unused</div></div></div>
-    <div class="scan" style="margin-top:10px"><input id="scanInv" data-scan="inv" placeholder="Scan a kit to look it up" autocomplete="off" aria-label="Look up kit"></div></div>
-  <div class="card"><div class="row"><div class="seg" style="flex-wrap:wrap">${[['attention', 'Needs attention'], ['available', 'Available'], ['ordered', 'On order'], ['recent', 'Recent use'], ['all', 'All']].map(([k, l]) => `<button data-act="invF" data-v="${k}" aria-pressed="${S.invFilter === k}">${l}</button>`).join('')}</div>
-    <input id="invQ" class="fld grow" data-input="invQ" placeholder="Filter by serial, lot, MRN, name" value="${esc(S.invQ)}" style="min-width:160px"></div>
-    ${list.length ? `<div class="tw" style="margin-top:10px"><table class="t rt"><thead><tr><th>Status</th><th>Patient / stock</th><th>Pharmacy</th><th class="num">mg</th><th>Serial</th><th>Received</th><th>Use by</th><th>Detail</th><th>Row</th><th></th></tr></thead><tbody>
-      ${list.map(k => `<tr><td data-l="Status">${chip(k)}</td><td data-l="Patient"><b>${k.mrn ? esc(nm(k.mrn)) : 'Stock'}</b>${k.mrn ? ` <span class="muted small">${esc(k.mrn)}</span>` : ''}</td><td data-l="Pharmacy">${PH_LABEL[k.pharm]}</td><td data-l="mg" class="num">${k.recv ?? ''}</td><td data-l="Serial" class="mono">${esc(k.serial || '—')}</td><td data-l="Received">${k.openOrder ? 'ordered ' + fmtD(k.ordered) : fmtD(k.received)}</td><td data-l="Use by">${fmtD(k.expDate)}</td><td data-l="Detail" class="small">${k.administered ? `given ${esc(k.adminRaw)} mg ${fmtD(k.adminDate)}` : k.partialOpen ? `${k.remaining} mg left` : ''}</td><td data-l="Row">${k.r + 3}</td>
-        <td data-l="" style="text-align:right"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap">${(k.needsDisposal || k.partialOpen) ? `<button class="btn sm" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button>` : ''}<button class="btn sm ghost" data-act="editKit" data-id="${esc(k.id)}">Edit</button></div></td></tr>`).join('')}
-    </tbody></table></div>` : '<div class="empty">Nothing here.</div>'}</div>`;
+  let list = K.filter(F[S.invFilter] || F.attention); if (q) list = list.filter(k => [k.serial, k.lot, k.mrn, nm(k.mrn), k.comments].some(v => String(v ?? '').toLowerCase().includes(q)));
+  const total = list.length; list = list.sort((a, b) => b.r - a.r).slice(0, 150);
+  const chip = k => k.openOrder ? tag('info', 'On order') : k.needsDisposal ? tag('bad', 'Expired, dispose') : k.partialOpen ? tag('warn', 'Partial') : k.disposed ? tag('', 'Disposed') : k.administered ? tag('', 'Administered') : k.available ? tag('ok', 'Available') : tag('', '—');
+  return `<div class="card inv-stock">
+    <div class="scan"><input id="scanInv" data-scan="inv" placeholder="Scan a kit to look it up" autocomplete="off" aria-label="Look up kit"></div>
+    <div class="inv-filters"><div class="seg" role="group" aria-label="Show kits">${[['attention', 'Needs attention'], ['available', 'Available'], ['ordered', 'On order'], ['recent', 'Recent use'], ['all', 'All']].map(([k, l]) => `<button data-act="invF" data-v="${k}" aria-pressed="${S.invFilter === k}">${l}</button>`).join('')}</div>
+      <input id="invQ" class="fld" data-input="invQ" placeholder="Serial, lot, MRN or name" value="${esc(S.invQ)}" aria-label="Filter kits"></div>
+    ${list.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient / stock</th><th>Kit and serial</th><th>Received</th><th>Use by</th><th></th></tr></thead><tbody>
+      ${list.map(k => { const det = k.administered ? `given ${esc(k.adminRaw)} mg ${fmtD(k.adminDate)}` : k.partialOpen ? `${k.remaining} mg left` : '';
+        return `<tr><td data-l="Status">${chip(k)}${det ? `<div class="small muted">${det}</div>` : ''}</td><td data-l="Patient"><b>${k.mrn ? esc(nm(k.mrn)) : 'Stock'}</b>${k.mrn ? ` <span class="muted small">${esc(k.mrn)}</span>` : ''}</td><td data-l="Kit"><span class="inv-nw">${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg</span><div class="small muted"><span class="mono">${esc(k.serial || '—')}</span> · row ${k.r + 3}</div></td><td data-l="Received">${k.openOrder ? 'ordered ' + fmtD(k.ordered) : fmtD(k.received)}</td><td data-l="Use by">${fmtD(k.expDate)}</td>
+        <td data-l="" class="inv-acts">${(k.needsDisposal || k.partialOpen) ? `<button class="btn sm" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button>` : ''}<button class="btn sm ghost" data-act="editKit" data-id="${esc(k.id)}">Edit</button></td></tr>`; }).join('')}
+    </tbody></table></div>` : '<div class="empty">No kits match.</div>'}
+    ${total > 150 ? `<p class="small muted">Showing the newest 150 of ${total} kits. Filter to find older ones.</p>` : ''}
+  </div>`;
 }
 function invScan(raw){ const { p, list } = findByScan(raw); if (!list.length) return toast(p ? 'warn' : 'bad', p ? `Serial ${esc(p.serial)} isn’t in the log.` : 'Not a Spravato barcode.'); openKit(list[0].id); }
 function openKit(id){
@@ -3760,14 +3828,119 @@ PAGES.schedule = {
 // ===== /page: schedule =====
 
 // ===== page: inventory =====
-const ACT_INVENTORY = {};
+// Meds page (view key "inventory"). Left: today's routine, one taskRow per step. Right: stock tiles + the workspace for S.invTab.
+// Pure UI helpers only: every count comes from existing models (auditModel, assignModel, reassignModel, genoaModel,
+// scheduledNeedingMeds, followModel, besseModel) and the derived kit flags in S.K. Nothing here writes.
+const invPl = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+const invClock = ms => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+// Besse weekly order: recorded when the history row for this week (0-6 days on or after today, the same rule findHistRow uses
+// for the order date) has a quantity, or when "Besse N mg order" lines were logged in the last 7 days.
+function invBesseDone(){
+  const T = todaySerial(); const b = S.besse; let hist = null;
+  if (b?.hist){ const vals = b.vals || []; for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null || d < T || d > T + 6) continue; const q = [vals[r][b.hist.c + 1], vals[r][b.hist.c + 2]]; if (q.some(v => v !== '' && v != null) && (!hist || d < hist.d)) hist = { d }; } }
+  const lines = S.K.filter(k => k.pharm === 'BESSE' && k.ordered != null && k.ordered >= T - 6 && k.ordered <= T && /^Besse \d+ mg order/i.test(String(k.comments ?? '')));
+  const last = lines.length ? Math.max(...lines.map(k => k.ordered)) : null;
+  return { done: !!hist || !!lines.length, hist, lines: lines.length, last };
+}
+// Daily audit: done once today's scans are on the SN Audit tab (filled here or typed in on another computer). Without an SN Audit
+// table, done when every expected kit has been scanned.
+function invAuditInfo(){
+  const T = todaySerial(); const at = S.tables.audit;
+  // Read only: auditState() starts a new audit (Auditor 1 = CFG.me) as a side effect, so only call it once today's audit exists.
+  const m = S.aud && S.aud.date === isoOf(T) ? auditModel() : { A: { scans: [], a1: '', filled: false }, flags: 0, missing: [], expected: S.K.filter(k => k.isReceived && !k.disposed && (!k.administered || k.partialOpen)) };
+  const A = m.A;
+  const sn = at ? at.values.filter((_, r) => toSerial(at.get(r, 'date')) === T && at.get(r, 'scanhere')).length : 0;
+  const n = A.scans.length; const exp = m.expected.length; const got = exp - m.missing.length;
+  const done = sn > 0 || (n > 0 && (A.filled || (!at && !m.missing.length)));
+  const last = n ? Math.max(...A.scans.map(x => x.at || 0)) : null;
+  return { m, A, n, exp, got, sn, done, last };
+}
+// The seven routine steps, in day order. Each: k (S.invTab key), t, d (detail), done, tone, b (button label).
+function invRoutine(){
+  const T = todaySerial(); const out = [];
+  { const a = invAuditInfo(); const fl = a.m.flags;
+    out.push({ k: 'audit', t: 'Daily audit', done: a.done, tone: '', b: a.n ? 'Continue audit' : 'Start audit',
+      d: a.done ? (a.n ? `Done${a.last ? ' ' + invClock(a.last) : ''}${a.A.a1 ? ' by ' + esc(a.A.a1) : ''}${fl ? ' · ' + invPl(fl, 'flag') : ''}` : `On SN Audit · ${invPl(a.sn, 'scan')}`)
+        : a.n ? `${a.got} of ${invPl(a.exp, 'kit')} scanned${fl ? ' · ' + invPl(fl, 'flag') : ''}` : `Not done yet today · ${invPl(a.exp, 'kit')} to scan` }); }
+  { const open = S.K.filter(k => k.openOrder); const nb = open.filter(k => k.pharm === 'BESSE').length; const ng = open.length - nb;
+    const holds = (S.rcvHold || []).length; const today = S.K.filter(k => k.isReceived && k.received === T).length;
+    const parts = []; if (open.length) parts.push(`${invPl(open.length, 'kit')} on order${nb && ng ? ` (${ng} Genoa or specialty, ${nb} Besse)` : nb ? ' from Besse' : ''}`); if (holds) parts.push(`${invPl(holds, 'scan')} set aside`);
+    out.push({ k: 'receive', t: 'Receive', done: !open.length && !holds, tone: holds ? 'warn' : '', b: 'Receive kits',
+      d: parts.length ? parts.join(' · ') + (today ? ` · ${today} received today` : '') : `Nothing on order${today ? ` · ${today} received today` : ''}` }); }
+  { const rows = assignModel(); const can = rows.filter(r => r.kit).length; const re = reassignModel().length; const short = rows.filter(r => !r.kit);
+    const sh = [84, 56].map(mg => [mg, short.filter(r => r.mg === mg).length]).filter(x => x[1]).map(([mg, n]) => `${n} × ${mg} mg`).join(', ');
+    const parts = []; if (can) parts.push(`${invPl(can, 'Besse visit')} in the next ${ASSIGN_DAYS} days need${can === 1 ? 's' : ''} a kit labeled`); if (re) parts.push(`${invPl(re, 'kit')} to re-assign`);
+    out.push({ k: 'assign', t: 'Assign Besse stock', done: !can && !re, tone: '', b: 'Assign kits',
+      d: (parts.length ? parts.join(' · ') : `Every Besse visit in the next ${ASSIGN_DAYS} days has a labeled kit`) + (sh ? ` · no unlabeled stock for ${sh}` : '') }); }
+  { const g = genoaModel(); const need = g.rows.filter(r => r.cover === 'need').length; const sm = scheduledNeedingMeds().filter(x => PS(x.p?.pharm)).length;
+    const today = S.K.filter(k => k.ordered === T && k.pharm !== 'BESSE').length; const parts = [];
+    if (need) parts.push(`${invPl(need, 'visit')} through ${fmtD(g.to, 'dow')} with no kit`); if (sm) parts.push(`${sm} newly scheduled with no meds`);
+    out.push({ k: 'order', t: 'Order Genoa', done: !need && !sm, tone: need && g.rows.some(r => r.cover === 'need' && r.a.date - T <= 2) ? 'bad' : '', b: 'Build order',
+      d: parts.length ? parts.join(' · ') : `Every Genoa and specialty visit through ${fmtD(g.to, 'dow')} is covered${today ? ` · ${today} ordered today` : ''}` }); }
+  { const bd = invBesseDone(); const bm = besseModel(); const o56 = bm.rows[56].order, o84 = bm.rows[84].order;
+    out.push({ k: 'besse', t: 'Besse order (weekly)', done: bd.done, tone: S.besse ? '' : 'warn', b: 'Open order',
+      d: bd.done ? (bd.hist ? `Recorded ${fmtD(bd.hist.d, 'dow')}` : `Logged ${fmtD(bd.last, 'dow')}`)
+        : S.besse ? `Not recorded this week · ${o56} × 56 mg, ${o84} × 84 mg to order` : 'Besse Order tab not found in this workbook' }); }
+  { const fm = followModel(); const late = fm.filter(f => f.cls === 'bad').length;
+    out.push({ k: 'transit', t: 'In transit', done: !late, tone: late ? 'bad' : '', b: 'Follow up',
+      d: !fm.length ? 'Nothing on order' : late ? `${late} needed today or tomorrow · ${fm.length} on order` : `${fm.length} on order, none late` }); }
+  { const ex = S.K.filter(k => k.needsDisposal).length, pa = S.K.filter(k => k.partialOpen).length; const parts = [];
+    if (ex) parts.push(`${invPl(ex, 'expired kit')}, unused`); if (pa) parts.push(`${invPl(pa, 'partial kit')} with mg left`);
+    out.push({ k: 'dispose', t: 'Dispose', done: !ex && !pa, tone: ex ? 'bad' : pa ? 'warn' : '', b: 'Log disposal', d: parts.length ? parts.join(' · ') : 'Nothing to dispose' }); }
+  return out;
+}
+function invRoutineHTML(steps, tab){
+  const first = tab === 'stock' ? steps.find(s => !s.done) : null;   // one primary per screen: an open step brings its own
+  return `<section class="card inv-routine${tab !== 'stock' ? ' inv-off' : ''}" aria-label="Today’s routine"><h3>Today’s routine</h3>
+    ${steps.map(s => taskRow({ t: s.t, d: s.d, done: s.done, tone: s.tone, current: s.k === tab, id: 'inv:' + s.k,
+      btn: `<button class="btn sm${s.done ? ' ghost mute' : s === first ? ' primary' : ''}" data-act="invStep" data-v="${s.k}"${s.done ? ` aria-label="View ${esc(s.t)}"` : ''}${s.k === tab ? ' aria-current="true"' : ''}>${s.done ? 'View' : s.b}</button>` })).join('')}</section>`;
+}
+// Stock tiles (counts from S.K only). "Genoa or specialty" = every non-Besse pharmacy; "on order" = all pharmacies, as before.
+function invTilesHTML(){
+  const K = S.K; const cnt = f => K.filter(f).length;
+  const t = [[cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 84), 'Besse 84 mg on hand', ''], [cnt(k => k.available && k.pharm === 'BESSE' && k.recv === 56), 'Besse 56 mg on hand', ''],
+    [cnt(k => k.available && k.pharm !== 'BESSE'), 'Genoa/specialty on hand', ''], [cnt(k => k.openOrder), 'on order', '']];
+  const ex = cnt(k => k.needsDisposal), pa = cnt(k => k.partialOpen);
+  t.push([ex, 'expired, unused', ex ? 'bad' : '']); if (pa) t.push([pa, 'partial, mg left', 'warn']);
+  return `<div class="tiles">${t.map(([n, l, tone]) => `<div class="tile${tone ? ' ' + tone : ''}"><b>${n}</b><span>${l}</span></div>`).join('')}</div>`;
+}
+// Assign step: labeled Besse kits that should move to another patient (reassignModel), each with Re-assign… (modal).
+function invReassignHTML(){
+  const rs = reassignModel(); if (!rs.length) return '';
+  return `<div class="card"><div class="inv-ch"><h3>Re-assign labeled kits ${tag('warn', String(rs.length))}</h3></div>
+    <p class="small muted">Labeled Besse kits that expire within 21 days while their patient has no visit in the next 7 days. Re-label the kit, then confirm.</p>
+    <div class="tw"><table class="t rt"><thead><tr><th>Kit</th><th>Labeled for</th><th>Use by</th><th>Suggested patient</th><th></th></tr></thead><tbody>
+    ${rs.map(r => `<tr><td data-l="Kit">${r.k.recv ?? '?'} mg <span class="mono">SN ${esc(r.k.serial || '—')}</span></td><td data-l="Labeled for"><b>${esc(nm(r.from))}</b></td><td data-l="Use by">${fmtD(r.k.expDate)}</td>
+      <td data-l="Suggested">${r.target ? `${esc(nm(r.target.mrn))} <span class="muted small">${fmtD(r.target.date, 'dow')} ${fmtT(r.target.time)}</span>` : '<span class="muted">No matching visit</span>'}</td>
+      <td data-l="" class="inv-acts"><button class="btn sm" data-act="reassign" data-id="${esc(r.k.id)}">Re-assign…</button></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+// Dispose step: expired-unused and partial kits, each with Dispose… (modal) and Edit.
+function invDisposeHTML(){
+  const T = todaySerial(); const L = S.K.filter(k => k.needsDisposal || k.partialOpen).sort((a, b) => (a.expDate ?? 1e9) - (b.expDate ?? 1e9) || a.r - b.r);
+  const today = S.K.filter(k => k.disposed && k.dispDate === T).length;
+  return `<div class="card"><div class="inv-ch"><h3>Kits to dispose ${tag(L.length ? 'bad' : 'ok', String(L.length))}</h3></div>
+    <p class="small muted">Expired kits that were never used, and partial kits with mg left over. Each disposal is written to the kit’s Inventory row.${today ? ` ${invPl(today, 'kit')} disposed today.` : ''}</p>
+    ${L.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Status</th><th>Patient / stock</th><th>Kit</th><th>Serial</th><th>Use by</th><th></th></tr></thead><tbody>
+      ${L.map(k => `<tr><td data-l="Status">${k.needsDisposal ? tag('bad', 'Expired, unused') : tag('warn', `Partial · ${k.remaining} mg left`)}</td><td data-l="Patient"><b>${k.mrn ? esc(nm(k.mrn)) : 'Stock'}</b></td><td data-l="Kit" class="inv-nw">${PH_LABEL[k.pharm]} ${k.recv ?? '?'} mg</td>
+        <td data-l="Serial"><span class="mono">${esc(k.serial || '—')}</span><div class="small muted">row ${k.r + 3}</div></td><td data-l="Use by">${fmtD(k.expDate)}</td>
+        <td data-l="" class="inv-acts"><button class="btn sm" data-act="dispose" data-id="${esc(k.id)}">Dispose…</button><button class="btn sm ghost" data-act="editKit" data-id="${esc(k.id)}">Edit</button></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="msg ok">Nothing to dispose.</div>'}</div>`;
+}
 PAGES.inventory = {
   label: 'Meds',
   title: () => 'Meds',
-  sub: () => '',
+  sub(){
+    const a = invAuditInfo(); const open = S.K.filter(k => k.openOrder).length; const ex = S.K.filter(k => k.needsDisposal).length; const pa = S.K.filter(k => k.partialOpen).length;
+    return [a.done ? 'Daily audit done' : 'Daily audit not done', open ? `${invPl(open, 'kit')} on order` : '', ex ? `${ex} expired` : '', pa ? `${pa} partial` : ''].filter(Boolean).join(' · ');
+  },
   tools: () => '',
   html: () => invShellHTML(),
-  badge: () => (S._b || {}).inventory ? { n: S._b.inventory, tone: 'bad' } : null,
+  badge(){ const n = invRoutine().filter(s => !s.done).length; return n ? { n, tone: 'bad' } : null; },
+};
+const ACT_INVENTORY = {
+  // Open a routine step. In the narrow pane the routine hides while a step is open, so jump to the top of the workspace.
+  invStep: el => { S.invTab = el.dataset.v; render(); if (window.innerWidth < 900) window.scrollTo(0, 0); },
 };
 // ===== /page: inventory =====
 
