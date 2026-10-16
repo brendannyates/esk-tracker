@@ -3403,7 +3403,11 @@ function openSettings(){
 
 // ---------- modal / toast / busy ----------
 function openModal(html, wide){ $('#sheet').innerHTML = html; $('#sheet').classList.toggle('wide', !!wide); $('#modal').hidden = false; }
-function closeModal(){ $('#modal').hidden = true; $('#sheet').innerHTML = ''; S.adm = null; S.disp = null; }
+function closeModal(){
+  if (S.dayRes){ dayChoice('cancel'); return; }   // Escape / backdrop on "Start today's Daily Count?" = Not now, so queued scans don't wait forever
+  if (S.co && S.coKey && $('#coText')){ clearTimeout(S._coT); coPersist(false, true); }   // Record vitals closed by Escape / backdrop: keep the last keystrokes
+  $('#modal').hidden = true; $('#sheet').innerHTML = ''; S.adm = null; S.disp = null;
+}
 function toast(kind, html){ $('#toast').innerHTML = ''; const el = document.createElement('div'); el.className = 'msg ' + kind; el.innerHTML = html; $('#toast').appendChild(el); setTimeout(() => el.remove(), kind === 'bad' ? 9000 : 2600); }
 function busy(t){ $('#busy').hidden = !t; if (t) $('#busyText').textContent = t; }
 async function copyText(text, html){
@@ -3713,7 +3717,7 @@ function onWorkbookChange(){
   S._w = setTimeout(() => {
     S._w = null;
     if (DLG && S.notifyDialog) return S.notifyDialog();
-    if (!$('#modal').hidden || !$('#busy').hidden) return onWorkbookChange();
+    if (!$('#modal').hidden || !$('#busy').hidden || S.editing) return onWorkbookChange();   // S.editing: an in-page form has unsaved changes
     reload(true, true);
   }, S.store.remote ? 500 : REFRESH_MS);
 }
