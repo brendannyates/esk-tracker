@@ -869,11 +869,95 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: patients ===== */
 
 /* ===== page: access ===== */
-/* access styles */
+.pg-access > * + *{margin-top:16px}
+.pg-access .cols2 > div > .card + .card{margin-top:16px}
+.pg-access .card{min-width:0}
+.pg-access .acc-bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between}
+.pg-access .acc-filters{display:flex;flex-wrap:wrap;gap:12px}
+.pg-access .acc-f{display:flex;flex-direction:column;gap:6px;min-width:190px;margin:0}
+.pg-access .acc-f .lbl{margin:0}
+.pg-access .acc-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto;justify-content:flex-end}
+/* the wide tables (Provider panels has 10 columns) only fit side by side from about 1600px; below that each card gets the full width */
+@media (max-width:1599px){ .pg-access .cols2.two{grid-template-columns:minmax(0,1fr)} }
+.pg-access .cols2{gap:16px}
+.pg-access table.t th,.pg-access table.t td{padding:8px 7px}
+.pg-access .acc-st{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
+.pg-access .acc-st > .lbl{margin:0 4px 0 0}
+.pg-access .acc-chip{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:10px;background:var(--surface2);cursor:pointer;font-size:14px;margin:0;color:var(--ink)}
+.pg-access .acc-chip:has(input:checked){background:var(--accent-soft)}
+.pg-access .acc-chip input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.pg-access .acc-chip .n{color:var(--muted)}
+.pg-access .acc-tiles{margin-top:18px;grid-template-columns:repeat(8,minmax(0,1fr))}
+@media (max-width:1439px){ .pg-access .acc-tiles{grid-template-columns:repeat(4,minmax(0,1fr))} }
+@media (max-width:899px){ .pg-access .acc-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.pg-access .acc-note{margin:14px 0 0}
+.pg-access .acc-head .alert{margin-top:14px}
+.pg-access .acc-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;margin-bottom:12px}
+.pg-access .acc-h h3{margin:0}
+.pg-access .acc-h .grow{flex:1}
+.pg-access .acc-h select.fld{width:auto;align-self:center}
+.pg-access .acc-s{font-size:12px;color:var(--muted);font-weight:400}
+.pg-access .acc-s.warnText{color:var(--warn);font-weight:500}
+.pg-access .acc-over{color:var(--bad)}
+.pg-access .acc-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.pg-access .acc-chips b{font-weight:500;color:var(--muted);margin-right:2px}
+.pg-access .acc-lines{display:grid;gap:6px;margin-bottom:14px;font-size:14px}
+.pg-access .acc-grp{margin:14px 0 6px}
+.pg-access .acc-grp:first-of-type{margin-top:0}
+.pg-access .acc-say{margin:6px 0 0}
+.pg-access .acc-foot{margin:14px 0 0}
+.pg-access .acc-moves{margin-top:6px}
+.pg-access .acc-moves > summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--accent);font-weight:500;font-size:14px}
+.pg-access tr.acc-link{cursor:pointer}
+.pg-access tr.acc-link:hover td{background:var(--surface3)}
+.pg-access table.heat td{border-radius:0}
+.pg-access .acc-bars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+@media (max-width:1179px){ .pg-access .acc-bars{grid-template-columns:1fr} }
+.pg-access .acc-bars > .card{margin:0}
+.pg-access .vleg{font-size:13px}
+.pg-access .sw.s1,.pg-access .vbar.s1{background:var(--info)}
+.pg-access .sw.s2,.pg-access .vbar.s2{background:var(--accent)}
+.pg-access .vtrack{height:14px}
+.pg-access .vval,.pg-access .vgap{font-size:12px}
+@media (max-width:899px){
+  .pg-access .acc-f{min-width:0;flex:1 1 150px}
+  .pg-access .acc-tools{width:100%;margin-left:0;justify-content:flex-start}
+  .pg-access .acc-tools .btn.primary{flex:1 1 100%}
+}
 /* ===== /page: access ===== */
 
 /* ===== page: settings ===== */
-/* settings styles */
+.pg-settings > * + *{margin-top:16px}
+.pg-settings .cols2 > div > .card + .card{margin-top:16px}
+.pg-settings .set-intro{margin:-4px 0 16px}
+.pg-settings .set-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 16px}
+.pg-settings .set-f{min-width:0}
+.pg-settings .set-f.wide,.pg-settings .set-grid > .wide{grid-column:1/-1}
+.pg-settings .set-f > .lbl{display:block;margin:0 0 6px}
+.pg-settings .set-f > .fld{width:100%}
+.pg-settings textarea.fld{min-height:96px;padding:10px 12px;resize:vertical;line-height:1.4}
+.pg-settings h2.set-sec{margin:24px 0 10px}
+.pg-settings .set-hint{margin-top:6px;font-size:13px;color:var(--muted)}
+.pg-settings .set-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.pg-settings .set-row .grow{flex:1 1 200px}
+.pg-settings .set-snd{margin-top:4px;padding-left:36px}
+.pg-settings .set-snd .lbl{margin:0}
+.pg-settings .set-snd .fld{width:auto;min-width:160px}
+.pg-settings .alert .set-row{margin-top:8px}
+.pg-settings .alert .set-row .fld{width:auto;min-width:180px}
+.pg-settings .set-you .alert{margin-bottom:16px}
+.pg-settings .facts{margin-top:12px}
+.pg-settings .facts .linkbtn{margin-left:6px}
+.pg-settings .set-save{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow)}
+.pg-settings .set-save .grow{flex:1}
+.pg-settings .set-save .btn[hidden]{display:none}
+.pg-settings .set-save .btn{white-space:nowrap}
+.pg-settings .set-save.dirty #setState{color:var(--warn);font-weight:500}
+@media (max-width:899px){
+  .pg-settings .set-grid{grid-template-columns:minmax(0,1fr)}
+  .pg-settings .set-snd{padding-left:0}
+  .pg-settings .set-save{padding:10px 12px;border-radius:12px}
+}
 /* ===== /page: settings ===== */
 </style>
 </head>
@@ -2115,19 +2199,20 @@ function keptModel(weeks){
 const hrLabel = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
 const DN5 = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 function keptHTML(k){
-  if (!k.hours.length) return `<div class="card"><h2>Kept rate by day &amp; time</h2><div class="muted small">No kept or missed ESK visits in the past ${k.weeks} weeks.</div></div>`;
+  const head = `<div class="acc-h"><h3>Kept rate by day &amp; time</h3><span class="acc-s">kept visits a week · % of scheduled kept</span><span class="grow"></span>
+      <select class="fld" data-accv="back" aria-label="Kept rate window">${[4, 12, 26].map(w => `<option value="${w}" ${k.weeks === w ? 'selected' : ''}>Past ${w} weeks</option>`).join('')}</select></div>`;
+  if (!k.hours.length) return `<section class="card">${head}<p class="muted small">No kept or missed ESK visits in the past ${k.weeks} weeks.</p></section>`;
   const max = Math.max(1, ...k.cells.map(c => c.kept)); const pct = r => r == null ? '—' : Math.round(r * 100) + '%';
-  const cell = c => `<td class="num" style="background:color-mix(in srgb, #2a78d6 ${Math.round(c.kept / max * 70)}%, transparent)" title="${DN5[c.d]} ${hrLabel(c.h)}: ${c.kept} kept of ${c.n} scheduled (${pct(c.rate)})">${c.n ? `<b>${fmtN(c.kept / k.weeks)}</b><div class="${c.rate != null && c.rate < 0.8 ? 'warnText' : 'muted'}" style="font-size:11px">${pct(c.rate)} kept</div>` : '<span class="muted">·</span>'}</td>`;
-  const tot = L => { const s = k.sum(L); return `<td class="num"><b>${fmtN(s.kept / k.weeks)}</b><div class="muted" style="font-size:11px">${pct(s.n ? s.kept / s.n : null)}</div></td>`; };
+  const cell = c => `<td class="num" style="background:color-mix(in srgb, var(--info) ${Math.round(c.kept / max * 40)}%, transparent)" title="${DN5[c.d]} ${hrLabel(c.h)}: ${c.kept} kept of ${c.n} scheduled (${pct(c.rate)})">${c.n ? `<b>${fmtN(c.kept / k.weeks)}</b><div class="acc-s ${c.rate != null && c.rate < 0.8 ? 'warnText' : ''}">${pct(c.rate)} kept</div>` : '<span class="muted">·</span>'}</td>`;
+  const tot = L => { const s = k.sum(L); return `<td class="num"><b>${fmtN(s.kept / k.weeks)}</b><div class="acc-s">${pct(s.n ? s.kept / s.n : null)}</div></td>`; };
   const name = c => `${DN5[c.d]} ${hrLabel(c.h)}`;
-  return `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><h2 style="margin:0">Kept rate by day &amp; time <span class="small muted" style="font-weight:500">kept visits / week · % of scheduled kept</span></h2><span class="grow"></span>
-      <select class="fld" data-accv="back" style="width:auto">${[4, 12, 26].map(w => `<option value="${w}" ${k.weeks === w ? 'selected' : ''}>Past ${w} weeks</option>`).join('')}</select></div>
-    <div class="row small" style="flex-wrap:wrap;gap:6px;margin:8px 0">${'<b>Most used:</b>'}${k.most.map(c => `<span class="chip ok">${name(c)} · ${fmtN(c.kept / k.weeks)}/wk · ${pct(c.rate)}</span>`).join('') || '<span class="muted">—</span>'}
-      <b style="margin-left:8px">Least booked:</b>${k.least.map(c => `<span class="chip warn">${name(c)} · ${c.n ? `${fmtN(c.kept / k.weeks)}/wk · ${pct(c.rate)}` : 'none booked'}</span>`).join('')}</div>
+  return `<section class="card">${head}
+    <div class="acc-chips small"><b>Most used</b>${k.most.map(c => tag('ok', `${name(c)} · ${fmtN(c.kept / k.weeks)}/wk · ${pct(c.rate)}`)).join('') || '<span class="muted">—</span>'}</div>
+    <div class="acc-chips small"><b>Least booked</b>${k.least.map(c => tag('warn', `${name(c)} · ${c.n ? `${fmtN(c.kept / k.weeks)}/wk · ${pct(c.rate)}` : 'none booked'}`)).join('')}</div>
     <div class="tw"><table class="t small heat wrap"><thead><tr><th></th>${[1, 2, 3, 4, 5].map(d => `<th class="num">${DN5[d]}</th>`).join('')}<th class="num">All days</th></tr></thead><tbody>
       ${k.hours.map(h => `<tr><th>${hrLabel(h)}</th>${[1, 2, 3, 4, 5].map(d => cell(k.cells.find(c => c.d === d && c.h === h))).join('')}${tot(k.cells.filter(c => c.h === h))}</tr>`).join('')}
       <tr class="tot"><th>All times</th>${[1, 2, 3, 4, 5].map(d => tot(k.cells.filter(c => c.d === d))).join('')}${tot(k.cells)}</tr></tbody></table></div>
-    <div class="small muted" style="margin-top:8px">Every ESK visit in the past ${k.weeks} weeks, by start hour. Kept rate = kept ÷ (kept + no-show + cancelled or rescheduled). Visits cancelled in NextGen aren’t in the appointment report, so the rate mostly reflects no-shows. Visits still showing “Expected” are left out. Least booked includes open hours with nothing kept.</div></div>`;
+    <p class="small muted acc-foot">Every ESK visit in the past ${k.weeks} weeks, by start hour. Kept rate = kept ÷ (kept + no-show + cancelled or rescheduled). Visits cancelled in NextGen aren’t in the appointment report, so the rate mostly reflects no-shows. Visits still showing “Expected” are left out. Least booked includes open hours with nothing kept.</p></section>`;
 }
 const fmtN = n => (Math.round(n * 10) / 10).toString();
 
@@ -2191,13 +2276,13 @@ async function mpWrite(){
 }
 function barsHTML(title, sub, groups){
   const max = Math.max(1, ...groups.map(g => Math.max(g.need, g.booked)));
-  return `<div class="card"><h2>${title}</h2>${sub ? `<div class="small muted" style="margin:-4px 0 8px">${sub}</div>` : ''}
+  return `<section class="card"><div class="acc-h"><h3>${title}</h3>${sub ? `<span class="acc-s">${sub}</span>` : ''}</div>
     <div class="vleg small"><span><i class="sw s1"></i>Visits needed / week</span><span><i class="sw s2"></i>Booked / week</span></div>
     <div class="vbars">${groups.map(g => { const gap = g.short; return `<div class="vrow2" title="${esc(g.k)} — ${g.n} patient${g.n === 1 ? '' : 's'}: need ${fmtN(g.need)}/wk, booked ${fmtN(g.booked)}/wk${g.unknown ? `, ${g.unknown} with no frequency set` : ''}">
       <div class="vlab"><b>${esc(g.k)}</b><span class="muted"> · ${g.n} pt${g.n === 1 ? '' : 's'}</span></div>
       <div class="vtrack"><div class="vbar s1" style="width:${(g.need / max * 100).toFixed(1)}%"></div><span class="vval">${fmtN(g.need)}</span></div>
       <div class="vtrack"><div class="vbar s2" style="width:${(g.booked / max * 100).toFixed(1)}%"></div><span class="vval">${fmtN(g.booked)}</span></div>
-      <div class="vgap ${gap > 0.25 ? 'warnText' : 'muted'}">${gap > 0.25 ? `${fmtN(gap)} unbooked/wk` : 'covered'}${g.noBook ? ` · ${g.noBook} with nothing booked` : ''}${g.unknown ? ` · ${g.unknown} freq not set` : ''}</div></div>`; }).join('') || '<div class="muted small">No patients match.</div>'}</div></div>`;
+      <div class="vgap ${gap > 0.25 ? 'warnText' : 'muted'}">${gap > 0.25 ? `${fmtN(gap)} unbooked/wk` : 'covered'}${g.noBook ? ` · ${g.noBook} with nothing booked` : ''}${g.unknown ? ` · ${g.unknown} freq not set` : ''}</div></div>`; }).join('') || '<div class="muted small">No patients match.</div>'}</div></section>`;
 }
 
 // ---------- templates & chairs editor (eskCapacity, eskProvCred) ----------
@@ -2227,71 +2312,76 @@ async function capSave(){
 
 // ---------- access tab ----------
 function accessHTML(){
-  const m = accessModel(); const F = m.F; const t = m.tot, cs = m.cs, cap = m.cap;
-  const tile = (n, l, cls) => `<div class="stat"><div class="n" ${cls ? `style="color:var(--${cls})"` : ''}>${n}</div><div class="l">${l}</div></div>`;
-  const heat = (v, max) => `background:color-mix(in srgb, #2a78d6 ${Math.round(Math.min(1, v / Math.max(1e-9, max)) * 70)}%, transparent)`;
+  const m = accM(); const F = m.F; const t = m.tot, cs = m.cs;
+  const tile = (n, l, tone) => `<div class="tile${tone ? ' ' + tone : ''}"><b>${n}</b><span>${l}</span></div>`;
+  const heat = (v, max) => `background:color-mix(in srgb, var(--info) ${Math.round(Math.min(1, v / Math.max(1e-9, max)) * 40)}%, transparent)`;
   const sts = accStatuses(), wk = d => fmtD(d), hasT = m.tmplWk > 0, hasC = m.chairWk > 0;
-  const capNum = Math.min(hasT ? m.tmplWk : Infinity, hasC ? m.chairWk : Infinity);
-  const head = `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><b>Access analysis</b><span class="grow"></span>
-      <select class="fld" data-accv="ph" style="width:auto">${[['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']].map(([v, l]) => `<option value="${v}" ${F.ph === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <select class="fld" data-accv="weeks" style="width:auto">${[2, 4, 8].map(w => `<option value="${w}" ${+F.weeks === w ? 'selected' : ''}>Booked: next ${w} weeks</option>`).join('')}</select></div>
-    <div class="row small" style="flex-wrap:wrap;gap:4px 12px;margin-top:8px"><b>Statuses</b>${sts.map(s => `<label class="opt"><input type="checkbox" data-accst="${esc(s.k)}" ${F.st.has(s.k) ? 'checked' : ''}> ${esc(s.l)} <span class="muted">${s.n}</span></label>`).join('')}<span class="muted">· Discontinued is never counted</span></div>
-    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px"><button class="btn sm" data-act="mergeProv">Merge providers…</button><button class="btn sm" data-act="mergeFreq">Merge frequencies…</button><button class="btn sm" data-act="capEdit">Templates &amp; chairs…</button><span class="grow"></span><button class="btn sm primary" data-act="accExport">⇩ Export for template tool…</button></div>
-    <div class="stats" style="margin-top:10px">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(hasT ? m.tmplWk : '—', 'template slots / week')}${tile(hasC ? m.chairWk : '—', 'chair capacity / week')}${tile(fmtN(m.wkStats.peak), 'busiest week (projected)', capNum < m.wkStats.peak ? 'bad' : '')}</div>
-    <div class="small muted" style="margin-top:8px">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, every 2 weeks = 0.5, every 3 = 0.33, every 4 / monthly = 0.25); patients in their first 6 start visits count as 2 a week. Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. Weeks run Sunday to Saturday. ${t.unknown ? `<span class="warnText">${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} a frequency the panel can’t read and count as 0 — fix it under Merge frequencies.</span>` : ''}</div></div>`;
-  const freq = `<div class="card"><h2>By frequency <span class="small muted" style="font-weight:500">Tx frequency, any dose</span></h2><div class="tw"><table class="t small wrap"><thead><tr><th>Frequency</th><th class="num">Patients</th><th class="num">Visits needed / wk</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th><th class="num">Avg slots / wk per patient</th></tr></thead><tbody>
+  const capNum = Math.min(hasT ? m.tmplWk : Infinity, hasC ? m.chairWk : Infinity), peakOver = capNum < m.wkStats.peak;
+  const hd = (title, sub, right) => `<div class="acc-h"><h3>${title}</h3>${sub ? `<span class="acc-s">${sub}</span>` : ''}${right ? `<span class="grow"></span>${right}` : ''}</div>`;
+  const head = `<section class="card acc-head">
+    <div class="acc-bar">
+      <div class="acc-filters">
+        <label class="acc-f"><span class="lbl">Pharmacy</span><select class="fld" data-accv="ph">${[['all', 'All pharmacies'], ['BESSE', 'Besse'], ['GENOA', 'Genoa'], ['OTHER', 'Other specialty']].map(([v, l]) => `<option value="${v}" ${F.ph === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="acc-f"><span class="lbl">Booked window</span><select class="fld" data-accv="weeks">${[2, 4, 8].map(w => `<option value="${w}" ${+F.weeks === w ? 'selected' : ''}>Next ${w} weeks</option>`).join('')}</select></label>
+      </div>
+      <div class="acc-tools"><button class="btn ghost mute" data-act="mergeProv">Merge providers…</button><button class="btn ghost mute" data-act="mergeFreq">Merge frequencies…</button><button class="btn ghost mute" data-act="capEdit">Templates &amp; chairs…</button><button class="btn primary" data-act="accExport">Export for template tool…</button></div>
+    </div>
+    <div class="acc-st" role="group" aria-label="Statuses counted"><span class="lbl">Count these statuses</span>${sts.map(s => `<label class="acc-chip"><input type="checkbox" data-accst="${esc(s.k)}" ${F.st.has(s.k) ? 'checked' : ''}> ${esc(s.l)} <span class="n">${s.n}</span></label>`).join('')}<span class="muted small">Discontinued is never counted</span></div>
+    <div class="tiles acc-tiles">${tile(t.n, 'patients')}${tile(fmtN(t.need), 'visits needed / week')}${tile(fmtN(t.booked), 'booked / week')}${tile(fmtN(t.short), 'unbooked / week', t.short > 0.25 ? 'warn' : 'ok')}${tile(t.need ? Math.round(t.mdOnly / t.need * 100) + '%' : '—', 'of demand needs an MD')}${tile(hasT ? m.tmplWk : '—', 'template slots / week')}${tile(hasC ? m.chairWk : '—', 'chair capacity / week')}${tile(fmtN(m.wkStats.peak), peakOver ? 'busiest week (projected), over capacity' : 'busiest week (projected)', peakOver ? 'bad' : '')}</div>
+    ${t.unknown ? `<div class="alert warn"><p>${t.unknown} patient${t.unknown > 1 ? 's have' : ' has'} a frequency the panel can’t read, so ${t.unknown > 1 ? 'they count' : 'it counts'} as 0 visits a week.</p><button class="btn sm" data-act="mergeFreq">Merge frequencies…</button></div>` : ''}
+    <p class="small muted acc-note">Needed = each patient’s Tx Frequency as visits per week (2x = 2, 1x = 1, every 2 weeks = 0.5, every 3 = 0.33, every 4 / monthly = 0.25); patients in their first 6 start visits count as 2 a week. Booked = their open appointments over the window, per week. Unbooked adds up each patient’s shortfall, so extra visits for one patient don’t hide another’s gap. Weeks run Sunday to Saturday.</p></section>`;
+  const freq = `<section class="card">${hd('By frequency', 'Tx frequency, any dose')}<div class="tw"><table class="t small wrap"><thead><tr><th>Frequency</th><th class="num">Patients</th><th class="num">Visits needed / wk</th><th class="num">Booked / wk</th><th class="num">Unbooked / wk</th><th class="num">Avg slots / wk per patient</th></tr></thead><tbody>
     ${m.protocol.map(g => `<tr><td class="lbl">${esc(g.k)}${g.unknown ? ` <span class="warnText small">· ${g.unknown} freq not set</span>` : ''}</td><td class="num"><b>${g.n}</b></td><td class="num">${fmtN(g.need)}</td><td class="num">${fmtN(g.booked)}</td><td class="num ${g.short > 0.25 ? 'warnText' : 'muted'}">${g.short > 0.25 ? fmtN(g.short) : '0'}</td><td class="num">${g.n > g.unknown ? fmtN(g.need / (g.n - g.unknown)) : '—'}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">No patients match.</td></tr>`}
-    ${m.protocol.length ? `<tr class="tot"><td>Total</td><td class="num">${t.n}</td><td class="num">${fmtN(t.need)}</td><td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td><td class="num">${t.n > t.unknown ? fmtN(t.need / (t.n - t.unknown)) : '—'}</td></tr>` : ''}</tbody></table></div></div>`;
-  const cad = `<div class="card"><h2>Cadence overlap <span class="small muted" style="font-weight:500">which week of the cycle each every-N-week group lands in</span></h2>
+    ${m.protocol.length ? `<tr class="tot"><td>Total</td><td class="num">${t.n}</td><td class="num">${fmtN(t.need)}</td><td class="num">${fmtN(t.booked)}</td><td class="num ${t.short > 0.25 ? 'warnText' : ''}">${fmtN(t.short)}</td><td class="num">${t.n > t.unknown ? fmtN(t.need / (t.n - t.unknown)) : '—'}</td></tr>` : ''}</tbody></table></div></section>`;
+  const cad = `<section class="card">${hd('Cadence overlap', 'which week of the cycle each every-N-week group lands in')}
     ${m.cadence.length ? m.cadence.map(g => { const mx = Math.max(1, ...g.counts), even = Math.ceil(g.ideal);
-      return `<div style="margin:10px 0 4px"><b>${esc(g.label)}</b> <span class="muted small">· ${g.n} patient${g.n === 1 ? '' : 's'}</span></div>
-      <div class="tw"><table class="t small heat"><thead><tr><th></th>${g.counts.map((_, j) => `<th class="num">Week of ${wk(m.W0 + j * 7)}${j ? '' : '<div class="muted" style="font-size:11px">this week</div>'}</th>`).join('')}</tr></thead><tbody>
+      return `<div class="acc-grp"><b>${esc(g.label)}</b> <span class="muted small">· ${g.n} patient${g.n === 1 ? '' : 's'}</span></div>
+      <div class="tw"><table class="t small heat"><thead><tr><th></th>${g.counts.map((_, j) => `<th class="num">Week of ${wk(m.W0 + j * 7)}${j ? '' : '<div class="acc-s">this week</div>'}</th>`).join('')}</tr></thead><tbody>
         <tr><th>Now</th>${g.counts.map(v => `<td class="num ${v > even + 1 ? 'warnText' : ''}" style="${heat(v, mx)}"><b>${v}</b></td>`).join('')}</tr>
         <tr><th>Evened out</th>${g.after.map(v => `<td class="num">${v}</td>`).join('')}</tr></tbody></table></div>
-      <div class="small" style="margin-top:4px">${g.phased ? (g.moves.length ? `<span class="warnText"><b>${g.peak} of ${g.phased}</b> land in the week of ${wk(m.W0 + g.peakAt * 7)} (and every ${g.k} weeks after); even is about ${even} a week.</span> Moving <b>${g.moves.length}</b> evens it out.` : `<span class="okText">Spread evenly</span> — about ${even} a week.`) : 'No visits to place yet.'}${g.unphased ? ` <span class="muted">${g.unphased} with no recent or booked visit, counted as 1/${g.k} a week.</span>` : ''}</div>
-      ${g.moves.length ? `<details class="small" style="margin-top:4px"><summary>Suggested moves (${g.moves.length})</summary><div class="tw"><table class="t small wrap"><thead><tr><th>Patient</th><th>Provider</th><th>Next visit</th><th>Move</th></tr></thead><tbody>${g.moves.map(x => `<tr data-act="patient" data-m="${esc(x.r.p.mrn)}" style="cursor:pointer"><td><b>${esc(x.r.p.name)}</b></td><td>${esc(x.r.prov)}</td><td>${x.r.next ? fmtD(x.r.next.date, 'dow') : '<span class="muted">not booked</span>'}</td><td>${Math.abs(x.shift)} week${Math.abs(x.shift) > 1 ? 's' : ''} ${x.shift > 0 ? 'later' : 'earlier'} → week of ${wk(x.toWeek)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`; }).join('')
-      : '<div class="muted small">No every-2-week-or-longer patients in this filter.</div>'}
-    <div class="small muted" style="margin-top:8px">Week of the cycle comes from each patient’s booked visits (and their visits over the last two cycles when nothing is booked). Patients who share a cycle week all come back together, which is what makes access feel random: offsetting a few of them flattens the busy weeks without changing anyone’s frequency. Suggested moves start with patients not booked yet, then those booked furthest out.</div></div>`;
+      <p class="small acc-say">${g.phased ? (g.moves.length ? `<span class="warnText"><b>${g.peak} of ${g.phased}</b> land in the week of ${wk(m.W0 + g.peakAt * 7)} (and every ${g.k} weeks after); even is about ${even} a week.</span> Moving <b>${g.moves.length}</b> evens it out.` : `<span class="okText">Spread evenly</span>, about ${even} a week.`) : 'No visits to place yet.'}${g.unphased ? ` <span class="muted">${g.unphased} with no recent or booked visit, counted as 1/${g.k} a week.</span>` : ''}</p>
+      ${g.moves.length ? `<details class="acc-moves" data-open="acc:moves:${esc(g.k)}" ${(S.open || {})['acc:moves:' + g.k] ? 'open' : ''}><summary>Suggested moves (${g.moves.length})</summary><div class="tw"><table class="t small wrap"><thead><tr><th>Patient</th><th>Provider</th><th>Next visit</th><th>Move</th></tr></thead><tbody>${g.moves.map(x => `<tr class="acc-link" data-act="patient" data-m="${esc(x.r.p.mrn)}" title="Open ${esc(nm(x.r.p.mrn))}"><td><b>${esc(nm(x.r.p.mrn))}</b></td><td>${esc(x.r.prov)}</td><td>${x.r.next ? fmtD(x.r.next.date, 'dow') : '<span class="muted">not booked</span>'}</td><td>${Math.abs(x.shift)} week${Math.abs(x.shift) > 1 ? 's' : ''} ${x.shift > 0 ? 'later' : 'earlier'} → week of ${wk(x.toWeek)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`; }).join('')
+      : '<p class="muted small">No every-2-week-or-longer patients in this filter.</p>'}
+    <p class="small muted acc-foot">Week of the cycle comes from each patient’s booked visits (and their visits over the last two cycles when nothing is booked). Patients who share a cycle week all come back together, which is what makes access feel random: offsetting a few of them flattens the busy weeks without changing anyone’s frequency. Suggested moves start with patients not booked yet, then those booked furthest out.</p></section>`;
   const gs = m.groups, maxW = Math.max(1, ...m.weeks.map(x => x.tot));
-  const fc = `<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><h2 style="margin:0">Weekly load <span class="small muted" style="font-weight:500">projected visits per week by frequency group</span></h2><span class="grow"></span>
-      <select class="fld" data-accv="horizon" style="width:auto">${[8, 12, 16, 26].map(w => `<option value="${w}" ${m.H === w ? 'selected' : ''}>Next ${w} weeks</option>`).join('')}</select></div>
-    <div class="row small" style="flex-wrap:wrap;gap:6px;margin:8px 0"><span class="chip">Busiest ${fmtN(m.wkStats.peak)}</span><span class="chip">Quietest ${fmtN(m.wkStats.low)}</span><span class="chip">Average ${fmtN(m.wkStats.mean)}</span>${hasT ? `<span class="chip ${m.wkStats.peak > m.tmplWk ? 'bad' : 'ok'}">Template ${m.tmplWk}/wk</span>` : ''}${hasC ? `<span class="chip ${m.wkStats.peak > m.chairWk ? 'bad' : 'ok'}">Chairs ${m.chairWk}/wk</span>` : ''}</div>
+  const fc = `<section class="card">${hd('Weekly load', 'projected visits per week by frequency group', `<select class="fld" data-accv="horizon" aria-label="Weekly load horizon">${[8, 12, 16, 26].map(w => `<option value="${w}" ${m.H === w ? 'selected' : ''}>Next ${w} weeks</option>`).join('')}</select>`)}
+    <div class="acc-chips small">${tag('', `Busiest ${fmtN(m.wkStats.peak)}`)}${tag('', `Quietest ${fmtN(m.wkStats.low)}`)}${tag('', `Average ${fmtN(m.wkStats.mean)}`)}${hasT ? tag(m.wkStats.peak > m.tmplWk ? 'bad' : 'ok', `Template ${m.tmplWk}/wk${m.wkStats.peak > m.tmplWk ? ', over' : ''}`) : ''}${hasC ? tag(m.wkStats.peak > m.chairWk ? 'bad' : 'ok', `Chairs ${m.chairWk}/wk${m.wkStats.peak > m.chairWk ? ', over' : ''}`) : ''}</div>
     <div class="tw"><table class="t small heat wrap"><thead><tr><th>Week of</th>${gs.map(g => `<th class="num">${esc(g.replace(' · 2x per week', ''))}</th>`).join('')}<th class="num">Projected</th><th class="num">Booked now</th></tr></thead><tbody>
-      ${m.weeks.map(x => { const over = (hasT && x.tot > m.tmplWk) || (hasC && x.tot > m.chairWk); return `<tr><th>${wk(x.start)}</th>${gs.map(g => `<td class="num">${x.g[g] ? fmtN(x.g[g]) : '<span class="muted">·</span>'}</td>`).join('')}<td class="num ${over ? 'warnText' : ''}" style="${heat(x.tot, maxW)}"><b>${fmtN(x.tot)}</b>${over ? '<div style="font-size:11px">over capacity</div>' : ''}</td><td class="num muted">${x.booked}</td></tr>`; }).join('')}</tbody></table></div>
-    <div class="small muted" style="margin-top:8px">Weekly and 2x patients count every week; every-N-week patients count in their cycle week; new starts count 2 a week for their first 3 weeks. ${hasT || hasC ? '' : 'Add templates and chairs to flag weeks over capacity. '}Booked now drops off further out because visits aren’t scheduled that far yet.</div></div>`;
-  const pn = m.panels, credChip = c => c ? `<span class="chip ${c === 'MD' ? 'ok' : ''}">${c}</span>` : '<span class="chip warn">set</span>';
-  const pc = (x, bold) => x.n ? `<td class="num">${bold ? '<b>' : ''}${fmtN(x.need)}${bold ? '</b>' : ''}<div class="muted" style="font-size:11px">${x.n} pt${x.n === 1 ? '' : 's'}</div></td>` : '<td class="num muted">·</td>';
+      ${m.weeks.map(x => { const over = (hasT && x.tot > m.tmplWk) || (hasC && x.tot > m.chairWk); return `<tr><th>${wk(x.start)}</th>${gs.map(g => `<td class="num">${x.g[g] ? fmtN(x.g[g]) : '<span class="muted">·</span>'}</td>`).join('')}<td class="num ${over ? 'warnText' : ''}" style="${heat(x.tot, maxW)}"><b>${fmtN(x.tot)}</b>${over ? '<div class="acc-s warnText">over capacity</div>' : ''}</td><td class="num muted">${x.booked}</td></tr>`; }).join('')}</tbody></table></div>
+    <p class="small muted acc-foot">Weekly and 2x patients count every week; every-N-week patients count in their cycle week; new starts count 2 a week for their first 3 weeks. ${hasT || hasC ? '' : 'Add templates and chairs to flag weeks over capacity. '}Booked now drops off further out because visits aren’t scheduled that far yet.</p></section>`;
+  const pn = m.panels, credChip = c => c ? tag(c === 'MD' ? 'ok' : '', c) : tag('warn', 'Not set');
+  const pc = (x, bold) => x.n ? `<td class="num">${bold ? '<b>' : ''}${fmtN(x.need)}${bold ? '</b>' : ''}<div class="acc-s">${x.n} pt${x.n === 1 ? '' : 's'}</div></td>` : '<td class="num muted">·</td>';
   const lines = [];
   if (!hasT) lines.push('<span class="warnText">No templates entered yet.</span> Add them under Templates &amp; chairs to compare each panel with its template.');
   if (cs.noCred.length) lines.push(`<span class="warnText">Credential not set for ${cs.noCred.map(esc).join(', ')}.</span>`);
   if (hasT){
-    lines.push(`<b>MD</b> templates hold ${cs.mdSupply}/wk; MD Only patients need ${fmtN(cs.mdOnlyNeed)}/wk — ${cs.mdHeadroom >= 0 ? `${fmtN(cs.mdHeadroom)} left for MD &amp; NP patients` : `<span class="warnText">${fmtN(-cs.mdHeadroom)} short even before MD &amp; NP patients</span>`}.`);
+    lines.push(`<b>MD</b> templates hold ${cs.mdSupply}/wk; MD Only patients need ${fmtN(cs.mdOnlyNeed)}/wk, so ${cs.mdHeadroom >= 0 ? `${fmtN(cs.mdHeadroom)} left for MD &amp; NP patients` : `<span class="warnText">${fmtN(-cs.mdHeadroom)} short even before MD &amp; NP patients</span>`}.`);
     lines.push(`<b>NP</b> templates hold ${cs.npSupply}/wk against ${fmtN(cs.npNeed)}/wk on NP panels (${fmtN(cs.npSpare)} open).`);
     if (cs.mdOver) lines.push(`MD panels are ${fmtN(cs.mdOver)}/wk over template; ${fmtN(cs.flexOnMdOver)} of that is MD &amp; NP patients. <b>${fmtN(cs.toNp)}/wk could transfer to an NP</b> with room.`);
     if (cs.npOver) lines.push(`NP panels are ${fmtN(cs.npOver)}/wk over template. <b>${fmtN(cs.toMd)}/wk could transfer to an MD</b> with room.`);
     lines.push(`Clinic: need ${fmtN(t.need)}/wk · template ${m.tmplWk}/wk${hasC ? ` · chairs ${m.chairWk}/wk` : ''}.`);
   }
-  if (cs.mismatch.length) lines.push(`<span class="warnText">${cs.mismatch.length} MD Only patient${cs.mismatch.length > 1 ? 's are' : ' is'} on an NP panel:</span> ${cs.mismatch.map(r => esc(r.p.name)).join(', ')}.`);
-  const panels = `<div class="card"><h2>Provider panels vs template <span class="small muted" style="font-weight:500">visits needed / week by coverage requirement</span></h2>
-    <div class="small" style="display:grid;gap:3px;margin-bottom:8px">${lines.map(l => `<div>${l}</div>`).join('')}</div>
+  if (cs.mismatch.length) lines.push(`<span class="warnText">${cs.mismatch.length} MD Only patient${cs.mismatch.length > 1 ? 's are' : ' is'} on an NP panel:</span> ${cs.mismatch.map(r => esc(nm(r.p.mrn))).join(', ')}.`);
+  const panels = `<section class="card">${hd('Provider panels vs template', 'visits needed / week by coverage requirement')}
+    <div class="acc-lines">${lines.map(l => `<div>${l}</div>`).join('')}</div>
     <div class="tw"><table class="t small wrap"><thead><tr><th>Provider</th><th>Cred.</th><th class="num">MD Only</th><th class="num">MD &amp; NP</th><th class="num">Not set</th><th class="num">Need / wk</th><th class="num">Template / wk</th><th class="num">Open / wk</th><th class="num">Booked / wk</th><th class="num">Avg / clinic day</th></tr></thead><tbody>
-      ${pn.map(x => `<tr><td class="lbl">${esc(x.k)}${x.mismatch.length ? `<div class="warnText" style="font-size:11px">${x.mismatch.length} MD Only pt${x.mismatch.length > 1 ? 's' : ''}</div>` : ''}</td><td>${x.k === 'Not set' ? '' : credChip(x.cred)}</td>${pc(x.mdOnly)}${pc(x.flex)}${pc(x.unset)}${pc({ n: x.n, need: x.need }, true)}<td class="num">${x.tmpl || '<span class="muted">·</span>'}</td><td class="num ${x.tmpl && x.spare < 0 ? 'warnText' : x.tmpl ? 'okText' : 'muted'}">${x.tmpl ? fmtN(x.spare) : '·'}</td><td class="num">${fmtN(x.booked)}</td><td class="num">${fmtN(x.perDay)}<div class="muted" style="font-size:11px">${x.days ? `over ${x.days} day${x.days === 1 ? '' : 's'}` : '÷ 5'}</div></td></tr>`).join('') || '<tr><td colspan="10" class="muted">No patients match.</td></tr>'}
+      ${pn.map(x => `<tr><td class="lbl">${esc(x.k)}${x.mismatch.length ? `<div class="acc-s warnText">${x.mismatch.length} MD Only pt${x.mismatch.length > 1 ? 's' : ''}</div>` : ''}</td><td>${x.k === 'Not set' ? '' : credChip(x.cred)}</td>${pc(x.mdOnly)}${pc(x.flex)}${pc(x.unset)}${pc({ n: x.n, need: x.need }, true)}<td class="num">${x.tmpl || '<span class="muted">·</span>'}</td><td class="num ${x.tmpl && x.spare < 0 ? 'warnText' : x.tmpl ? 'okText' : 'muted'}">${x.tmpl ? fmtN(x.spare) : '·'}</td><td class="num">${fmtN(x.booked)}</td><td class="num">${fmtN(x.perDay)}<div class="acc-s">${x.days ? `over ${x.days} day${x.days === 1 ? '' : 's'}` : '÷ 5'}</div></td></tr>`).join('') || '<tr><td colspan="10" class="muted">No patients match.</td></tr>'}
       ${pn.length ? `<tr class="tot"><td>Total</td><td></td>${pc({ n: m.rows.filter(r => r.cred === 'MD Only').length, need: cs.mdOnlyNeed })}${pc({ n: m.rows.filter(r => r.cred === 'MD & NP').length, need: cs.flexNeed })}${pc({ n: m.rows.filter(r => r.cred !== 'MD Only' && r.cred !== 'MD & NP').length, need: cs.unsetNeed })}${pc({ n: t.n, need: t.need }, true)}<td class="num">${m.tmplWk || '·'}</td><td class="num">${hasT ? fmtN(m.tmplWk - t.need) : '·'}</td><td class="num">${fmtN(t.booked)}</td><td></td></tr>` : ''}</tbody></table></div>
-    <div class="small muted" style="margin-top:8px">Coverage requirement is the patient’s Coverage Options (MD Only or MD &amp; NP). Open = template minus need. Transfers only move MD &amp; NP patients to NPs, and only into open template.</div></div>`;
+    <p class="small muted acc-foot">Coverage requirement is the patient’s Coverage Options (MD Only or MD &amp; NP). Open = template minus need. Transfers only move MD &amp; NP patients to NPs, and only into open template.</p></section>`;
   const dmax = Math.max(1, ...BLOCKS.map(b => m.dp[b].need));
   const dcell = b => { const x = m.dp[b], lim = Math.min(hasT ? x.tmpl : Infinity, hasC ? x.chairs : Infinity), over = lim !== Infinity && x.need > lim + 0.05;
-    return `<td class="num" style="${heat(x.need, dmax)}" title="${blockLabel(b)}: need ${fmtN(x.need)}/wk (${x.n} usual), booked ${fmtN(x.booked)}/wk${hasT ? `, template ${x.tmpl}` : ''}${hasC ? `, chairs ${x.chairs}` : ''}"><b class="${over ? 'warnText' : ''}">${fmtN(x.need)}</b><div class="muted" style="font-size:11px">booked ${fmtN(x.booked)}${hasT ? ` · tmpl ${x.tmpl}` : ''}${hasC ? ` · chairs ${x.chairs}` : ''}</div></td>`; };
+    return `<td class="num" style="${heat(x.need, dmax)}" title="${blockLabel(b)}: need ${fmtN(x.need)}/wk (${x.n} usual), booked ${fmtN(x.booked)}/wk${hasT ? `, template ${x.tmpl}` : ''}${hasC ? `, chairs ${x.chairs}` : ''}${over ? ', over' : ''}"><b class="${over ? 'acc-over' : ''}">${fmtN(x.need)}</b><div class="acc-s">booked ${fmtN(x.booked)}${hasT ? ` · tmpl ${x.tmpl}` : ''}${hasC ? ` · chairs ${x.chairs}` : ''}</div></td>`; };
   const dsum = (L, f) => L.reduce((s, b) => s + f(m.dp[b]), 0);
-  const day = `<div class="card"><h2>Average need by day &amp; half day <span class="small muted" style="font-weight:500">visits / week in each patient’s usual slot</span></h2>
+  const day = `<section class="card">${hd('Average need by day &amp; half day', 'visits / week in each patient’s usual slot')}
     <div class="tw"><table class="t small heat"><thead><tr><th></th>${[1, 2, 3, 4, 5].map(d => `<th class="num">${DN5[d]}</th>`).join('')}<th class="num">Week</th></tr></thead><tbody>
-      ${['AM', 'PM'].map(h => { const L = [1, 2, 3, 4, 5].map(d => `${d}|${h}`); return `<tr><th>${h}</th>${L.map(dcell).join('')}<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="muted" style="font-size:11px">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}${hasC ? ` · chairs ${dsum(L, x => x.chairs)}` : ''}</div></td></tr>`; }).join('')}
-      <tr class="tot"><th>Day</th>${[1, 2, 3, 4, 5].map(d => { const L = [`${d}|AM`, `${d}|PM`]; return `<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="muted" style="font-size:11px">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}</div></td>`; }).join('')}<td class="num"><b>${fmtN(dsum(BLOCKS, x => x.need))}</b></td></tr></tbody></table></div>
-    <div class="small muted" style="margin-top:8px">Usual slot = the weekday and half day most of a patient’s recent and booked visits fall in. Booked = the next ${F.weeks} weeks, per week. Red = need above the template or chairs for that half day.${m.dpUnN ? ` ${m.dpUnN} patient${m.dpUnN > 1 ? 's' : ''} (${fmtN(m.dpUn)}/wk) have no visits to place yet.` : ''}</div></div>`;
-  return `${head}${freq}${cad}${fc}${panels}${day}
-  <div class="cols">
-    <div>${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}</div>
-    <div>${barsHTML('By provider', 'Rendering provider', m.provider)}${barsHTML('By pharmacy', 'Specialty pharmacy on file', m.pharm)}</div></div>
-  ${keptHTML(m.kept)}`;
+      ${['AM', 'PM'].map(h => { const L = [1, 2, 3, 4, 5].map(d => `${d}|${h}`); return `<tr><th>${h}</th>${L.map(dcell).join('')}<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="acc-s">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}${hasC ? ` · chairs ${dsum(L, x => x.chairs)}` : ''}</div></td></tr>`; }).join('')}
+      <tr class="tot"><th>Day</th>${[1, 2, 3, 4, 5].map(d => { const L = [`${d}|AM`, `${d}|PM`]; return `<td class="num"><b>${fmtN(dsum(L, x => x.need))}</b><div class="acc-s">booked ${fmtN(dsum(L, x => x.booked))}${hasT ? ` · tmpl ${dsum(L, x => x.tmpl)}` : ''}</div></td>`; }).join('')}<td class="num"><b>${fmtN(dsum(BLOCKS, x => x.need))}</b></td></tr></tbody></table></div>
+    <p class="small muted acc-foot">Usual slot = the weekday and half day most of a patient’s recent and booked visits fall in. Booked = the next ${F.weeks} weeks, per week. Red = need above the template or chairs for that half day.${m.dpUnN ? ` ${m.dpUnN} patient${m.dpUnN > 1 ? 's' : ''} (${fmtN(m.dpUn)}/wk) have no visits to place yet.` : ''}</p></section>`;
+  return `${head}
+  ${pageCols('two', freq, panels)}
+  ${pageCols('two', fc, cad)}
+  ${pageCols('two', day, keptHTML(m.kept))}
+  <div class="acc-bars">${barsHTML('By credential requirement', 'Coverage Options: who can supervise', m.cred)}${barsHTML('By provider', 'Rendering provider', m.provider)}${barsHTML('By pharmacy', 'Specialty pharmacy on file', m.pharm)}</div>`;
 }
 
 // ---------- export for the clinic template optimization tool ----------
@@ -2324,10 +2414,10 @@ function accessBook(m, withPts){
 }
 function openAccExport(){
   S.accX = S.accX || { pts: false };
-  openModal(`<h2>Export for the template tool</h2><div class="small muted">One Excel workbook with tidy tables (About, Providers, Template, DayPart, Frequencies, Cadence, Weekly, Credential) using the filters on the Access tab now. Built to import into the clinic template optimization tool; the layout is versioned (${ACCESS_SCHEMA.name} v${ACCESS_SCHEMA.version}) and carries a Modality column so IV ketamine can use the same import.</div>
-    <label class="opt small" style="margin-top:10px;display:block"><input type="checkbox" id="accXpts" ${S.accX.pts ? 'checked' : ''}> Include patient rows (short name + MRN, plus suggested moves)</label>
-    <div class="small muted" style="margin-top:4px">Leave this off unless the tool needs patient-level rows. With it on, the file holds patient identifiers — keep it in approved locations (OneDrive / SharePoint), not email or personal drives.</div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="accXlsx">Download workbook</button></div>`);
+  openModal(`<h2>Export for the template tool</h2><p class="small muted">One Excel workbook with tidy tables (About, Providers, Template, DayPart, Frequencies, Cadence, Weekly, Credential) built from the filters on the Access page right now. It imports into the clinic template optimization tool. The layout is versioned (${ACCESS_SCHEMA.name} v${ACCESS_SCHEMA.version}) and has a Modality column, so IV ketamine can use the same import.</p>
+    <label class="check" style="margin-top:6px"><input type="checkbox" id="accXpts" ${S.accX.pts ? 'checked' : ''}><span class="l">Include patient rows<small>Short name and MRN, plus suggested moves</small></span></label>
+    <div class="alert warn small" style="margin-top:6px"><p>Leave this off unless the tool needs patient-level rows. With it on, the file holds patient identifiers: keep it in approved locations (OneDrive or SharePoint), not email or personal drives.</p></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="accXlsx">Download workbook</button></div>`);
 }
 async function accXlsx(){
   const pts = !!$('#accXpts')?.checked; S.accX = { pts };
@@ -4007,38 +4097,13 @@ async function saveRow(tkey, r){
 
 // ---------- settings ----------
 function openSettings(){
-  const saved = S.store?.live && !CFG.me ? (S.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
-  openModal(`<h2>Settings</h2><div class="small muted">${S.store?.live ? `Saved on this computer and backed up in this workbook (hidden “${esc(PROF_SHEET)}” sheet), so you only enter them once.` : 'Saved on this computer only.'}</div>
-    ${saved.length ? `<div class="msg info" style="margin:8px 0"><div><b>Set up before?</b> Pick your name to restore your settings.
-      <div class="row" style="margin-top:6px"><select id="sProf" class="fld" style="width:auto">${saved.map(p => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join('')}</select><button class="btn primary sm" data-act="profRestore">Restore</button></div></div></div>` : ''}
-    <div class="form2">
-      <div><label class="lbl" for="sMe">Your name (Logging PCT / technician)</label><input id="sMe" class="fld" data-cfg="me" list="dlMe" value="${esc(CFG.me)}">${S.msName ? `<div class="small muted">${CFG.meSrc === 'ms' ? 'From your Microsoft account.' : `Your Microsoft account says ${esc(S.msName)}. Clear this box to use it.`}</div>` : ''}</div>
-      <div><label class="lbl" for="sSup">Supervising physician (default)</label><input id="sSup" class="fld" data-cfg="sup" list="dlSup2" value="${esc(CFG.sup)}"></div>
-      <div><label class="lbl" for="sPm">Practice manager (default)</label><input id="sPm" class="fld" data-cfg="pm" list="dlPm2" value="${esc(CFG.pm)}"></div>
-      <div><label class="lbl" for="sClinic">Clinic code</label><input id="sClinic" class="fld" data-cfg="clinic" value="${esc(CFG.clinic)}"></div>
-      <div><label class="lbl" for="sLoc">Location name (audit sheet)</label><input id="sLoc" class="fld" data-cfg="locName" value="${esc(CFG.locName || '')}" placeholder="${esc(locName())}"></div>
-      <div><label class="lbl" for="sEmail">Besse order email</label><input id="sEmail" class="fld" data-cfg="email" value="${esc(CFG.email)}"></div>
-      <div><label class="lbl" for="sGEmail">Genoa order email</label><input id="sGEmail" class="fld" data-cfg="genoaEmail" value="${esc(CFG.genoaEmail || '')}" placeholder="pharmacy or team address"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sCc">Always cc on order &amp; follow-up emails</label><input id="sCc" class="fld" data-cfg="cc" value="${esc(CFG.cc || '')}" placeholder="name@mymhs.com; name2@mymhs.com"></div>
-      <div><label class="lbl" for="sHelp">Help email (cc on MADRS reminders)</label><input id="sHelp" class="fld" data-cfg="helpEmail" value="${esc(CFG.helpEmail || '')}" placeholder="team help address"></div>
-      <div><label class="lbl" for="sLead">Practice leader email (cc on MADRS reminders)</label><input id="sLead" class="fld" data-cfg="leadEmail" value="${esc(CFG.leadEmail || '')}" placeholder="name@mymhs.com"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sProv">Provider emails, one per line (for MADRS reminders; merge spellings on Access › By provider)</label><textarea id="sProv" class="fld" data-cfg="provEmails" rows="3" placeholder="Rendering provider name = email, as it appears on the Master Patient Tracker">${esc(CFG.provEmails || '')}</textarea><div class="row small" style="margin-top:4px;gap:8px"><button class="btn sm" data-act="provEmailFill">Fill suggested emails</button><span class="muted">First initial + last name @mymhs.com; tenured providers are usually @mindfulhealthsolutions.com. Without a saved email, reminders use the @mymhs.com suggestion.</span></div></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sSig">Email signature (after “Thank you,”)</label><textarea id="sSig" class="fld" data-cfg="sig" rows="4" placeholder="${esc([CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'))}">${esc(CFG.sig || '')}</textarea><div class="small muted">Blank uses your name and clinic code.</div></div>
-      <div><label class="lbl" for="sSched">“Booked through” window (days)</label><input id="sSched" class="fld" type="number" data-cfg="schedDays" value="${CFG.schedDays}"></div>
-      <div><label class="lbl" for="sGen">Genoa look-ahead (days)</label><input id="sGen" class="fld" type="number" data-cfg="genoaDays" value="${CFG.genoaDays}"></div>
-      <div><label class="lbl" for="sV40">2nd vitals after room time (min)</label><input id="sV40" class="fld" type="number" data-cfg="vitalsMin" value="${CFG.vitalsMin}"></div>
-      <div><label class="lbl" for="sDis">Final vitals after 2nd vitals (min)</label><input id="sDis" class="fld" type="number" data-cfg="disAfter" value="${CFG.disAfter}"></div>
-      <div style="grid-column:1/-1"><label class="lbl" for="sMedInv">Medication Inventory Tracker link (saved in this workbook for everyone)</label><input id="sMedInv" class="fld" value="${esc((S.shared || {}).medInvUrl || '')}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"></div>
-      <div><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${CFG.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-    </div>
-    ${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}
-    <label class="row small" style="margin-top:12px"><input type="checkbox" id="sVitN" ${CFG.vitNotify ? 'checked' : ''}> Alert me when vitals are due (browser pop-up + sound)</label>
-    <div class="row small" style="margin-top:4px;gap:8px;padding-left:24px"><label for="sVitS">Sound</label><select id="sVitS" class="fld" style="width:auto;min-height:30px;padding:2px 8px">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${CFG.vitSound === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn sm" data-act="vitTest">Test</button><span class="muted">${notifyHint()}</span></div>
-    ${S.mode !== 'demo' ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sFull" ${CFG.autoFull ? 'checked' : ''}> Open full screen automatically when the panel opens</label>` : ''}
-    ${S.store?.live ? `<label class="row small" style="margin-top:12px"><input type="checkbox" id="sAuto" ${S.store.getDoc('Office.AutoShowTaskpaneWithDocument') ? 'checked' : ''}> Open this panel automatically whenever this workbook opens (for anyone with the add-in)</label>` : ''}
-    <div class="row small" style="margin-top:12px;gap:8px"><button class="btn sm" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">⇪ Import Sohar benefits</button><span class="muted">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN.${S.ben?.size ? ` ${S.ben.size} patients imported so far.` : ""}</span></div>
-    <div class="small muted" style="margin-top:10px">Connected tables: ${Object.values(S.tables).map(t => `${esc(t.sheet)} → ${esc(t.name)}`).join(' · ') || 'none'}</div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn primary" data-act="cfgSave">Done</button></div>`);
+  // Settings is a page now. Five flows call this when no name is set (receive scan, log a held scan, Genoa order, Besse order,
+  // order after scheduling) and profRestore calls it to show restored values. A flow remembers where it came from so a
+  // successful save can send the user back ("Saved. Try that again.").
+  if (S.view === 'settings'){ S.setDraft = null; setEditing(false); }   // profRestore: show the restored values
+  else { S.setReturn = S.view; S.view = 'settings'; }
+  closeModal(); render(); window.scrollTo(0, 0);
+  if (!CFG.me) setTimeout(() => $('#sMe')?.focus(), 30);
 }
 
 // ---------- modal / toast / busy ----------
@@ -4755,6 +4820,12 @@ PAGES.access = {
   html: () => accessHTML(),
   badge: () => null,
 };
+function accM(){ if (!S._accMemo){ S._accMemo = accessModel(); queueMicrotask(() => { S._accMemo = null; }); } return S._accMemo; }
+// accM: one accessModel() per render, so sub() and html() share it; the memo clears once the render's sync work is done.
+// The two lines above the function are the foundation stub (kept byte-identical for protect.js); the page fills it in here.
+Object.assign(PAGES.access, {
+  sub: () => { const t = accM().tot; return `${t.n} patient${t.n === 1 ? '' : 's'} · ${fmtN(t.need)} visits needed a week · ${t.short > 0.25 ? `${fmtN(t.short)} unbooked` : 'all booked'}`; },
+});
 // ===== /page: access =====
 
 // ===== page: settings =====
@@ -4769,6 +4840,137 @@ PAGES.settings = {
       <div class="row" style="margin-top:12px"><button class="btn primary" data-act="settings">Open settings</button></div></div>`,
   badge: () => null,
 };
+const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter' };
+// The PAGES.settings stub above is the foundation's (kept byte-identical for protect.js); Object.assign below replaces it.
+// SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
+// the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
+const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis']);
+const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sVitN', 'sVitS', 'sFull', 'sAuto']);
+function setEditing(on){ if (on){ S.editing = true; S._setEd = true; } else if (S._setEd){ S.editing = false; S._setEd = false; } }
+function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
+// True when everything in the draft is what cfgSave would have stored, i.e. the save went through.
+function setDraftSaved(){
+  return Object.entries(S.setDraft || {}).every(([id, x]) => {
+    if (SET_CFG[id]){ const k = SET_CFG[id]; let want = SET_NUM.has(id) ? Math.max(1, +x || DEF[k]) : String(x).trim(); if (id === 'sMe' && S.msName && (!want || want === S.msName)) want = S.msName; return CFG[k] === want; }
+    if (id === 'sMedInv') return String(x).trim() === ((S.shared || {}).medInvUrl || '');
+    if (id === 'sVitN') return !!CFG.vitNotify === x;
+    if (id === 'sVitS') return CFG.vitSound === x;
+    if (id === 'sFull') return !!CFG.autoFull === x;
+    if (id === 'sAuto') return !S.store?.live || !!S.store.getDoc('Office.AutoShowTaskpaneWithDocument') === x;
+    return true;
+  });
+}
+// cfgSave ends with render(). The capture listener below marks the click; if the render that follows shows the draft was
+// stored, clear it and (after a name prompt from a flow) go back to that page.
+function setAfterSave(){
+  if (!S._setSaving || !setDraftSaved()) return;
+  S._setSaving = null; S.setDraft = null; setEditing(false); if (CFG.me) S.firstRun = false;
+  const r = S.setReturn; S.setReturn = null;
+  setTimeout(() => { if (r && r !== 'settings' && S.view === 'settings'){ S.view = r; render(); window.scrollTo(0, 0); toast('ok', 'Saved. Try that again.'); } else toast('ok', 'Settings saved.'); }, 0);
+}
+function settingsHTML(){
+  setAfterSave();
+  if (setDirty()) setEditing(true);
+  const D = S.setDraft || {}, val = (id, x) => id in D ? D[id] : x, on = (id, x) => (id in D ? D[id] : x) ? 'checked' : '';
+  const live = !!S.store?.live, dirty = setDirty();
+  const f = (id, label, o = {}) => { const k = SET_CFG[id], v = String(val(id, CFG[k] ?? '')), ph = o.ph ? ` placeholder="${esc(o.ph)}"` : '';
+    return `<div class="set-f${o.wide ? ' wide' : ''}"><label class="lbl" for="${id}">${label}</label>${o.rows
+      ? `<textarea id="${id}" class="fld" data-cfg="${k}" rows="${o.rows}"${ph}>${esc(v)}</textarea>`
+      : `<input id="${id}" class="fld"${o.num ? ' type="number" min="1"' : ''} data-cfg="${k}"${o.list ? ` list="${o.list}"` : ''} value="${esc(v)}"${ph}>`}${o.hint ? `<div class="set-hint">${o.hint}</div>` : ''}</div>`; };
+  const saved = live && !CFG.me ? (S.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const meHint = S.msName ? (CFG.meSrc === 'ms' ? 'From your Microsoft account.' : `Your Microsoft account says ${esc(S.msName)}. Clear this box to use it.`) : '';
+  const snd = val('sVitS', CFG.vitSound);
+  const you = `<section class="card set-you"><h3>You</h3><p class="small muted set-intro">Only yours. ${live ? `Saved on this computer and backed up in this workbook (hidden “${esc(PROF_SHEET)}” sheet), so you only enter them once.` : 'Saved on this computer only.'}</p>
+    ${saved.length ? `<div class="alert info"><p><b>Set up before?</b> Pick your name to restore your settings.</p><div class="set-row"><select id="sProf" class="fld" aria-label="Saved settings">${saved.map(p => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join('')}</select><button class="btn primary sm" data-act="profRestore">Restore</button></div></div>` : ''}
+    <div class="set-grid">
+      ${f('sMe', 'Your name (Logging PCT / technician)', { list: 'dlMe', wide: true, hint: meHint })}
+      ${f('sSup', 'Supervising physician (default)', { list: 'dlSup2', wide: true })}
+      ${f('sSig', 'Email signature (after “Thank you,”)', { rows: 4, wide: true, ph: [CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'), hint: 'Blank uses your name and clinic code.' })}
+      <div class="set-f wide"><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${val('sTheme', CFG.theme) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    </div>
+    <h2 class="set-sec">Vitals alerts</h2>
+    <label class="check"><input type="checkbox" id="sVitN" ${on('sVitN', CFG.vitNotify)}><span class="l">Alert me when vitals are due<small>A browser pop-up and a sound. Pop-ups show the bay and time, never the patient.</small></span></label>
+    <div class="set-row set-snd"><label class="lbl" for="sVitS">Sound</label><select id="sVitS" class="fld">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${snd === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn" data-act="vitTest">Test</button></div>
+    <div class="set-hint">${notifyHint()}</div>
+    ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
+  </section>`;
+  const sumV = (+val('sV40', CFG.vitalsMin) || DEF.vitalsMin) + (+val('sDis', CFG.disAfter) || DEF.disAfter);
+  const clinic = `<section class="card set-clinic"><h3>Clinic</h3><p class="small muted set-intro">Your copy of the clinic settings. Filled in from the team the first time; changes here are yours.</p>
+    <div class="set-grid">
+      ${f('sClinic', 'Clinic code')}
+      ${f('sLoc', 'Location name (audit sheet)', { ph: locName() })}
+      ${f('sPm', 'Practice manager (default)', { list: 'dlPm2', wide: true })}
+    </div>
+    <h2 class="set-sec">Order emails</h2>
+    <div class="set-grid">
+      ${f('sEmail', 'Besse order email')}
+      ${f('sGEmail', 'Genoa order email', { ph: 'pharmacy or team address' })}
+      ${f('sCc', 'Always cc on order &amp; follow-up emails', { wide: true, ph: 'name@mymhs.com; name2@mymhs.com' })}
+    </div>
+    <h2 class="set-sec">MADRS reminders</h2>
+    <div class="set-grid">
+      ${f('sHelp', 'Help email (cc)', { ph: 'team help address' })}
+      ${f('sLead', 'Practice leader email (cc)', { ph: 'name@mymhs.com' })}
+      ${f('sProv', 'Provider emails, one per line (merge spellings under Access › Merge providers)', { rows: 4, wide: true, ph: 'Rendering provider name = email, as it appears on the Master Patient Tracker' })}
+      <div class="set-f wide set-row"><button class="btn" data-act="provEmailFill">Fill suggested emails</button><span class="small muted grow">First initial + last name @mymhs.com; tenured providers are usually @mindfulhealthsolutions.com. Without a saved email, reminders use the @mymhs.com suggestion.</span></div>
+    </div>
+    <h2 class="set-sec">Timing</h2>
+    <div class="set-grid">
+      ${f('sV40', '2nd vitals after room time (min)', { num: true })}
+      ${f('sDis', 'Final vitals after 2nd vitals (min)', { num: true })}
+      <div class="set-hint wide">Final vitals are due ${sumV} min after room time.</div>
+      ${f('sSched', '“Booked through” window (days)', { num: true })}
+      ${f('sGen', 'Genoa look-ahead (days)', { num: true, hint: 'Not used yet: the Genoa list runs through Friday of next week.' })}
+    </div>
+  </section>`;
+  const c = capOf(), tmplWk = Object.values(c.tmpl).reduce((s, x) => s + tmplSum(x), 0), chairWk = BLOCKS.reduce((s, b) => s + chairBlock(c, b.split('|')[1]), 0);
+  const shared = `<section class="card set-shared"><h3>For everyone in this workbook</h3><p class="small muted set-intro">Saved in the workbook, so everyone who opens it sees the same.</p>
+    <div class="set-grid">
+      <div class="set-f wide"><label class="lbl" for="sMedInv">Medication Inventory Tracker link</label><input id="sMedInv" class="fld" value="${esc(val('sMedInv', (S.shared || {}).medInvUrl || ''))}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"><div class="set-hint">Used for the link on the Tx report and the documentation checklist. Starts with https://</div></div>
+    </div>
+    ${live ? `<label class="check"><input type="checkbox" id="sAuto" ${on('sAuto', S.store.getDoc('Office.AutoShowTaskpaneWithDocument'))}><span class="l">Open this panel automatically whenever this workbook opens<small>For anyone with the add-in</small></span></label>` : ''}
+    ${factsDL([['Templates & chairs', `${c.chairs ? `${c.chairs} chair${c.chairs === 1 ? '' : 's'}, ${chairWk} visits a week` : 'Chairs not set'} · ${tmplWk ? `${tmplWk} template slots a week` : 'no templates yet'} <button class="linkbtn" data-act="capEdit">Edit…</button>`]])}
+  </section>`;
+  const imports = `<section class="card set-imports"><h3>Imports</h3>
+    <div class="set-row"><button class="btn" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">Import Sohar benefits</button><span class="small muted grow">${S.ben?.size ? `${S.ben.size} patients imported so far.` : 'Nothing imported yet.'}</span></div>
+    <p class="set-hint">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN. You see a preview before anything is written.</p></section>`;
+  const tb = Object.values(S.tables);
+  const wb = `<section class="card set-wb"><h3>Workbook</h3><h2>Connected tables</h2>${tb.length ? factsDL(tb.map(x => [x.sheet, esc(x.name)])) : '<p class="muted small">None yet.</p>'}</section>`;
+  const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
+  if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
+  return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
+  ${pageCols('two', you + imports + wb, clinic + shared)}${lists}
+  <div class="set-save${dirty ? ' dirty' : ''}"><span id="setState" class="small" role="status">${dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="grow"></span><button class="btn ghost mute" id="setDiscard" data-act="setDiscard" ${dirty ? '' : 'hidden'}>Discard</button><button class="btn primary" data-act="cfgSave">Save settings</button></div>`;
+}
+const setBackLabel = () => { const r = S.setReturn; return r && r !== 'settings' && PAGES[r] ? PAGES[r].label : ''; };
+Object.assign(PAGES.settings, {
+  sub: () => CFG.me ? `Signed as ${esc(CFG.me)}` : 'No name yet',
+  tools: () => setBackLabel() ? `<button class="btn ghost" data-act="setBack">Back to ${esc(setBackLabel())}</button>` : '',
+  html: () => settingsHTML(),
+});
+Object.assign(ACT_SETTINGS, {
+  settings: () => { S.setReturn = null; S.view = 'settings'; closeModal(); render(); window.scrollTo(0, 0); },
+  setDiscard: () => { S.setDraft = null; S._setSaving = null; setEditing(false); render(); toast('info', 'Changes discarded.'); },
+  setBack: () => { const r = S.setReturn; S.setReturn = null; S.view = r && r !== 'settings' && PAGES[r] ? r : 'today'; render(); window.scrollTo(0, 0); },
+});
+function setDraftEv(e){
+  const el = e.target; if (!el.id || !SET_IDS.has(el.id) || !el.closest('.pg-settings')) return;
+  S.setDraft = S.setDraft || {}; S.setDraft[el.id] = el.type === 'checkbox' ? el.checked : el.value; S._setSaving = null; setEditing(true);
+  const st = $('#setState'); if (st) st.textContent = 'Unsaved changes'; $('.pg-settings .set-save')?.classList.add('dirty'); const d = $('#setDiscard'); if (d) d.hidden = false;
+}
+document.addEventListener('input', setDraftEv);
+document.addEventListener('change', setDraftEv);
+// Capture phase, so it runs before the ACT delegate: mark a Save click (see setAfterSave), forget the way back when the
+// user leaves on their own, and pick up the textarea that "Fill suggested emails" fills in (after the handler has run).
+function setClickCap(e){
+  const el = e.target.closest?.('[data-act]'); if (!el) return; const a = el.dataset.act;
+  if (a === 'cfgSave' && el.closest('.pg-settings')) S._setSaving = Date.now();
+  if (a === 'view') S.setReturn = null;
+  if (a === 'provEmailFill') setTimeout(() => { const ta = $('#sProv'); if (ta && ta.closest('.pg-settings') && ta.value !== String(CFG.provEmails || '')) setDraftEv({ target: ta }); }, 0);
+}
+document.addEventListener('click', setClickCap, true);
+// Leaving Settings with unsaved changes keeps the draft (it shows again on return) but lets refreshes run elsewhere.
+TICKS.push(() => { if (S.view !== 'settings' && S._setEd) setEditing(false); });
 // ===== /page: settings =====
 
 // ---------- events ----------
