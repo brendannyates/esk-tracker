@@ -532,7 +532,54 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: inventory ===== */
 
 /* ===== page: patients ===== */
-/* patients styles */
+.pg-patients .ptsearch{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+.pg-patients .ptsearch .fld{flex:1;min-width:0}
+.pg-patients .ptsearch .seg{flex-wrap:nowrap;flex:none}
+.pg-patients .group + .group{margin-top:18px}
+.pg-patients .group h2{margin:0 0 4px 12px}
+.pg-patients .group .none{margin:0 12px;color:var(--faint);font-size:14px}
+.pg-patients .qrow .tags{display:flex;gap:4px;flex:none}
+.pg-patients .snzfoot{margin:10px 12px 0}
+.pg-patients .ptp > * + *{margin-top:16px}
+.pg-patients .ptp .cols2{gap:16px}
+.pg-patients .ptp .cols2 > .card{margin:0}
+.pg-patients .ptnav{display:flex;gap:4px}
+.pg-patients .ptnav .btn{margin:-8px 0 8px -12px}
+.pg-patients .pthrow{display:flex;justify-content:space-between;gap:12px 16px;align-items:flex-start;flex-wrap:wrap}
+.pg-patients .code .tag{margin-left:12px;vertical-align:middle}
+.pg-patients .ptid{margin-top:8px}
+.pg-patients .pttools{display:flex;gap:4px;flex-wrap:wrap;margin-right:-8px}
+.pg-patients .task .ptact{grid-column:2;grid-row:1/3;display:flex;gap:6px;align-items:center;justify-self:end}
+.pg-patients .ptkits{list-style:none;margin:0;padding:0}
+.pg-patients .ptkits li{padding:8px 0}
+.pg-patients .ptkits li + li{border-top:1px solid var(--line)}
+.pg-patients .ptmc{margin-top:10px}
+.pg-patients .ptup{list-style:none;margin:0;padding:0}
+.pg-patients .ptup li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:7px 0}
+.pg-patients .ptup li + li{border-top:1px solid var(--line)}
+.pg-patients .ptup .when{min-width:140px}
+.pg-patients .ptup .what{flex:1;min-width:0}
+.pg-patients .facts{margin-top:12px}
+.pg-patients .ptup + .facts{margin-top:14px}
+.pg-patients .facts dd .chip,.pg-patients .facts dd .tag{white-space:normal}
+.pg-patients .ptfields > summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none}
+.pg-patients .ptfields > summary::-webkit-details-marker{display:none}
+.pg-patients .ptfields > summary::before{content:"▸";color:var(--muted);width:12px;transition:transform .2s ease}
+.pg-patients .ptfields[open] > summary::before{transform:rotate(90deg)}
+.pg-patients .ptfields > summary h3{margin:0}
+.pg-patients .ptfields .facts{margin-top:14px}
+.pg-patients .ptfoot{margin-top:14px}
+.pg-patients details.fold > summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:14px;padding:10px 0}
+.pg-patients .ptguide h3 .muted{font-weight:400}
+.pg-patients #guide.scr-off{display:none}
+.pg-patients .n-only{display:none}
+@media print{ .pg-patients > #guide.scr-off{display:block!important} }
+@media (max-width:899px){
+  .pg-patients .n-hide{display:none}
+  .pg-patients .n-only{display:inline-flex}
+  .pg-patients .pttools{margin:0 0 0 -12px;width:100%}
+  .pg-patients table.rt td.nil{display:none}
+}
 /* ===== /page: patients ===== */
 
 /* ===== page: access ===== */
@@ -1621,21 +1668,26 @@ function expRows(){
 }
 const EXP_HEAD = ['Short name', 'MRN', 'Status', 'Pharmacy', 'Protocol mg', 'Tx frequency', 'Rendering provider', 'Coverage', 'Next appt', 'Scheduled thru'];
 function openExport(){
+  // Same modal, filters, preview and buttons. Two UI fixes: no emoji on Print, and pharmacy / dose / frequency values that first
+  // appear after the export was set up (a reload brought a new value) start checked, so those patients don't silently drop out.
   const vals = f => [...new Set(S.P.map(f))].sort();
+  const FN = { ph: p => PH_LABEL[p.pharm] || '—', dose: doseLabel, freq: freqLabel };
   if (!S.exp) S.exp = { status: 'current', group: 'pharmacy', ph: new Set(vals(p => PH_LABEL[p.pharm] || '—')), dose: new Set(vals(doseLabel)), freq: new Set(vals(freqLabel)) };
+  else if (S.expSeen) for (const k of ['ph', 'dose', 'freq']) for (const v of vals(FN[k])) if (!S.expSeen[k].has(v)) S.exp[k].add(v);
+  S.expSeen = { ph: new Set(vals(FN.ph)), dose: new Set(vals(FN.dose)), freq: new Set(vals(FN.freq)) };
   const draw = () => { const F = S.exp; const rows = expRows();
     const chk = (k, list) => `<div class="row small" style="flex-wrap:wrap;gap:4px 12px">${list.map(v => `<label class="opt"><input type="checkbox" data-exp="${k}" value="${esc(v)}" ${F[k].has(v) ? 'checked' : ''}> ${esc(v)}</label>`).join('')}</div>`;
     const groups = {}; rows.forEach(r => { groups[r.g] = (groups[r.g] || 0) + 1; });
     openModal(`<h2>Export patient list</h2>
       <div class="form2"><div><label class="lbl">Status</label><select class="fld" data-expv="status">${[['current', 'Active + Pending Start'], ['active', 'Active only'], ['all', 'Everyone on the tracker']].map(([v, l]) => `<option value="${v}" ${F.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div><label class="lbl">Group &amp; sort by</label><select class="fld" data-expv="group">${[['pharmacy', 'Pharmacy'], ['dose', 'Dose'], ['frequency', 'Frequency'], ['none', 'Name only']].map(([v, l]) => `<option value="${v}" ${F.group === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
-      <div class="q">Pharmacy</div>${chk('ph', vals(p => PH_LABEL[p.pharm] || '—'))}
+      <div class="q">Pharmacy</div>${chk('ph', vals(FN.ph))}
       <div class="q">Dose</div>${chk('dose', vals(doseLabel))}
       <div class="q">Frequency</div>${chk('freq', vals(freqLabel))}
       <div class="row small" style="margin-top:10px;flex-wrap:wrap"><b>${rows.length} patient${rows.length === 1 ? '' : 's'}</b>${F.group !== 'none' ? Object.entries(groups).map(([g, n]) => `<span class="chip">${esc(g)} · ${n}</span>`).join('') : ''}</div>
       <div class="tw" style="margin-top:8px;max-height:260px;overflow:auto"><table class="t small"><thead><tr>${EXP_HEAD.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.cells.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-      <div class="small muted" style="margin-top:6px">Contains patient identifiers — share only through approved channels.</div>
-      <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="expPrint" ${rows.length ? '' : 'disabled'}>🖨 Print</button><button class="btn" data-act="expCsv" ${rows.length ? '' : 'disabled'}>Download CSV</button><button class="btn primary" data-act="expCopy" ${rows.length ? '' : 'disabled'}>Copy for Excel</button></div>`, true); };
+      <div class="small muted" style="margin-top:6px">Contains patient identifiers. Share only through approved channels.</div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="expPrint" ${rows.length ? '' : 'disabled'}>Print</button><button class="btn" data-act="expCsv" ${rows.length ? '' : 'disabled'}>Download CSV</button><button class="btn primary" data-act="expCopy" ${rows.length ? '' : 'disabled'}>Copy for Excel</button></div>`, true); };
   S.expDraw = draw; draw();
 }
 const csvCell = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -2482,9 +2534,11 @@ function benMap(t){
 const benOf = mrn => S.ben?.get(benKey(mrn)) || null;
 const benStatus = o => String(o?.soharstatus ?? '').trim() || 'no status';
 function benHTML(mrn){
+  // Inline Sohar line for a facts <dd> (Patients › Coverage, Today › This visit): amounts, the not-eligible tag, payer · plan · network ·
+  // level in the tooltip. No block wrapper or "Benefits" label any more: the <dt> is the label.
   const o = benOf(mrn); if (!o) return '';
   const tip = [o.soharpayer, o.plan, o.network, o.coveragelevel].map(v => String(v ?? '').trim()).filter(Boolean).join(' · ');
-  return `<div class="small" style="margin:0 0 6px" title="${esc(tip)}"><b>Benefits</b> ${esc(benLine(o) || 'no amounts')}${benElig(o.soharstatus) ? '' : ` <span class="chip bad">Not eligible: ${esc(benStatus(o))}</span>`}</div>`;
+  return `<span class="ben" title="${esc(tip)}">${esc(benLine(o) || 'no amounts')}</span>${benElig(o.soharstatus) ? '' : ` <span class="chip bad">Not eligible: ${esc(benStatus(o))}</span>`}`;
 }
 const benFlag = mrn => { const o = benOf(mrn); return o && !benElig(o.soharstatus) ? `<span class="chip bad" title="Sohar status: ${esc(benStatus(o))}">Sohar: not eligible</span>` : ''; };
 const nowText = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -3462,25 +3516,20 @@ async function audFill(){
 
 // ---------- patients ----------
 function patientsHTML(){
-  const q = S.patQ.trim().toLowerCase();
-  const list = S.P.filter(p => (S.patAll || !/discontinued|did not start/i.test(p.status)) && (!q || p.name.toLowerCase().includes(q) || p.mrn.includes(q))).sort((a, b) => a.name.localeCompare(b.name));
-  const T = todaySerial(); const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
-  return `<div class="card noprint"><div class="row"><input id="patQ" class="fld grow" data-input="patQ" placeholder="Search short name or MRN" value="${esc(S.patQ)}" aria-label="Search patients"><div class="seg">${[[false, 'Current'], [true, 'All']].map(([v, l]) => `<button data-act="patAll" data-v="${v}" aria-pressed="${S.patAll === v}">${l}</button>`).join('')}</div></div></div>
-  <div class="card print-target" id="guide"><h2>Patient guide <span class="chip">${list.length}</span><span class="sp"></span><button class="btn sm noprint" data-act="expOpen">⇩ Export list</button><button class="btn sm noprint" data-act="print" data-t="guide">Print</button></h2>
-    <div class="printonly small">Printed ${new Date().toLocaleString()} — contains patient identifiers. Shred after use.</div>
-    <div class="tw"><table class="t"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Coverage</th><th>Insurance</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th><th>Meds on hand</th><th>On order</th></tr></thead><tbody>
-    ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr data-act="patient" data-m="${esc(p.mrn)}" style="cursor:pointer"><td><b>${esc(p.name)}</b></td><td>${esc(p.mrn)}</td><td>${esc(p.status)}</td><td>${covChip(p)}</td><td>${insChip(p)}</td><td>${PH_LABEL[p.pharm]}</td><td class="num">${p.mg ?? ''}</td><td>${esc(p.freq)}</td><td>${n ? fmtD(n.date) : '—'}</td><td>${th ? fmtD(th) : '—'}</td>${(() => { if (p.pharm === 'BESSE') return '<td class="muted small">Besse stock</td><td></td>'; const m = patientMeds(p.mrn); return `<td>${m.onhand.length ? `<span class="chip ok">${m.onhand.length}</span> <span class="small muted">use by ${fmtD(m.onhand[0].expDate)}</span>` : '<span class="chip bad">0</span>'}${m.expired.length ? ` <span class="chip bad">${m.expired.length} expired</span>` : ''}</td><td>${m.ordered.length ? `<span class="chip info">${m.ordered.length}</span> <span class="small muted">since ${fmtD(m.ordered[0].ordered)}</span>` : '—'}</td>`; })()}</tr>`; }).join('')}
-    </tbody></table></div></div>`;
+  // The Patients page body (PAGES.patients.html calls this). Direct children of <main>: the list/page columns (noprint) and #guide.
+  // Table view swaps the columns for the guide table; Print list prints #guide either way.
+  const M = ptListModel();
+  if (S.ptSel && !S.byMrn.has(S.ptSel) && !S.A.some(a => a.mrn === S.ptSel)) S.ptSel = null;   // gone after a reload
+  const sel = S.ptSel || M.need[0]?.mrn || M.rest[0]?.mrn || null;
+  return `${S.ptTable ? '' : pageCols('t', ptListHTML(M, sel), ptPageHTML(sel))}${ptGuideHTML()}`;
 }
 function openPatient(mrn){
-  const p = S.byMrn.get(mrn); const T = todaySerial();
-  const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
-  const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
-  openModal(`<h2>${esc(nm(mrn))}</h2>${p ? `<div class="row small" style="margin:4px 0 6px">${covChip(p)}${insChip(p)}${p.authExp ? `<span class="chip ${p.authExp < todaySerial() ? 'bad' : ''}">Auth exp ${fmtD(p.authExp, 'full')}</span>` : '<span class="chip warn">Auth exp not set</span>'}${protoChip(p, todaySerial() + CFG.schedDays)}${madrsFlag(p)}${medChip(mrn)}</div>` : ''}${benHTML(mrn)}<div class="muted small">MRN ${esc(mrn)}${p ? ` · ${esc(p.status)} · ${PH_LABEL[p.pharm]} · ${p.mg ?? '?'} mg · ${esc(p.freq)}` : ' · not on the patient tracker'}</div>
-    <h3>Upcoming</h3>${up.length ? `<div class="tw"><table class="t"><tbody>${up.map(a => `<tr><td>${fmtD(a.date, 'dow')}</td><td>${fmtT(a.time)}</td><td>${esc(a.event)}</td><td>${esc(a.status)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">Nothing booked.</div>'}
-    <h3>Meds</h3>${(() => { if (p?.pharm === 'BESSE') return `<div class="small muted">Besse patient — kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`; return ''; })()}${kits.length ? `<div class="list">${kits.map(k => `<div class="item small">${k.openOrder ? `<span class="chip info">On order since ${fmtD(k.ordered)}</span> row ${k.r + 3}` : `${k.needsDisposal ? '<span class="chip bad">Expired</span> ' : '<span class="chip ok">On hand</span> '}${kitLine(k)}`}</div>`).join('')}</div>` : '<div class="muted small">No kits on hand or on order.</div>'}
-    ${p ? `<h3>Tracker row</h3>${editorHTML('patients', p.r)}` : ''}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="consent" data-m="${esc(mrn)}">Print consent</button><button class="btn" data-act="ptPrint" data-m="${esc(mrn)}" ${up.some(a => a.active) ? '' : 'disabled'}>🖨 Print schedule</button>${p ? `<button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button>` : ''}</div>`);
+  // Every "Details" / patient link lands here: the Patients page with that MRN selected (no modal). Remembers where it came from.
+  if (!mrn) return;
+  closeModal();
+  if (S.view !== 'patients') S.ptFrom = S.view;
+  S.view = 'patients'; S.ptSel = mrn; S.ptPick = true; S.ptTable = false;
+  render(); window.scrollTo(0, 0);
 }
 // ---------- consent for esketamine treatment: due with each protocol renewal; reprint any time ----------
 // The form lives in consent.html (wording owned by compliance). The PCT types the patient name every time; it is never
@@ -3772,14 +3821,199 @@ PAGES.inventory = {
 // ===== /page: inventory =====
 
 // ===== page: patients =====
-const ACT_PATIENTS = {};
+// Patients: the list on the left, the patient page on the right (pageCols 't'). The 12-column guide table stays as
+// <section id="guide" class="print-target"> straight under <main> so Print list keeps working; it shows on screen in Table view.
+// Pure helpers only read existing models (needsMadrs, needsProto, schedGaps, adminModel, actionModel, scheduledNeedingMeds,
+// patientMeds, benOf). Nothing here writes; every button reuses an existing ACT handler except the small ACT_PATIENTS set below.
+const PT_FROM = { today: 'Today', schedule: 'Schedule', inventory: 'Meds', access: 'Access', settings: 'Settings' };
+const ptCurrent = p => !/discontinued|did not start/i.test(p.status);   // the list's "Current" (same rule as before: Paused and blank stay in)
+const ptRank = tone => tone === 'bad' ? 0 : tone === 'warn' ? 1 : 2;
+const ptBtn = (act, mrn, label, extra = '') => `<button class="btn sm" data-act="${act}" data-m="${esc(mrn)}"${extra}>${label}</button>`;
+// Next visit still ahead (today's visits drop off once their time has passed or the kit was given).
+function ptNext(mrn){ return S.A.filter(a => a.mrn === mrn && a.active && pendingAppt(a)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0] || null; }
+function ptNextText(p){
+  const a = ptNext(p.mrn); const ph = PH_LABEL[p.pharm] || '—';
+  if (!a) return `Nothing booked · ${esc(p.status || 'no status')}`;
+  return `${a.isStart ? 'Start' : 'Next'} ${a.date === todaySerial() ? 'today' : fmtD(a.date, 'dow')}${a.time != null ? ' ' + fmtT(a.time) : ''} · ${ph}`;
+}
+// Every "needs something" reason per MRN, worst first (map-patients §9). Built once per render: the shell's sub() and html() share it.
+// Dismissed Admin to-do and Needs scheduling items stay out unless Show dismissed is on, so this list agrees with Schedule.
+function ptNeedsAll(){
+  if (S._ptN) return S._ptN;
+  const T = todaySerial(); const out = new Map();
+  const add = (mrn, x) => { if (!out.has(mrn)) out.set(mrn, []); out.get(mrn).push(x); };
+  for (const p of curPatients()){
+    const m = p.mrn;
+    if (needsMadrs(p)) add(m, { k: 'madrs', tone: 'bad', tag: 'MADRS', t: 'MADRS due', d: `Auth ${p.authExp < T ? 'expired' : 'expires'} ${fmtD(p.authExp, 'full')} · last MADRS ${p.lastMadrs != null ? fmtD(p.lastMadrs, 'full') : 'none on file'}`, btn: ptBtn('madrsDo', m, 'MADRS collected…') });
+    if (needsProto(p)){ const bad = !p.protoExp || p.protoExp < T;
+      add(m, { k: 'proto', tone: bad ? 'bad' : 'warn', tag: 'Protocol', t: !p.protoExp ? 'No protocol date' : bad ? 'Protocol expired' : 'Protocol expires soon', d: `${!p.protoExp ? 'Protocol Exp Date is blank on the tracker' : (bad ? 'Expired ' : 'Expires ') + fmtD(p.protoExp, 'full')} · a new consent is signed at the next visit`, btn: ptBtn('protoRenew', m, 'Protocol renewed…') }); }
+    const o = benOf(m);
+    if (o && !benElig(o.soharstatus) && /^(active|pending)/i.test(p.status)) add(m, { k: 'sohar', tone: 'bad', tag: 'Sohar', t: 'Sohar: not eligible', d: `Sohar status: ${esc(benStatus(o))}. Check coverage before the next visit.`, btn: '' });
+  }
+  // Needs scheduling: one per patient, same ids Schedule dismisses with (due|mrn, sched|mrn|date).
+  const g = schedGaps();
+  for (const d of g.days) for (const x of d.list){ if (taskGet(x.mrn, 'sched') || (d.d !== T && hidden(`sched|${x.mrn}|${x.a.date}`)) || out.get(x.mrn)?.some(r => r.k === 'sched')) continue;
+    add(x.mrn, { k: 'sched', tone: 'warn', tag: 'Scheduling', t: 'Schedule out', d: `Booked through ${x.thru ? fmtD(x.thru, 'full') : '—'}; needs visits through ${fmtD(g.lim, 'full')}`, btn: `<button class="btn sm" data-act="taskDo" data-m="${esc(x.mrn)}" data-k="sched">Mark scheduled</button>` }); }
+  for (const x of g.B){ if (taskGet(x.mrn, 'sched') || hidden(`due|${x.mrn}`) || out.get(x.mrn)?.some(r => r.k === 'sched')) continue;
+    add(x.mrn, { k: 'sched', tone: 'warn', tag: 'Scheduling', t: 'Due for a visit, nothing booked', d: `${x.due != null ? `Due ${fmtD(x.due, 'full')}` : 'No kept visit yet'} · ${esc(x.p.freq || 'frequency not set')}`, btn: `<button class="btn sm" data-act="taskDo" data-m="${esc(x.mrn)}" data-k="sched">Mark scheduled</button>` }); }
+  // Admin to-do kinds (protocol is covered above by needsProto, so it is not listed twice).
+  const am = adminModel(); const fixF = { status: 'status', freq: 'txfrequency', mdnp: 'coverageoptions' };
+  for (const [k, tg, title] of [['status', 'Status', 'Reclassify status'], ['freq', 'Frequency', 'Verify frequency'], ['mdnp', 'MD/NP', 'Add MD/NP or rendering provider']])
+    for (const x of am[k]){ const id = `adm|${k}|${x.p.mrn}`; if (hidden(id)) continue;
+      add(x.p.mrn, { k, tone: k === 'status' || x.idx ? 'bad' : 'warn', tag: tg, t: title, d: esc(x.text), snz: id, btn: `<button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${fixF[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button>` }); }
+  // Order meds: specialty pharmacy only, and only for visits that are booked (decision 11: never Besse, never an unscheduled visit).
+  const am2 = actionModel(); const isPS = mrn => PS(S.byMrn.get(mrn)?.pharm);
+  for (const r of am2.order){ const m = r.a.mrn; if (!isPS(m) || out.get(m)?.some(x => x.k === 'order')) continue;
+    add(m, { k: 'order', tone: 'bad', tag: 'Needs med', t: 'Order meds', d: `No kit for ${fmtD(r.a.date, 'dow')}${r.a.time != null ? ' ' + fmtT(r.a.time) : ''}`, btn: '<button class="btn sm" data-act="goInv" data-v="order">Open Meds</button>' }); }
+  for (const x of am2.schedMeds){ if (!isPS(x.mrn) || out.get(x.mrn)?.some(r => r.k === 'order')) continue;
+    add(x.mrn, { k: 'order', tone: 'bad', tag: 'Needs med', t: 'Order meds for the new visits', d: `Scheduled out; ${x.o.oo} on order, ${x.o.booked} booked`, btn: '<button class="btn sm" data-act="goInv" data-v="order">Open Meds</button>' }); }
+  for (const p of curPatients()){ const ex = patientMeds(p.mrn).expired.filter(k => k.pharm !== 'BESSE'); if (!ex.length) continue;
+    add(p.mrn, { k: 'dispose', tone: 'warn', tag: 'Expired kit', t: `${ex.length} expired kit${ex.length === 1 ? '' : 's'} to dispose`, d: ex.map(k => `SN ${esc(k.serial || '—')} · use by ${fmtD(k.expDate)}`).join(' · '), btn: '<button class="btn sm" data-act="goInv" data-v="dispose">Open Meds</button>' }); }
+  for (const L of out.values()) L.sort((a, b) => ptRank(a.tone) - ptRank(b.tone));
+  S._ptN = out; queueMicrotask(() => { S._ptN = null; });
+  return out;
+}
+const ptNeeds = mrn => ptNeedsAll().get(mrn) || [];
+// The list: one row per MRN (first tracker row, the one the editor writes), Current/All and search, split into the two groups.
+function ptListModel(){
+  const q = S.patQ.trim().toLowerCase(); const N = ptNeedsAll();
+  const L = curPatients().filter(p => (S.patAll || ptCurrent(p)) && (!q || nm(p.mrn).toLowerCase().includes(q) || p.mrn.toLowerCase().includes(q))).sort((a, b) => nm(a.mrn).localeCompare(nm(b.mrn)));
+  const nextD = m => ptNext(m)?.date ?? 1e9;
+  const need = L.filter(p => N.has(p.mrn)).sort((a, b) => ptRank(N.get(a.mrn)[0].tone) - ptRank(N.get(b.mrn)[0].tone) || nextD(a.mrn) - nextD(b.mrn) || nm(a.mrn).localeCompare(nm(b.mrn)));
+  return { need, rest: L.filter(p => !N.has(p.mrn)) };
+}
+function ptRowHTML(p, sel){
+  const R = ptNeeds(p.mrn); const tags = R.length ? tag(R[0].tone, R[0].tag) + (R.length > 1 ? tag('', '+' + (R.length - 1)) : '') : '';
+  return `<button class="qrow" data-act="patient" data-m="${esc(p.mrn)}" aria-current="${sel === p.mrn}"><span class="qdot ${R.length ? (R[0].tone === 'bad' ? 'late' : 'soon') : 'none'}" aria-hidden="true"></span><span class="who"><span class="t">${esc(nm(p.mrn))}</span><span class="s">${ptNextText(p)}</span></span>${tags ? `<span class="tags">${tags}</span>` : ''}</button>`;
+}
+function ptListHTML(M, sel){
+  const nSnz = snzCount(curPatients().flatMap(p => ['status', 'freq', 'mdnp'].map(k => `adm|${k}|${p.mrn}`).concat(`due|${p.mrn}`)));
+  return `<aside class="ptl noprint${S.ptPick ? ' n-hide' : ''}" aria-label="Patient list">
+    <div class="ptsearch"><input id="patQ" class="fld" type="search" data-input="patQ" placeholder="Search by LASFIR or MRN" value="${esc(S.patQ)}" aria-label="Search patients" autocomplete="off"><div class="seg">${[[false, 'Current'], [true, 'All']].map(([v, l]) => `<button data-act="patAll" data-v="${v}" aria-pressed="${S.patAll === v}">${l}</button>`).join('')}</div></div>
+    <div class="group"><h2>Needs something · ${M.need.length}</h2>${M.need.length ? M.need.map(p => ptRowHTML(p, sel)).join('') : '<div class="none">Nothing needs doing ✓</div>'}</div>
+    <div class="group"><h2>Everyone else · ${M.rest.length}</h2>${M.rest.length ? M.rest.map(p => ptRowHTML(p, sel)).join('') : `<div class="none">${S.patQ.trim() ? 'No match.' : 'No one else.'}</div>`}</div>
+    ${snzFoot(nSnz)}
+  </aside>`;
+}
+// Visit history (read only): past appointments, plus administered kits with no appointment row, newest first. Vitals from eskVisit.
+function ptHistory(mrn){
+  const T = todaySerial(); const used = new Set(); const rows = [];
+  for (const a of S.A){ if (a.mrn !== mrn) continue; const v = visitGet(a.key); if (!(a.date < T || (a.date === T && v?.start != null))) continue;
+    const k = S.K.find(x => x.mrn === mrn && x.administered && x.adminDate === a.date && !used.has(x.id)); if (k) used.add(k.id); rows.push({ date: a.date, time: a.time, a, k, v }); }
+  for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && k.adminDate <= T && !used.has(k.id)) rows.push({ date: k.adminDate, time: null, a: null, k, v: null });
+  return rows.sort((x, y) => y.date - x.date || (y.time ?? 0) - (x.time ?? 0));
+}
+function ptHistRow(h){
+  const v = h.v || {}, vit = v.vit || {}, bp = w => vit[w]?.bp ? esc(vit[w].bp) : '—';
+  const chair = v.start != null && v.out?.at != null ? (m => `${Math.floor(m / 60)} h ${m % 60} min`)(Math.max(0, v.out.at - v.start)) : '—';
+  const st = v.out?.at != null ? `Discharged ${fmtT(v.out.at)}` : h.a ? (h.a.marked ? 'Cancelled in the tracker' : h.a.status || '') : 'Kit given, no appointment row';
+  const tone = h.k || v.out ? 'ok' : /cancel|no.?show/i.test(st) ? 'bad' : /kept/i.test(st) ? 'ok' : '';
+  const by = v.out?.by || vit.init?.by || h.k?.tech || '';
+  const td = (l, v, num) => `<td class="${num ? 'num' : ''}${v === '—' ? ' nil' : ''}" data-l="${l}">${v}</td>`;   // nil cells fold away in the pane
+  return `<tr>${td('Date', `${fmtD(h.date, 'dow')}${h.time != null ? ` <span class="muted">${fmtT(h.time)}</span>` : ''}`)}${td('Visit', h.a ? esc(h.a.isStart ? 'Start' : h.a.isEFU ? 'Follow-up' : h.a.event || 'Treatment') : '—')}${td('Status', st ? tag(tone, esc(st)) : '—')}${td('mg', h.k?.admin != null ? String(h.k.admin) : '—', true)}${td('Kit', h.k ? `<span class="mono">SN …${esc(String(h.k.serial || '').slice(-5) || '—')}</span>` : '—')}${td('Initial', bp('init'))}${td('40-min', bp('mid'))}${td('Final', bp('fin'))}${td('In chair', chair)}${td('By', esc(by) || '—')}</tr>`;
+}
+function ptHistoryHTML(mrn){
+  const H = ptHistory(mrn); if (!H.length) return '<div class="muted small">No past visits on the appointment list and no kits given.</div>';
+  const head = '<thead><tr><th>Date</th><th>Visit</th><th>Status</th><th class="num">mg</th><th>Kit</th><th>Initial</th><th>40-min</th><th>Final</th><th>In chair</th><th>By</th></tr></thead>';
+  const first = H.slice(0, 8), more = H.slice(8); const id = 'pth:' + mrn;
+  return `<div class="tw"><table class="t rt">${head}<tbody>${first.map(ptHistRow).join('')}</tbody></table></div>
+    ${more.length ? `<details class="fold" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Show ${more.length} older</summary><div class="tw"><table class="t rt">${head}<tbody>${more.map(ptHistRow).join('')}</tbody></table></div></details>` : ''}
+    <div class="small muted">Vitals show only for visits recorded in this tracker.</div>`;
+}
+// Read-only copy of the whole tracker row; editing stays in the Edit tracker row modal so a refresh can't wipe it.
+function ptFieldsHTML(p){
+  const t = S.tables.patients; if (!t) return '';
+  const val = (h, v) => { if (v == null || v === '') return '<span class="muted">—</span>'; if (isDateHeader(h)){ const s = toSerial(v); if (s != null) return fmtD(s, 'full'); } return esc(String(v)); };
+  return factsDL(t.headers.map((h, c) => [String(h ?? '').trim(), c]).filter(([h]) => h).map(([h, c]) => [esc(h), val(h, t.values[p.r][c])]));
+}
+function ptPageHTML(mrn){
+  if (!mrn) return `<section class="ptp noprint${S.ptPick ? '' : ' n-hide'}"><div class="card"><div class="muted">No patients on the tracker yet.</div></div></section>`;
+  const p = S.byMrn.get(mrn); const T = todaySerial(); const m = esc(mrn); const R = ptNeeds(mrn);
+  const up = S.A.filter(a => a.mrn === mrn && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0)).slice(0, 12);
+  const canPrint = up.some(a => a.active && pendingAppt(a));
+  const stTone = !p ? '' : /^active/i.test(p.status) ? 'ok' : /^pending/i.test(p.status) ? 'info' : /discontinued|did not start/i.test(p.status) ? 'bad' : 'warn';
+  const back = S.ptFrom && PT_FROM[S.ptFrom] ? `<button class="btn ghost sm ptback" data-act="ptBack">Back to ${PT_FROM[S.ptFrom]}</button>` : '';
+  const head = `<div class="card pthead">
+    <div class="ptnav">${back}<button class="btn ghost sm n-only" data-act="ptList">Back to list</button></div>
+    <div class="pthrow"><div><div class="code">${esc(nm(mrn))}${p ? tag(stTone, esc(p.status || 'No status')) : tag('warn', 'Not on the tracker')}</div>
+      <div class="ptid muted">MRN <button class="btn inline" data-act="ptCopy" data-m="${m}" title="Copy the MRN">${m}</button>${p ? ` · ${PH_LABEL[p.pharm] || '—'} · ${p.mg ?? '?'} mg · ${esc(p.freq || 'frequency not set')}` : ' · not on the patient tracker'}</div></div>
+      <div class="pttools"><button class="btn ghost mute sm" data-act="consent" data-m="${m}">Print consent</button><button class="btn ghost mute sm" data-act="ptPrint" data-m="${m}" ${canPrint ? '' : 'disabled title="Nothing booked ahead"'}>Print schedule</button>${p ? `<button class="btn ghost mute sm" data-act="ptEdit" data-m="${m}">Edit tracker row</button>` : ''}</div></div></div>`;
+  const needs = R.length ? `<div class="card"><h3>Needs · ${R.length}</h3>${R.map(r => taskRow({ t: r.t, d: r.d, tone: r.tone, btn: r.snz ? `<span class="ptact">${r.btn}${snzBtns(r.snz)}</span>` : r.btn })).join('')}</div>` : '';
+  if (!p) return `<section class="ptp noprint${S.ptPick ? '' : ' n-hide'}">${head}${needs}
+    <div class="card"><h3>Next visits</h3>${ptUpHTML(up)}</div>
+    <div class="card"><h3>Notes</h3>${notesHTML({ mrn, key: 'pt|' + mrn })}</div>
+    <div class="card"><h3>Visit history</h3>${ptHistoryHTML(mrn)}</div></section>`;
+  const o = benOf(mrn); const more = o ? [o.soharpayer, o.plan, o.network, o.coveragelevel].map(v => String(v ?? '').trim()).filter(Boolean).join(' · ') : '';
+  const cov = factsDL([
+    ['MD/NP', p.coverage ? esc(p.coverage) : tag('warn', 'MD/NP not set')],
+    ['Rendering provider', p.provider ? esc(p.provider) : tag('warn', 'Not set')],
+    ['Insurance', p.insurance ? esc(p.insurance) : tag('warn', 'Insurance not set')],
+    ['Authorization', p.authExp ? (p.authExp < T ? tag('bad', `Expired ${fmtD(p.authExp, 'full')}`) : `Through ${fmtD(p.authExp, 'full')}`) : tag('warn', 'Auth exp not set')],
+    ['Sohar', o ? `${benHTML(mrn)}${more ? `<div class="small muted">${esc(more)}</div>` : ''}` : '<span class="muted">No Sohar check imported</span>'],
+  ]);
+  const pd = p.protoExp ? `${p.protoExp < T ? 'Expired' : 'Expires'} ${fmtD(p.protoExp, 'full')}` : 'No protocol date on the tracker';
+  const paper = [
+    taskRow({ t: 'Protocol', d: pd, done: !needsProto(p), tone: !p.protoExp || p.protoExp < T ? 'bad' : 'warn', btn: ptBtn('protoRenew', mrn, 'Protocol renewed…') }),
+    taskRow({ t: 'Consent', d: 'Signed with each protocol renewal. Printing it is not recorded.', btn: ptBtn('consent', mrn, 'Print consent') }),
+    taskRow({ t: 'MADRS', d: `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · ${p.authExp ? `${needsMadrs(p) ? 'due since' : 'next due'} ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : 'no auth date, so no MADRS due'}`, done: !needsMadrs(p), tone: 'bad', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
+  ].join('');
+  const thru = scheduledThru(mrn); const sd = taskGet(mrn, 'sched'); const so = R.some(r => r.k === 'sched');
+  const nextF = factsDL([
+    ['Booked through', thru ? fmtD(thru, 'full') : 'Nothing booked'],
+    ['Schedule out', sd ? `Marked scheduled by ${esc(sd.by || '—')} ${fmtD(fromIso(sd.at))} <button class="linkbtn" data-act="taskUndo" data-m="${m}" data-k="sched">Undo</button>` : so ? tag('warn', 'Needs booking') : 'Booked far enough'],
+  ]);
+  const kits = S.K.filter(k => k.mrn === mrn && k.pharm !== 'BESSE' && (k.openOrder || k.full || k.needsDisposal)).sort((a, b) => (a.openOrder - b.openOrder) || fifo(a, b));
+  const meds = p.pharm === 'BESSE' ? `<div class="small">Besse patient. Kits come from shared Besse stock (${S.K.filter(k => k.pharm === 'BESSE' && k.available).length} available).</div>`
+    : `${kits.length ? `<ul class="ptkits">${kits.map(k => `<li>${k.openOrder ? `${tag('info', `On order since ${fmtD(k.ordered)}`)} <span class="small muted">row ${k.r + 3}</span>` : `${k.needsDisposal ? tag('bad', 'Expired') : tag('ok', 'On hand')} <span class="small">${kitLine(k)}</span>`}</li>`).join('')}</ul>` : '<div class="muted small">No kits on hand or on order.</div>'}${medChip(mrn) ? `<div class="ptmc">${medChip(mrn)}</div>` : ''}`;
+  const fid = 'ptf:' + mrn;
+  return `<section class="ptp noprint${S.ptPick ? '' : ' n-hide'}">${head}${needs}
+    ${pageCols('two', `<div class="card"><h3>Coverage</h3>${cov}</div>`, `<div class="card"><h3>Paperwork</h3>${paper}</div>`)}
+    ${pageCols('two', `<div class="card"><h3>Next visits</h3>${ptUpHTML(up)}${nextF}</div>`, `<div class="card"><h3>Meds</h3>${meds}</div>`)}
+    <div class="card"><h3>Notes</h3><div class="small muted">Shared with every Today card for this patient.</div>${notesHTML({ mrn, key: 'pt|' + mrn })}</div>
+    <div class="card"><h3>Visit history</h3>${ptHistoryHTML(mrn)}</div>
+    <details class="card ptfields" data-open="${esc(fid)}" ${S.open?.[fid] ? 'open' : ''}><summary><h3>All tracker fields</h3><span class="muted small">Master Patient Tracker row ${p.r + 3}</span></summary>${ptFieldsHTML(p)}
+      <div class="ptfoot"><button class="btn sm" data-act="ptEdit" data-m="${m}">Edit tracker row</button></div></details>
+  </section>`;
+}
+function ptUpHTML(up){
+  if (!up.length) return '<div class="muted small">Nothing booked.</div>';
+  // A plain list (not a table) so it reads the same in the pane and full screen. Up to 12, cancelled / no-show / hold included.
+  return `<ul class="ptup">${up.map(a => `<li><span class="when"><b>${fmtD(a.date, 'dow')}</b> ${fmtT(a.time) || '—'}</span><span class="what muted">${esc(a.event)}</span><span class="ptst">${visitGet(a.key)?.out ? tag('ok', 'Discharged') : a.active ? `<span class="muted small">${esc(a.status)}</span>` : tag(a.cancelled ? 'bad' : 'warn', esc(a.hold ? 'Hold' : a.status || '—'))}</span></li>`).join('')}</ul>`;
+}
+// The old 12-column Patient guide, rows from S.P (duplicate MRN rows still show twice). Rows are buttons now, so the keyboard reaches them.
+function ptGuideHTML(){
+  const list = S.P.filter(p => (S.patAll || ptCurrent(p)) && (!S.patQ.trim() || nm(p.mrn).toLowerCase().includes(S.patQ.trim().toLowerCase()) || p.mrn.includes(S.patQ.trim().toLowerCase()))).sort((a, b) => nm(a.mrn).localeCompare(nm(b.mrn)));
+  const T = todaySerial(); const next = mrn => S.A.filter(a => a.mrn === mrn && a.active && a.date >= T).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0];
+  const meds = p => { if (p.pharm === 'BESSE') return '<td data-l="Meds on hand" class="muted small">Besse stock</td><td data-l="On order"></td>'; const m = patientMeds(p.mrn);
+    return `<td data-l="Meds on hand">${m.onhand.length ? `${tag('ok', String(m.onhand.length))} <span class="small muted">use by ${fmtD(m.onhand[0].expDate)}</span>` : tag('bad', '0')}${m.expired.length ? ` ${tag('bad', `${m.expired.length} expired`)}` : ''}</td><td data-l="On order">${m.ordered.length ? `${tag('info', String(m.ordered.length))} <span class="small muted">since ${fmtD(m.ordered[0].ordered)}</span>` : '—'}</td>`; };
+  return `<section id="guide" class="print-target card ptguide${S.ptTable ? '' : ' scr-off'}"><h3>Patient guide <span class="muted">${list.length}</span></h3>
+    <div class="printonly small">Printed ${new Date().toLocaleString()} — contains patient identifiers. Shred after use.</div>
+    <div class="tw"><table class="t rt"><thead><tr><th>Short name</th><th>MRN</th><th>Status</th><th>Coverage</th><th>Insurance</th><th>Pharmacy</th><th class="num">mg</th><th>Frequency</th><th>Next</th><th>Thru</th><th>Meds on hand</th><th>On order</th></tr></thead><tbody>
+    ${list.map(p => { const n = next(p.mrn); const th = scheduledThru(p.mrn); return `<tr><td data-l="Short name"><button class="linkbtn" data-act="patient" data-m="${esc(p.mrn)}"><b>${esc(nm(p.mrn))}</b></button></td><td data-l="MRN">${esc(p.mrn)}</td><td data-l="Status">${esc(p.status)}</td><td data-l="Coverage">${covChip(p)}</td><td data-l="Insurance">${insChip(p)}</td><td data-l="Pharmacy">${PH_LABEL[p.pharm]}</td><td class="num" data-l="mg">${p.mg ?? ''}</td><td data-l="Frequency">${esc(p.freq)}</td><td data-l="Next">${n ? fmtD(n.date) : '—'}</td><td data-l="Thru">${th ? fmtD(th) : '—'}</td>${meds(p)}</tr>`; }).join('')}
+    </tbody></table></div></section>`;
+}
+// Edit tracker row: the generic editor in a modal (unchanged editorHTML + saveRow), so background refreshes can't wipe typing.
+function openPtEdit(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return;
+  openModal(`<h2>Edit tracker row · ${esc(nm(mrn))}</h2><div class="small muted">MRN ${esc(mrn)} · Master Patient Tracker row ${p.r + 3} · only changed fields are written</div>
+    ${editorHTML('patients', p.r)}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="saveRow" data-t="patients" data-r="${p.r}">Save changes</button></div>`, true);
+}
 PAGES.patients = {
   label: 'Patients',
   title: () => 'Patients',
-  sub: () => '',
-  tools: () => '<button class="btn sm" data-act="consent" title="Print the consent for esketamine treatment">Print consent</button>',
+  sub: () => { const L = curPatients().filter(ptCurrent); const N = ptNeedsAll(); const n = L.filter(p => N.has(p.mrn)).length; return `${L.length} current · ${n ? `<strong>${n} need${n === 1 ? 's' : ''} something</strong>` : 'nothing needed'}`; },
+  tools: () => `<button class="btn sm" data-act="ptTable" aria-pressed="${!!S.ptTable}">${S.ptTable ? 'List view' : 'Table view'}</button><button class="btn sm" data-act="expOpen">Export list…</button><button class="btn sm" data-act="print" data-t="guide">Print list</button><button class="btn sm" data-act="consent">Print consent</button>`,
   html: () => patientsHTML(),
   badge: () => null,
+};
+const ACT_PATIENTS = {
+  patient: el => openPatient(el.dataset.m),
+  ptBack: () => { const v = S.ptFrom; S.ptFrom = null; S.ptPick = false; S.view = v || 'patients'; render(); window.scrollTo(0, 0); },
+  ptList: () => { S.ptPick = false; render(); window.scrollTo(0, 0); },
+  ptEdit: el => openPtEdit(el.dataset.m),
+  ptTable: () => { S.ptTable = !S.ptTable; render(); },
+  ptCopy: async el => { const ok = await copyText(el.dataset.m); toast(ok ? 'ok' : 'bad', ok ? 'MRN copied.' : 'Couldn’t copy the MRN.'); },
 };
 // ===== /page: patients =====
 
