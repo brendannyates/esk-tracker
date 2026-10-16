@@ -566,6 +566,8 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-patients .ptup .ptst{flex:none;margin-left:auto}
 .pg-patients .facts{margin-top:12px}
 .pg-patients .ptup + .facts{margin-top:14px}
+.pg-patients table.pthist td{white-space:normal}
+.pg-patients table.pthist td:first-child{min-width:90px}
 .pg-patients .facts dd .chip,.pg-patients .facts dd .tag{white-space:normal}
 .pg-patients .ptfields > summary{display:flex;align-items:baseline;gap:10px;cursor:pointer;list-style:none}
 .pg-patients .ptfields > summary::-webkit-details-marker{display:none}
@@ -3931,8 +3933,8 @@ function ptHistoryHTML(mrn){
   const H = ptHistory(mrn); if (!H.length) return '<div class="muted small">No past visits on the appointment list and no kits given.</div>';
   const head = '<thead><tr><th>Date</th><th>Visit</th><th>Status</th><th>Kit given</th><th title="Initial · 40-min · final">BP: initial · 40-min · final</th><th>In chair</th><th>By</th></tr></thead>';
   const first = H.slice(0, 8), more = H.slice(8); const id = 'pth:' + mrn;
-  return `<div class="tw"><table class="t rt">${head}<tbody>${first.map(ptHistRow).join('')}</tbody></table></div>
-    ${more.length ? `<details class="fold" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Show ${more.length} older</summary><div class="tw"><table class="t rt">${head}<tbody>${more.map(ptHistRow).join('')}</tbody></table></div></details>` : ''}
+  return `<div class="tw"><table class="t rt pthist">${head}<tbody>${first.map(ptHistRow).join('')}</tbody></table></div>
+    ${more.length ? `<details class="fold" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Show ${more.length} older</summary><div class="tw"><table class="t rt pthist">${head}<tbody>${more.map(ptHistRow).join('')}</tbody></table></div></details>` : ''}
     <div class="small muted">Vitals show only for visits recorded in this tracker.</div>`;
 }
 // Read-only copy of the whole tracker row; editing stays in the Edit tracker row modal so a refresh can't wipe it.
