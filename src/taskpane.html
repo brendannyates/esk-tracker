@@ -543,7 +543,11 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-access .acc-filters{display:flex;flex-wrap:wrap;gap:12px}
 .pg-access .acc-f{display:flex;flex-direction:column;gap:6px;min-width:190px;margin:0}
 .pg-access .acc-f .lbl{margin:0}
-.pg-access .acc-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pg-access .acc-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto;justify-content:flex-end}
+/* the wide tables (Provider panels has 10 columns) only fit side by side from about 1600px; below that each card gets the full width */
+@media (max-width:1599px){ .pg-access .cols2.two{grid-template-columns:minmax(0,1fr)} }
+.pg-access .cols2{gap:16px}
+.pg-access table.t th,.pg-access table.t td{padding:8px 7px}
 .pg-access .acc-st{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
 .pg-access .acc-st > .lbl{margin:0 4px 0 0}
 .pg-access .acc-chip{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:10px;background:var(--surface2);cursor:pointer;font-size:14px;margin:0;color:var(--ink)}
@@ -584,7 +588,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-access .vval,.pg-access .vgap{font-size:12px}
 @media (max-width:899px){
   .pg-access .acc-f{min-width:0;flex:1 1 150px}
-  .pg-access .acc-tools{width:100%}
+  .pg-access .acc-tools{width:100%;margin-left:0;justify-content:flex-start}
   .pg-access .acc-tools .btn.primary{flex:1 1 100%}
 }
 /* ===== /page: access ===== */
@@ -3943,8 +3947,8 @@ function settingsHTML(){
     </div>
     <h2 class="set-sec">MADRS reminders</h2>
     <div class="set-grid">
-      ${f('sHelp', 'Help email (cc on MADRS reminders)', { ph: 'team help address' })}
-      ${f('sLead', 'Practice leader email (cc on MADRS reminders)', { ph: 'name@mymhs.com' })}
+      ${f('sHelp', 'Help email (cc)', { ph: 'team help address' })}
+      ${f('sLead', 'Practice leader email (cc)', { ph: 'name@mymhs.com' })}
       ${f('sProv', 'Provider emails, one per line (merge spellings under Access › Merge providers)', { rows: 4, wide: true, ph: 'Rendering provider name = email, as it appears on the Master Patient Tracker' })}
       <div class="set-f wide set-row"><button class="btn" data-act="provEmailFill">Fill suggested emails</button><span class="small muted grow">First initial + last name @mymhs.com; tenured providers are usually @mindfulhealthsolutions.com. Without a saved email, reminders use the @mymhs.com suggestion.</span></div>
     </div>
