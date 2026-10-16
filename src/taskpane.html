@@ -629,11 +629,11 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
   .pg-today .tq{gap:10px;margin-bottom:12px}
   .pg-today .qstrip{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;margin:0 -2px}
   .pg-today .qstrip .qg{display:contents}
-  .pg-today .qstrip .qg>h2{flex:none;align-self:center;margin:0;padding:0 4px 0 2px;max-width:84px;line-height:1.25}
+  .pg-today .qstrip .qg>h2{flex:none;align-self:center;margin:0;padding:0 4px 0 2px;max-width:84px;line-height:1.25;scroll-snap-align:start}   /* snap to the label so "Needs you now" stays in view */
   .pg-today .qstrip .none{flex:none;align-self:center;margin:0 8px 0 0;font-size:13px}
   .pg-today .qstrip .qrow{flex:none;width:210px;min-height:66px;align-items:flex-start;background:var(--surface);box-shadow:var(--shadow)}
   .pg-today .qstrip .qrow .qdot{margin-top:6px}
-  .pg-today .qstrip .qrow .s{white-space:normal}
+  .pg-today .qstrip .qrow .s,.pg-today .qstrip .qrow .st{white-space:normal}
   .pg-today .qstrip .qrow[aria-current="true"]{box-shadow:0 0 0 2px var(--accent)}
   .pg-today .qstrip .qtags{display:none}
   .pg-today .qrest{gap:6px}
@@ -645,6 +645,10 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
   .pg-today .dtools{width:100%;margin-left:-12px}
   .pg-today .track{margin:14px 8px 0}
   .pg-today .tact .btn{width:100%}
+}
+@media (max-width:519px){   /* a due chip goes under its step title instead of squeezing it */
+  .pg-today .step:has(.vdue){grid-template-columns:26px minmax(0,1fr)}
+  .pg-today .step:has(.vdue) .w{grid-column:2;justify-self:start;text-align:left}
 }
 /* ===== /page: today ===== */
 
