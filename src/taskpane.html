@@ -15,7 +15,7 @@
 :root{
   color-scheme:light;
   --bg:#F3F4F1;--surface:#FFFFFF;--surface2:#E9EBE6;--surface3:#F7F8F5;
-  --ink:#1B211F;--muted:#66706B;--faint:#A3ABA6;--line:#E2E5DF;
+  --ink:#1B211F;--muted:#616B66;--faint:#A3ABA6;--line:#E2E5DF;
   --accent:#1E6B59;--accent-ink:#FFFFFF;--accent-soft:#DDEDE6;
   --ok:#1E6B59;--ok-soft:#DDEDE6;--warn:#8F5400;--warn-soft:#FAE9CF;
   --bad:#B3261E;--bad-ink:#FFFFFF;--bad-soft:#F9DCD9;--info:#3D5E78;--info-soft:#E3EAF0;
@@ -533,7 +533,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
   .pg-today .qstrip .qrow[aria-current="true"]{background:var(--surface);box-shadow:var(--shadow)}
 }
 .pg-today .qg h2{margin:0 0 4px 12px}
-.pg-today .qg .none{margin:0 12px;color:var(--faint);font-size:14px}
+.pg-today .qg .none{margin:0 12px;color:var(--muted);font-size:14px}
 .pg-today .qfold>summary{list-style:none;cursor:pointer;border-radius:10px}
 .pg-today .qfold>summary::-webkit-details-marker{display:none}
 .pg-today .qfold>summary h2{display:flex;gap:6px;align-items:center;min-height:32px;margin-bottom:0}
@@ -4285,7 +4285,8 @@ function tdFacts(r){
   const clin = `${prov ? `<span class="pdot" style="background:${provColor(prov)}" aria-hidden="true"></span>${esc(prov)}` : 'Not set'}${p ? ' · ' + (p.coverage ? esc(p.coverage) : tag('warn', 'MD/NP not set')) : ''}`;
   const proto = !p ? 'Not on the tracker' : i.needsProto ? tag('bad', p.protoExp ? (p.protoExp < T ? 'Expired ' : 'Expires ') + fmtD(p.protoExp) : 'No protocol date') : `Protocol through ${fmtD(p.protoExp)}`;
   const madrs = !p ? '' : i.needsMadrs ? `${tag('bad', 'MADRS due')} auth ${p.authExp < T ? 'expired' : 'expires'} ${fmtD(p.authExp)}` : `${p.authExp ? 'Auth through ' + fmtD(p.authExp) : 'No auth date'}${p.lastMadrs ? ' · last MADRS ' + fmtD(p.lastMadrs) : ''}`;
-  const cov = `${p?.insurance ? esc(p.insurance) : ''}${benHTML(a.mrn) || (p?.insurance ? '' : '<span class="muted">No Sohar check on file</span>')}`;
+  const ben = benHTML(a.mrn);
+  const cov = `${p?.insurance ? esc(p.insurance) : ''}${p?.insurance && ben ? ' · ' : ''}${ben || (p?.insurance ? '' : '<span class="muted">No Sohar check on file</span>')}`;
   return factsDL([['Clinician', clin], ['Medication', a.active ? tdMed(i, v) : ''], ['Consent & protocol', proto], ['MADRS / auth', madrs], ['Booked', tdBooked(i)], ['Coverage', cov]]);
 }
 // Right column once final vitals are due and the patient isn't discharged yet.
