@@ -961,12 +961,29 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
   .pg-settings .set-save{padding:10px 12px;border-radius:12px}
 }
 /* ===== /page: settings ===== */
+.badText{color:var(--bad);font-weight:500}
+.pg-today .rems-close{margin-top:14px}
+.pg-today .rems-close .task{margin-bottom:6px}
+.pg-reports .card{margin-bottom:16px}
+.pg-reports .acc-bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between}
+.pg-reports .acc-filters{display:flex;flex-wrap:wrap;gap:12px}
+.pg-reports .acc-f{display:flex;flex-direction:column;gap:6px;min-width:190px;margin:0}
+.pg-reports .acc-f .lbl{margin:0}
+.pg-reports .acc-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:auto;justify-content:flex-end}
+.pg-reports .acc-tiles{margin-top:18px}
+.pg-reports .acc-note{margin:14px 0 0}
+.pg-reports .acc-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;margin-bottom:12px}
+.pg-reports .acc-h h3{margin:0}
+.pg-reports .acc-s{font-size:12px;color:var(--muted);font-weight:400}
+.pg-reports .acc-moves>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--accent);font-weight:500;font-size:14px}
+@media (max-width:899px){ .pg-reports .acc-f{min-width:0;flex:1 1 150px} .pg-reports .acc-tools{width:100%;margin-left:0;justify-content:flex-start} }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <input type="file" id="apptFile" accept=".xls,.xlsx,.csv" hidden>
 <input type="file" id="benFile" accept=".csv,.xlsx,.xls" hidden>
+<input type="file" id="remsFile" accept=".xls,.xlsx,.csv" hidden>
 <div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" aria-live="polite"></div>
 <div id="busy" hidden><div class="spin"></div><span id="busyText">Working…</span></div>
@@ -1302,11 +1319,12 @@ function OfficeStore(){
         for (const x of Object.values(found)){ x.b = x.t.getDataBodyRange(); x.b.load('rowCount,columnCount'); }
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
-        const pw = wss.items.find(w => w.name === PROF_SHEET);
-        let hr = null, rr = null, br = null, pr = null;
+        const pw = wss.items.find(w => w.name === PROF_SHEET), rw = wss.items.find(w => w.name === REMS_SHEET);
+        let hr = null, rr = null, br = null, pr = null, rmr = null;
         if (found.daily){ hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); }
         if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
         if (pw){ pr = pw.getRange('A1:E500'); pr.load('values'); }
+        if (rw){ rmr = rw.getUsedRangeOrNullObject(true); rmr.load('values'); }
         if (bo){ br = bo.getRange('A1:Z200'); br.load('values'); besseSheet = bo.name; }
         await ctx.sync();
         const tables = {};
@@ -1316,8 +1334,23 @@ function OfficeStore(){
           tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
         }
         const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [] };
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [] };
       }));
+    },
+    // REMS uploads (Document Management report) → hidden "ESK REMS Uploads" sheet, upsert by Doc Nbr. Plain text cells, not a table.
+    async upsertRems(rows){
+      if (!rows.length) return { added: 0, updated: 0 };
+      return Excel.run(async ctx => {
+        const W = REMS_COLS.length, txt = n => Array.from({ length: n }, () => Array(W).fill('@'));
+        let ws = ctx.workbook.worksheets.getItemOrNullObject(REMS_SHEET); await ctx.sync();
+        if (ws.isNullObject){ ws = ctx.workbook.worksheets.add(REMS_SHEET); ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+        const u = ws.getUsedRangeOrNullObject(true); u.load('values'); await ctx.sync();
+        const cur = u.isNullObject ? [] : parseRemsRows(u.values).map(r => [r.nbr, r.type, r.mrn, r.las, r.created, r.by, r.scanned, r.scanBy, r.posted, r.postBy, r.imported]);
+        const m = mergeRems(cur, rows), all = [REMS_COLS, ...m.values];
+        if (!u.isNullObject) u.clear(Excel.ClearApplyTo.contents);
+        for (let s0 = 0; s0 < all.length; s0 += CH){ const part = all.slice(s0, s0 + CH); const r = ws.getRange('A1').getOffsetRange(s0, 0).getResizedRange(part.length - 1, W - 1); r.numberFormat = txt(part.length); r.values = part; await ctx.sync(); }
+        return { added: m.added, updated: m.updated };
+      });
     },
     // Write one person's row on the hidden profiles sheet, creating the sheet the first time. Plain cells, not a table,
     // so it never sets off the table watcher.
@@ -1566,6 +1599,11 @@ function DemoStore(){
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = {};
+  const rems = [];
+  { let n = 0; for (const a of apVals){ if (a[5] !== 'Kept' || a[2] >= T) continue; n++; if (n % 7 === 3) continue; const late = n % 9 === 4 ? 1 : 0, w = isoOf(a[2] + late) + ' 1' + (n % 6) + ':' + String(10 + n % 50).padStart(2, '0');
+    rems.push([String(1550000 + n), 'REMS PT Monitoring Form', '', a[1], w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); }
+    for (const r of inv){ if (!r[12] || r[12] >= T || ++n % 8 === 0) continue; const w = isoOf(r[12]) + ' 15:' + String(n % 60).padStart(2, '0'); rems.push([String(1550000 + n), 'REMS PT Monitoring Form', String(r[2]), '', w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); } }
+  docs.eskRemsCov = [{ from: T - 40, to: T - 1, day: isoOf(T - 1), at: new Date(Date.now() - 864e5).toISOString(), by: 'Taylor R.', n: rems.length, how: 'name' }];
   const ref = { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] };
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
   { const bd = isoOf(T - 3), b = (mrn, name, pay, cp, co, dr, ds, orr, os, st) => [String(mrn), name, '', pay, 'PPO', 'In network', 'Individual', '2026-01-01', '2026-12-31', cp, co, '500', dr, ds, '4000', orr, os, '', st, bd, 'Verification', bd + ' 09:00'];   // fake Sohar benefits
@@ -1575,7 +1613,7 @@ function DemoStore(){
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: JSON.parse(JSON.stringify(ref)),
-        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) } };
+        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]) };
     },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
@@ -1592,6 +1630,7 @@ function DemoStore(){
     async addMany(k, list){ for (const ch of list) await this.add(k, ch); },
     async updateMany(k, items){ const done = []; for (const x of items){ try { await this.update(k, x.r, x.snap, x.changes); done.push(x); } catch {} } return done; },
     async setDropdown(colHeader, refHeader, values){ ref[norm(refHeader)] = values.slice(); await new Promise(r => setTimeout(r, 150)); return { source: `REF › ${refHeader}` }; },
+    async upsertRems(rows){ const m = mergeRems(rems, rows); rems.splice(0, rems.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { added: m.added, updated: m.updated }; },
     async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
@@ -2579,7 +2618,7 @@ function render(){
   app.innerHTML = `<div class="app" data-mode="${S.mode}">
     <aside class="rail">
       ${brand}
-      <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('settings', 1)}</nav>
+      <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav>
       <div class="sec">
         ${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="ni rt" data-act="refresh" title="Read the workbook again">Refresh</button>
@@ -4262,6 +4301,7 @@ function tdAlerts(i){
   if (i.inf.mg === 56 && !a.isStart && !i.adminKit) add('dose', 'warn', '<b>56 mg.</b> Verify the dose before you give it.');
   const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1);
   if (adj) add('b2b', 'bad', `<b>Back-to-back</b> with the visit on ${fmtD(adj.date, 'dow')}.`);
+  { const ro = remsOf(a.key); if (ro && ro.status === 'missing') add(null, 'bad', '<b>No REMS monitoring form in the chart.</b> Upload it to REMS and the chart before you close, then import the report again.', '<button class="btn sm" data-act="upRems">Import DM report</button>'); }
   if (i.noKit && !i.adminKit && a.active) add(null, 'bad', `<b>No kit on hand</b> for this ${esc(PH_LABEL[i.inf.pharm] || '')} visit.`, `<button class="btn sm" data-act="goInv" data-v="${i.inf.pharm === 'BESSE' ? 'stock' : 'order'}">Open Meds</button>`);
   return L.length ? `<div class="talerts">${L.join('')}</div>` : '';
 }
@@ -4328,7 +4368,7 @@ function tdQueue(m, sel){
     ${m.wait.length ? fold('td:nr', `Not roomed yet · ${m.wait.length}`, m.wait, window.innerWidth >= 1180 || !onN || sel?.grp === 'wait') : grp('Not roomed yet · 0', [], 'Everyone has been roomed')}
     ${m.done.length ? fold('td:done', `Done today · ${m.done.length}`, m.done, sel?.grp === 'done', `<span class="qmore">Show ${m.done.length} done</span>`) : ''}
     ${m.off.length ? fold('td:off', `Not coming · ${m.off.length}`, m.off, sel?.grp === 'off') : ''}
-    ${cancelledHTML(m.items)}</div>
+    ${remsCloseHTML(m)}${cancelledHTML(m.items)}</div>
   </div>`;
 }
 function tdSub(m){
@@ -4336,7 +4376,7 @@ function tdSub(m){
   const over = m.need.filter(r => r.rank === 0).length, given = m.act.filter(i => i.adminKit).length, docd = m.act.filter(i => docState(i).done).length;
   const check = m.act.filter(i => itemState(i) === 'check').length, noKit = m.act.filter(i => itemState(i) === 'bad').length;
   return [`${m.need.length + m.chair.length} in chair`, over ? `<strong>${over} overdue for vitals</strong>` : '', `${m.wait.length} not roomed yet`].filter(Boolean).join(', ')
-    + ` · ${given}/${n} given · ${docd}/${n} documented${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
+    + ` · ${given}/${n} given · ${docd}/${n} documented${remsToday().imported && remsToday().opps.length ? ` · ${remsToday().tot.missing ? `<strong>${remsToday().tot.missing} REMS form${remsToday().tot.missing > 1 ? 's' : ''} not in chart</strong>` : 'REMS forms in chart'}` : ''}${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
 }
 const ACT_TODAY = {
   tSel: el => { const x0 = $('.pg-today .qstrip')?.scrollLeft || 0;
@@ -4356,7 +4396,7 @@ PAGES.today = {
   tools: () => { S.day = todaySerial(); const n = todayModel(S.day).filter(i => i.a.active).length;
     return `<button class="btn" data-act="bays" ${n ? '' : 'disabled'} title="Plan bays and print the Vitals Tracker">Bays &amp; day sheet</button><button class="btn" data-act="copyPull" ${n ? '' : 'disabled'} title="Copy today's kits as a table">Copy med list</button>`; },
   html: () => todayHTML(),
-  badge: () => { const n = tdModel().need.length; return n ? { n, tone: 'bad' } : null; },
+  badge: () => { const n = tdModel().need.length + remsMissToday(); return n ? { n, tone: 'bad' } : null; },
 };
 // Live tick: re-render when someone changes group or next step (vitals come due, a patient drops off On site). Never mid-typing.
 TICKS.push(() => {
@@ -4827,6 +4867,240 @@ Object.assign(PAGES.access, {
 });
 // ===== /page: access =====
 
+// ---------- REMS monitoring forms in the chart: NextGen "Patient By Document Type" report → hidden "ESK REMS Uploads" sheet ----------
+// Every kept visit, and every kit marked administered, needs a REMS PT Monitoring Form scanned into the chart the same day.
+// Columns are found by header name, never by position. Patient names are turned into LASFIR on import; full names are never stored.
+// Matching: an MRN column when the report has one, else LASFIR from Pat Name, else (names blank) a count per day.
+// "In the chart" time = Doc Crt Dt (Scnd Date when that's blank). Owner = Treating Technician on that day's administered kit.
+const REMS_SHEET = 'ESK REMS Uploads', REMS_COLS = ['Doc Nbr', 'Doc Type', 'MRN', 'Patient', 'Created', 'Created By', 'Scanned', 'Scanned By', 'Posted', 'Posted By', 'Imported'];
+const REMS_HDR = { doctype: ['doctype', 'documenttype'], docnbr: ['docnbr', 'docnumber', 'documentnbr', 'documentnumber', 'docid'], patient: ['patname', 'patientname', 'patient', 'name'],
+  mrn: ['mrn', 'medrecnbr', 'medrecno', 'medrec', 'medicalrecordnumber', 'mdrc', 'patmrn', 'personnbr', 'chartnbr'], created: ['doccrtdt', 'doccrtdate', 'doccreatedate', 'createdate', 'created'],
+  createdby: ['doccrtby', 'createdby'], scanned: ['scnddate', 'scandate', 'scanneddate', 'scanned'], scannedby: ['scndby', 'scanby', 'scannedby'], posted: ['postdate', 'posted'], postedby: ['pstdby', 'postedby'] };
+const remsMon = t => /monitor/i.test(String(t ?? ''));
+// "Smith, Jane" → SMIJAN; "Jane Smith" → SMIJAN; a one-word name (already LASFIR on the tracker) is kept as is.
+function lasfirOf(name){
+  const s = String(name ?? '').trim(), L = x => String(x ?? '').toUpperCase().replace(/[^A-Z]/g, ''); if (!s) return '';
+  if (s.includes(',')){ const [last, rest] = s.split(','); return L(last).slice(0, 3) + L((rest || '').trim().split(/\s+/)[0]).slice(0, 3); }
+  const w = s.split(/\s+/); return w.length === 1 ? L(w[0]) : L(w[w.length - 1]).slice(0, 3) + L(w[0]).slice(0, 3);
+}
+// "10/07/2026 12:13 P" (NextGen), "10/7/26 12:13 PM", "2026-10-07 12:13" or an Excel serial → "2026-10-07 12:13" ('' when unreadable).
+function remsWhen(v){
+  if (v == null || v === '') return '';
+  let d = null, m = null;
+  if (typeof v === 'number'){ d = toSerial(v); m = Math.round((v % 1) * 1440) % 1440; }
+  else { const s = String(v).trim(); d = toSerial(s); const t = s.match(/(\d{1,2}):(\d{2})\s*([AP])?/i);
+    if (t){ let h = +t[1]; if (t[3]){ if (/p/i.test(t[3]) && h < 12) h += 12; if (/a/i.test(t[3]) && h === 12) h = 0; } m = h * 60 + +t[2]; } }
+  if (d == null) return ''; const p = n => String(n).padStart(2, '0');
+  return isoOf(d) + (m != null ? ` ${p(Math.floor(m / 60))}:${p(m % 60)}` : '');
+}
+const remsDay = w => fromIso(String(w || '').slice(0, 10));
+// aoa = sheet_to_json(header:1). Returns { rows: [REMS_COLS text], from, to, hasMrn, named, n } or null when it isn't this report.
+function parseRemsReport(aoa, now){
+  const hi = aoa.findIndex(r => (r || []).some(c => REMS_HDR.doctype.includes(norm(c)))); if (hi < 0) return null;
+  const hn = aoa[hi].map(norm), col = {}; for (const [k, al] of Object.entries(REMS_HDR)){ const i = hn.findIndex(h => al.includes(h)); if (i >= 0) col[k] = i; }
+  if (col.created == null && col.scanned == null) return null;
+  let from = null, to = null;
+  for (const r of aoa.slice(0, hi)) for (const c of r || []){ const m = String(c ?? '').match(/from\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+to\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i); if (m){ from = toSerial(m[1]); to = toSerial(m[2]); } }
+  const g = (r, k) => col[k] == null ? '' : String(r[col[k]] ?? '').trim();
+  const rows = [], seen = new Set(); let named = 0;
+  for (const r of aoa.slice(hi + 1)){
+    if (!r) continue; const type = g(r, 'doctype'); if (!type || REMS_HDR.doctype.includes(norm(type))) continue;   // blank rows, footers, repeated headers
+    const cr = remsWhen(col.created != null ? r[col.created] : ''), sc = remsWhen(col.scanned != null ? r[col.scanned] : ''); if (!cr && !sc) continue;
+    const mrn = mrnKey(g(r, 'mrn')), las = lasfirOf(g(r, 'patient')); if (mrn || las) named++;
+    const nbr = g(r, 'docnbr') || ['x', type, cr || sc, g(r, 'scannedby'), mrn || las].join('|');
+    if (seen.has(nbr)) continue; seen.add(nbr);
+    rows.push([nbr, type, mrn, las, cr, g(r, 'createdby'), sc, g(r, 'scannedby'), remsWhen(col.posted != null ? r[col.posted] : ''), g(r, 'postedby'), now]);
+  }
+  const days = rows.map(x => remsDay(x[4] || x[6])).filter(d => d != null);
+  if (from == null && days.length){ from = Math.min(...days); to = Math.max(...days); }
+  return { rows, from, to, hasMrn: col.mrn != null, hasName: col.patient != null, named, n: rows.length, mon: rows.filter(x => remsMon(x[1])).length };
+}
+// Sheet values (header row first) → records. Unknown or reordered columns are found by header.
+function parseRemsRows(values){
+  if (!values || values.length < 2) return [];
+  const hn = values[0].map(norm), ix = REMS_COLS.map(c => hn.indexOf(norm(c)));
+  return values.slice(1).filter(v => String(v[ix[0]] ?? '').trim()).map(v => { const g = i => ix[i] < 0 ? '' : String(v[ix[i]] ?? '').trim();
+    const created = g(4), scanned = g(6); return { nbr: g(0), type: g(1), mrn: mrnKey(g(2)), las: g(3).toUpperCase(), created, by: g(5), scanned, scanBy: g(7), posted: g(8), postBy: g(9), imported: g(10), day: remsDay(created || scanned), mon: remsMon(g(1)) }; });
+}
+// Upsert by Doc Nbr: new rows replace old ones with the same number, others are kept. cur and rows are REMS_COLS arrays.
+function mergeRems(cur, rows){
+  const out = cur.map(r => r.slice()), at = new Map(out.map((r, i) => [String(r[0]), i])); let added = 0, updated = 0;
+  for (const r of rows){ const i = at.get(String(r[0])); if (i == null){ at.set(String(r[0]), out.length); out.push(r.slice()); added++; } else { out[i] = r.slice(); updated++; } }
+  return { values: out, added, updated };
+}
+
+// Visits that need a monitoring form, from → to: kept appointments plus administered kits, one per patient per day.
+function remsOpps(from, to){
+  const m = new Map(), add = (mrn, date) => { const k = mrn + '|' + date; return m.get(k) || (m.set(k, { key: k, mrn, date, appt: null, kit: null, las: new Set() }), m.get(k)); };
+  for (const a of S.A) if (a.date >= from && a.date <= to && !a.cancelled && /kept/i.test(a.status)){ const o = add(a.mrn, a.date); if (!o.appt) o.appt = a; }
+  for (const k of S.K) if (k.administered && k.mrn && k.adminDate != null && k.adminDate >= from && k.adminDate <= to){ const o = add(k.mrn, k.adminDate); if (!o.kit) o.kit = k; }
+  for (const o of m.values()){
+    if (!o.appt) o.appt = S.A.find(a => a.mrn === o.mrn && a.date === o.date && !a.cancelled) || null;
+    if (!o.kit) o.kit = S.K.find(k => k.administered && k.mrn === o.mrn && k.adminDate === o.date) || null;
+    for (const n of [S.byMrn.get(o.mrn)?.name, o.appt?.patient]){ const c = lasfirOf(n); if (c) o.las.add(c); }
+    o.owner = String(o.kit?.tech ?? '').trim().replace(/\s+/g, ' ') || 'Not recorded';
+    o.time = o.appt?.time ?? null;
+  }
+  return [...m.values()].sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+}
+// A day counts as checked once a report covering it was imported on or after that day.
+const remsCovered = d => (S.remsCov || []).some(c => c.from <= d && d <= Math.min(c.to, fromIso(c.day) ?? c.to));
+const remsLastImport = () => (S.remsCov || []).reduce((b, c) => !b || String(c.at) > String(b.at) ? c : b, null);
+// status: same | late | count (an unnamed form that day covers it) | missing | unchecked (no report covers that day yet)
+function remsModel(from, to){
+  const opps = remsOpps(from, to), recs = (S.rems || []).filter(r => r.mon && r.day != null && r.day >= from);
+  const named = recs.filter(r => r.mrn || r.las), unnamed = recs.filter(r => !r.mrn && !r.las), used = new Set();
+  const fits = (r, o) => r.mrn ? r.mrn === o.mrn : o.las.has(r.las);
+  for (const o of opps){ const r = named.find(r => !used.has(r) && r.day === o.date && fits(r, o)); if (r){ used.add(r); o.status = 'same'; o.rec = r; } }
+  for (const o of opps){ if (o.rec) continue; const r = named.filter(r => !used.has(r) && r.day > o.date && r.day <= o.date + 30 && fits(r, o)).sort((a, b) => a.day - b.day)[0];
+    if (r){ used.add(r); o.status = 'late'; o.rec = r; o.lateDays = r.day - o.date; } }
+  const byDay = new Map(); for (const o of opps){ const d = byDay.get(o.date) || (byDay.set(o.date, { date: o.date, opps: [], unnamed: 0 }), byDay.get(o.date)); d.opps.push(o); }
+  for (const r of unnamed) if (byDay.has(r.day)) byDay.get(r.day).unnamed++;
+  for (const d of byDay.values()){ const open = d.opps.filter(o => !o.rec); const cov = remsCovered(d.date);
+    for (const o of open) o.status = !cov ? 'unchecked' : d.unnamed >= open.length ? 'count' : 'missing';
+    d.short = cov ? Math.max(0, open.length - d.unnamed) : 0; }
+  const T = todaySerial(); for (const o of opps) if (o.status === 'missing') o.open = T - o.date;
+  const sum = L => { const c = { n: 0, same: 0, late: 0, count: 0, missing: 0, unchecked: 0 }; for (const o of L){ c[o.status]++; if (o.status !== 'unchecked') c.n++; } c.rate = c.n ? (c.same + c.count) / c.n : null; return c; };
+  const owners = new Map(); for (const o of opps){ if (!owners.has(o.owner)) owners.set(o.owner, []); owners.get(o.owner).push(o); }
+  return { from, to, opps, tot: sum(opps), days: [...byDay.values()].sort((a, b) => a.date - b.date), unnamed: unnamed.filter(r => r.day <= to).length,
+    owners: [...owners.entries()].map(([name, L]) => ({ name, L, c: sum(L) })).sort((a, b) => b.c.missing - a.c.missing || (a.c.rate ?? 1) - (b.c.rate ?? 1) || a.name.localeCompare(b.name)), sum };
+}
+// Today's closing check, one model per render.
+function remsToday(){ if (!S._remsT){ const T = todaySerial(); S._remsT = { ...remsModel(T, T), imported: (S.remsCov || []).some(c => fromIso(c.day) === T && c.from <= T && T <= c.to) }; queueMicrotask(() => { S._remsT = null; }); } return S._remsT; }
+const remsLabel = o => ({ same: 'Same day', late: `Late (${o.lateDays} day${o.lateDays === 1 ? '' : 's'})`, count: 'Same day (count only)', missing: 'Outstanding', unchecked: 'Not checked yet' })[o.status];
+const remsTone = s => ({ same: 'ok', count: 'ok', late: 'warn', missing: 'bad' })[s] || '';
+const pctTxt = r => r == null ? '—' : Math.round(r * 100) + '%';
+
+async function readRemsFile(f){
+  if (!(await loadXLSX())) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
+  let parsed = null;
+  try { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    for (const n of wb.SheetNames){ parsed = parseRemsReport(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }), nowText()); if (parsed) break; } }
+  catch (e){ console.error(e); return toast('bad', 'That file couldn’t be read. Use the NextGen Patient By Document Type report, unchanged.'); }
+  if (!parsed) return toast('bad', 'This doesn’t look like the Document Management report (no Doc Type and Doc Crt Dt / Scnd Date columns).');
+  if (!parsed.n) return toast('warn', 'The report has no documents in it.');
+  S.remsUp = { ...parsed, file: f.name };
+  const T = todaySerial(), m = parsed.from != null ? remsModelPreview(parsed) : null;
+  const how = parsed.hasMrn ? 'by MRN' : parsed.named ? 'by LASFIR from Pat Name' : null;
+  openModal(`<h2>Import the REMS upload check?</h2>
+    <div class="small muted">${esc(f.name)}${parsed.from != null ? ` · ${fmtD(parsed.from, 'full')} to ${fmtD(parsed.to, 'full')}` : ''}</div>
+    <div class="msg info" style="margin-top:8px"><div>${parsed.n} document${parsed.n === 1 ? '' : 's'}, <b>${parsed.mon} REMS monitoring form${parsed.mon === 1 ? '' : 's'}</b>. ${how ? `Matched to visits ${how}.` : ''}</div></div>
+    ${!how ? `<div class="msg warn" style="margin-top:8px"><div><b>No names or MRNs in this report.</b> Forms can only be counted per day, so a shortfall shows which day is short, not which patient. Add an MRN column to the report to tie each form to its visit.</div></div>`
+      : parsed.named < parsed.n ? `<div class="msg warn" style="margin-top:8px"><div>${parsed.n - parsed.named} row${parsed.n - parsed.named === 1 ? ' has' : 's have'} no name or MRN; they're counted per day only.</div></div>` : ''}
+    ${m ? `<div class="small" style="margin-top:8px">${m.tot.n} visit${m.tot.n === 1 ? '' : 's'} in that range: <b>${m.tot.same + m.tot.count} same day</b>, ${m.tot.late} late, <b class="${m.tot.missing ? 'badText' : ''}">${m.tot.missing} outstanding</b>.</div>` : ''}
+    ${parsed.to != null && parsed.to >= T ? '' : '<div class="small muted" style="margin-top:8px">This report doesn’t include today.</div>'}
+    <div class="small muted" style="margin-top:8px">Saved on the hidden “${REMS_SHEET}” sheet with LASFIR only (no full names). Rows with the same Doc Nbr are replaced.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="remsApply">Import ${parsed.n}</button></div>`);
+}
+// What the check would say with this report added (nothing saved yet).
+function remsModelPreview(p){
+  const keep = { rems: S.rems, cov: S.remsCov };
+  try { const add = parseRemsRows([REMS_COLS, ...p.rows]), ids = new Set(add.map(r => r.nbr));
+    S.rems = [...(S.rems || []).filter(r => !ids.has(r.nbr)), ...add]; S.remsCov = [...(S.remsCov || []), { from: p.from, to: p.to, day: isoOf(todaySerial()) }];
+    return remsModel(p.from, Math.min(p.to, todaySerial())); }
+  finally { S.rems = keep.rems; S.remsCov = keep.cov; }
+}
+async function remsApply(){
+  const p = S.remsUp; if (!p) return; closeModal();
+  const cov = { from: p.from, to: p.to, day: isoOf(todaySerial()), at: new Date().toISOString(), by: CFG.me || '', n: p.n, how: p.hasMrn ? 'mrn' : p.named ? 'name' : 'count' };
+  const ok = await write('Saving the REMS check…', async () => { await S.store.upsertRems(p.rows); S.remsCov = [...(S.remsCov || []), cov].slice(-200); await S.store.setDoc('eskRemsCov', S.remsCov); },
+    () => { const t = remsToday(); return t.tot.n + t.tot.unchecked ? `REMS check saved. Today: ${t.tot.same + t.tot.count} of ${t.tot.n} in the chart${t.tot.missing ? `, <b>${t.tot.missing} outstanding</b>` : ''}.` : `REMS check saved (${p.n} documents).`; });
+  if (ok) S.remsUp = null;
+}
+
+// Today › closing: after the Tx reports, import the report and clear anything outstanding before leaving.
+function remsCloseHTML(m){
+  const t = remsToday(); if (!t.opps.length) return '';
+  const imp = `<button class="btn sm${t.imported ? ' ghost' : ''}" data-act="upRems">${t.imported ? 'Import again' : 'Import DM report'}</button>`;
+  const allOut = m.act.filter(i => i.adminKit).every(i => visitGet(i.a.key)?.out);
+  if (!t.imported) return `<div class="qg rems-close"><h2>Closing · REMS forms</h2>${taskRow({ t: 'Check REMS monitoring forms in the chart', d: `${t.opps.length} visit${t.opps.length === 1 ? '' : 's'} today. After the Tx reports, import the NextGen Document Management report.`, btn: imp, tone: allOut ? 'warn' : '' })}</div>`;
+  const c = t.tot, miss = t.opps.filter(o => o.status === 'missing'), cnt = t.opps.filter(o => o.status === 'count');
+  const head = taskRow({ t: c.missing ? `${c.missing} REMS monitoring form${c.missing === 1 ? '' : 's'} not in the chart` : 'REMS monitoring forms in the chart', d: `${c.same + c.count} of ${c.n} uploaded today${cnt.length ? ` (${cnt.length} by count only: the report has no name or MRN)` : ''}`, btn: imp, tone: c.missing ? 'bad' : '', done: !c.missing });
+  const rows = miss.map(o => `<button class="qrow" data-act="tSel" data-k="${esc(o.appt?.key || '')}"${o.appt ? '' : ' disabled'}><span class="qdot late" aria-hidden="true"></span><span class="who"><span class="t">${esc(nm(o.mrn))}</span><span class="s">${o.time != null ? fmtT(o.time) + ' · ' : ''}${esc(o.owner)}</span></span><span class="tags">${tag('bad', 'No REMS form')}</span></button>`).join('');
+  const day = t.days[0], shortTxt = day && !t.opps.some(o => o.rec) && miss.length && day.unnamed ? `<p class="none">${day.unnamed} unnamed form${day.unnamed === 1 ? '' : 's'} today for ${t.opps.length} visits. Add an MRN column to the report to see which visit is short.</p>` : '';
+  return `<div class="qg rems-close"><h2>Closing · REMS forms</h2>${head}${rows}${shortTxt}</div>`;
+}
+const remsMissToday = () => remsToday().tot.missing;
+const remsOf = key => remsToday().opps.find(o => o.appt?.key === key) || null;
+
+// ===== page: reports =====
+// Reports › REMS uploads: same-day rate, outstanding forms and who owns them (Treating Technician on the administered kit).
+// Kept off Access on purpose; per-person numbers live only here.
+const ACT_REPORTS = {};
+PAGES.reports = {
+  label: 'Reports',
+  title: () => 'Reports <span>REMS monitoring forms in the chart</span>',
+  sub: () => { const m = repM(); return m.tot.n ? `${pctTxt(m.tot.rate)} same day · ${m.tot.missing} outstanding · ${fmtD(m.from, 'full')} to ${fmtD(m.to, 'full')}` : `${fmtD(m.from, 'full')} to ${fmtD(m.to, 'full')}`; },
+  tools: () => '<button class="btn" data-act="upRems" title="NextGen Document Management: Patient By Document Type">Import DM report</button>',
+  html: () => reportsHTML(),
+  badge: () => null,
+};
+function repRange(){
+  const R = S.rep = S.rep || { r: 'month', owner: '' }, T = todaySerial(), w0 = T - dowOf(T), d = sDate(T), m0 = ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+  const pm = sDate(m0 - 1), lm0 = ymd(pm.getUTCFullYear(), pm.getUTCMonth() + 1, 1);
+  const r = { week: [w0, T], lastweek: [w0 - 7, w0 - 1], month: [m0, T], lastmonth: [lm0, m0 - 1], d30: [T - 29, T], d90: [T - 89, T] }[R.r];
+  if (r) return r;
+  const f = fromIso(R.from) ?? m0, t = fromIso(R.to) ?? T; return [Math.min(f, t), Math.max(f, t)];
+}
+function repM(){ if (!S._repM){ const [f, t] = repRange(); S._repM = remsModel(f, t); queueMicrotask(() => { S._repM = null; }); } return S._repM; }
+function reportsHTML(){
+  const R = S.rep, m = repM(), own = R.owner && m.owners.find(o => o.name === R.owner) ? R.owner : '';
+  const L = own ? m.owners.find(o => o.name === own).L : m.opps, c = own ? m.sum(L) : m.tot;
+  const tile = (n, l, tone) => `<div class="tile${tone ? ' ' + tone : ''}"><b>${n}</b><span>${l}</span></div>`;
+  const hd = (title, sub, right) => `<div class="acc-h"><h3>${title}</h3>${sub ? `<span class="acc-s">${sub}</span>` : ''}${right ? `<span class="grow"></span>${right}` : ''}</div>`;
+  const ranges = [['week', 'This week (Sun–Sat)'], ['lastweek', 'Last week'], ['month', 'This month'], ['lastmonth', 'Last month'], ['d30', 'Last 30 days'], ['d90', 'Last 90 days'], ['custom', 'Custom…']];
+  const li = remsLastImport();
+  const bar = `<section class="card acc-head"><div class="acc-bar"><div class="acc-filters">
+      <label class="acc-f"><span class="lbl">Dates</span><select class="fld" data-repv="r">${ranges.map(([v, l]) => `<option value="${v}" ${R.r === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${R.r === 'custom' ? `<label class="acc-f"><span class="lbl">From</span><input type="date" class="fld" data-repv="from" value="${isoOf(m.from)}"></label><label class="acc-f"><span class="lbl">To</span><input type="date" class="fld" data-repv="to" value="${isoOf(m.to)}"></label>` : ''}
+      <label class="acc-f"><span class="lbl">Team member</span><select class="fld" data-repv="owner"><option value="">Everyone</option>${m.owners.map(o => `<option ${own === o.name ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
+    </div><div class="acc-tools"><button class="btn ghost mute" data-act="repCopy" ${L.some(o => o.status === 'missing') ? '' : 'disabled'}>Copy outstanding</button><button class="btn ghost mute" data-act="repXlsx" ${L.length ? '' : 'disabled'}>Download…</button></div></div>
+    <div class="tiles acc-tiles">${tile(c.n, own ? `visits for ${esc(own)}` : 'visits checked')}${tile(pctTxt(c.rate), 'in the chart same day', c.rate == null ? '' : c.rate >= 0.95 ? 'ok' : 'warn')}${tile(c.late, 'uploaded late', c.late ? 'warn' : '')}${tile(c.missing, 'outstanding', c.missing ? 'bad' : 'ok')}${c.unchecked ? tile(c.unchecked, 'not checked yet') : ''}</div>
+    <p class="small muted acc-note">A visit = a kept appointment or a kit marked administered, one per patient per day. Same day = a REMS PT Monitoring Form created in the chart on the visit date. Owner = the Treating Technician on that day’s administered kit. ${li ? `Last import ${esc(li.at ? new Date(li.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : li.day)}${li.by ? ' by ' + esc(li.by) : ''}, covering ${fmtD(li.from)} to ${fmtD(li.to)}.` : 'No report imported yet.'}${m.unnamed ? ` ${m.unnamed} form${m.unnamed === 1 ? ' has' : 's have'} no name or MRN and ${m.unnamed === 1 ? 'is' : 'are'} only counted per day (“count only”).` : ''}</p></section>`;
+  const row = o => `<tr><td>${fmtD(o.date, 'dow')}</td><td class="lbl">${esc(nm(o.mrn))}</td><td class="mono">${esc(o.mrn)}</td><td>${esc(o.owner)}</td><td>${tag(remsTone(o.status), remsLabel(o))}</td><td class="num">${o.status === 'missing' ? o.open + ' d' : o.rec ? esc((o.rec.created || o.rec.scanned).slice(5).replace('-', '/')) : ''}</td></tr>`;
+  const tbl = (rows, last) => `<div class="tw"><table class="t small wrap"><thead><tr><th>Visit</th><th>Patient</th><th>MRN</th><th>Owner</th><th>Status</th><th class="num">${last}</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
+  const miss = L.filter(o => o.status === 'missing'), late = L.filter(o => o.status === 'late');
+  const out = `<section class="card">${hd('Outstanding', 'no monitoring form in the chart yet: upload to REMS and the chart, then re-import')}${miss.length ? tbl(miss, 'Open') : '<p class="muted">Nothing outstanding in this range.</p>'}</section>`;
+  const team = `<section class="card">${hd('By team member', 'owner = Treating Technician on the administered kit')}<div class="tw"><table class="t small"><thead><tr><th>Team member</th><th class="num">Visits</th><th class="num">Same day</th><th class="num">Late</th><th class="num">Outstanding</th><th class="num">Same-day rate</th></tr></thead><tbody>
+    ${m.owners.filter(o => o.c.n).map(o => `<tr${own === o.name ? ' class="tot"' : ''}><td class="lbl"><button class="linkbtn" data-act="repOwner" data-o="${esc(o.name)}">${esc(o.name)}</button></td><td class="num">${o.c.n}</td><td class="num">${o.c.same + o.c.count}</td><td class="num ${o.c.late ? 'warnText' : 'muted'}">${o.c.late}</td><td class="num ${o.c.missing ? 'badText' : 'muted'}"><b>${o.c.missing}</b></td><td class="num">${pctTxt(o.c.rate)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No checked visits in this range.</td></tr>'}</tbody></table></div></section>`;
+  const fold = (id, h, body) => `<details class="card acc-moves" data-open="${id}" ${(S.open || {})[id] ? 'open' : ''}><summary><b>${h}</b></summary>${body}</details>`;
+  const days = m.days.filter(d => !own || d.opps.some(o => o.owner === own));
+  const byDay = `<div class="tw"><table class="t small"><thead><tr><th>Day</th><th class="num">Visits</th><th class="num">Same day</th><th class="num">Late</th><th class="num">Unnamed forms</th><th class="num">Outstanding</th></tr></thead><tbody>${days.map(d => { const x = m.sum(own ? d.opps.filter(o => o.owner === own) : d.opps);
+    return `<tr><td>${fmtD(d.date, 'dow')}</td><td class="num">${x.n + x.unchecked}</td><td class="num">${x.same + x.count}</td><td class="num">${x.late}</td><td class="num muted">${d.unnamed || ''}</td><td class="num ${x.missing ? 'badText' : 'muted'}">${x.unchecked ? 'not checked' : x.missing}</td></tr>`; }).join('')}</tbody></table></div>`;
+  return bar + out + team + (late.length ? fold('rep:late', `Uploaded late · ${late.length}`, tbl(late, 'In chart')) : '') + (days.length ? fold('rep:days', 'By day', byDay) : '') + (L.length ? fold('rep:all', `Every visit · ${L.length}`, tbl(L, 'In chart / open')) : '');
+}
+function repCopy(){
+  const R = S.rep, m = repM(), L = (R.owner ? m.opps.filter(o => o.owner === R.owner) : m.opps).filter(o => o.status === 'missing');
+  const rows = [['Visit', 'Patient', 'MRN', 'Owner', 'Days open'], ...L.map(o => [fmtD(o.date, 'full'), nm(o.mrn), o.mrn, o.owner, o.open])];
+  copyText(rows.map(r => r.join('\t')).join('\n'), `<table>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`).then(ok => toast(ok ? 'ok' : 'bad', ok ? `${L.length} outstanding copied.` : 'Couldn’t copy.'));
+}
+function repXlsxAsk(){
+  openModal(`<h2>Download the REMS upload report</h2><div class="small">One sheet per view: Summary, By team member, and every visit with its status.</div>
+    <div class="alert warn small" style="margin-top:8px"><p>The visit sheet has MRNs and short names. Keep the file in approved locations (OneDrive or SharePoint), not email or personal drives.</p></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="repXlsxGo">Download workbook</button></div>`);
+}
+async function repXlsx(){
+  if (!(await loadXLSX())) return toast('bad', 'Couldn’t load the Excel writer. Check the connection and try again.');
+  const m = repM(), wb = XLSX.utils.book_new(), p = r => r == null ? '' : Math.round(r * 1000) / 10;
+  const sh = { Summary: [['From', isoOf(m.from)], ['To', isoOf(m.to)], ['Visits checked', m.tot.n], ['Same day', m.tot.same + m.tot.count], ['Same day (count only)', m.tot.count], ['Late', m.tot.late], ['Outstanding', m.tot.missing], ['Not checked yet', m.tot.unchecked], ['Same-day rate %', p(m.tot.rate)]],
+    'By team member': [['Team member', 'Visits', 'Same day', 'Late', 'Outstanding', 'Same-day rate %'], ...m.owners.map(o => [o.name, o.c.n, o.c.same + o.c.count, o.c.late, o.c.missing, p(o.c.rate)])],
+    Visits: [['Visit date', 'Patient', 'MRN', 'Owner', 'Status', 'In chart', 'Doc Nbr', 'Days open'], ...m.opps.map(o => [isoOf(o.date), nm(o.mrn), o.mrn, o.owner, remsLabel(o), o.rec ? o.rec.created || o.rec.scanned : '', o.rec?.nbr || '', o.status === 'missing' ? o.open : ''])] };
+  for (const [n, rows] of Object.entries(sh)){ const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map((_, c) => ({ wch: Math.min(40, Math.max(10, ...rows.slice(0, 200).map(r => String(r[c] ?? '').length + 2))) })); XLSX.utils.book_append_sheet(wb, ws, n); }
+  const name = `REMS uploads - ${(CFG.clinic || 'clinic').replace(/[\\/:*?"<>|]/g, '')} - ${isoOf(m.from)} to ${isoOf(m.to)}.xlsx`;
+  const ok = downloadText(name, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(ok ? 'ok' : 'warn', ok ? `Downloaded ${esc(name)}.` : 'Download was blocked here. Try from the full-screen view or Excel in a browser.');
+  if (ok) closeModal();
+}
+Object.assign(ACT_REPORTS, {
+  upRems: () => $('#remsFile').click(),
+  remsApply: () => remsApply(),
+  repOwner: el => { S.rep.owner = S.rep.owner === el.dataset.o ? '' : el.dataset.o; render(); },
+  repCopy: () => repCopy(),
+  repXlsx: () => repXlsxAsk(),
+  repXlsxGo: () => repXlsx(),
+});
+// ===== /page: reports =====
+
 // ===== page: settings =====
 const ACT_SETTINGS = {};
 PAGES.settings = {
@@ -5131,7 +5405,7 @@ const ACT = {
   demo: () => { location.search = '?demo=1'; },
   dlManifest: () => downloadManifest(),
 };
-Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_SETTINGS);
+Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_SETTINGS);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal'){ closeModal(); return; }
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
@@ -5173,6 +5447,8 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
+  if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
+  if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
   if (el.dataset.accv){ S.acc = S.acc || {}; S.acc[el.dataset.accv] = ['weeks', 'back', 'horizon'].includes(el.dataset.accv) ? +el.value : el.value; render(); }
@@ -5283,10 +5559,10 @@ async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
     const d = await S.store.load();
-    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles();
+    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles(); S.rems = d.rems || [];
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
@@ -5320,12 +5596,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], docs: { eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], docs: { eskRemsCov: store.getDoc('eskRemsCov'), eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [] };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [] };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -5340,6 +5616,7 @@ function RemoteStore(){
     add: (k, ch) => call('add', [k, ch]),
     addMany: (k, list) => call('addMany', [k, list]),
     upsertBenefits: rows => call('upsertBenefits', [rows]),
+    upsertRems: rows => call('upsertRems', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
@@ -5365,7 +5642,7 @@ function openFull(){
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
-      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
