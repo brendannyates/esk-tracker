@@ -1523,7 +1523,7 @@ function OfficeStore(){
 // ---------- store: demo (fake data, same behavior as the workbook formulas) ----------
 function DemoStore(){
   const T = todaySerial();
-  const INV_H = ['Logging PCT','Scan Here','MRN','Pharmacy','Date Ordered','Date Received ','Expiration Date','Use By Date','Received (mg)','Serial Number','Lot Number','Administered (mg)','Date Administered','DOW','Partial?','Treating Technician','Supervising Physician ','Comments','Expired?','Marked for Disposal?','Date of Disposal','Disposal Method','mg Disposed','mg Remaining','Disposing PCT','Practice Manager'];
+  const INV_H = ['Logging PCT','Scan Here','MRN','Pharmacy','Date Ordered','Date Received ','Expiration Date','Use By Date','Received (mg)','Serial Number','Lot Number','Administered (mg)','Date Administered','DOW','Partial?','Treating Technician','Supervising Physician ','Comments','Expired?','Marked for Disposal?','Date of Disposal','Disposal Method','mg Disposed','mg Remaining','Disposing PCT','Practice Manager','Zofran Administered (mg)','Nefidipene Administered (mg)'];
   const PT_H = ['MRN','Patient Name','Status','Rendering Provider','Auth Exp.','Tx Frequency','Tx Start Date','Protocol Exp Date','Order Status','# Doses On Hand','# Partial On Hand','Pharmacy ','Protocol mg','Last Treatment','Next Treatment','Scheduled Thru','Auth Start','Authorized Txs','Coverage Options','Insurance','PA Number','Last MADRS','Last WHO5','Scheduling Preferences ','Notes:','PCN Notes'];
   const AP_H = ['MRN','Patient','Date','Time','Event','Status','Rendering','Dose','Lookup Key'];
   const INV_F = new Set([6,7,8,9,10,13,14,18,23]); const PT_F = new Set([9,10,13,14,15]); const AP_F = new Set([7,8]);
@@ -1566,7 +1566,7 @@ function DemoStore(){
   // inventory
   let sn = 100000000000; const code = (mg, ser, exp) => { const d = sDate(exp); const yy = String(d.getUTCFullYear()).slice(2), mm = String(d.getUTCMonth()+1).padStart(2,'0'), dd = String(d.getUTCDate()).padStart(2,'0'); return `01${mg===84?'00350458028034':'00350458028027'}21${ser}17${yy}${mm}${dd}10AB12345`; };
   const inv = [];
-  const addKit = o => { const r = Array(26).fill(''); r[0] = o.pct||'Taylor R.'; if (o.scan !== false){ r[1] = code(o.mg, String(++sn), o.exp); } r[2] = o.mrn ?? ''; r[3] = o.ph; r[4] = o.ordered ?? ''; r[5] = o.rec ?? ''; if (o.admin){ r[11] = o.admin; r[12] = o.adminDate; r[15] = 'Taylor R.'; r[16] = 'Dr. Aujla'; } r[17] = o.cmt ?? ''; if (o.disp){ r[19]='Yes'; r[20]=o.disp; r[21]='Blue Bin'; r[22]=o.mg; r[11]='Marked For Disposal'; r[24]='Taylor R.'; r[25]='Jordan P.'; } inv.push(r); };
+  const addKit = o => { const r = Array(28).fill(''); r[0] = o.pct||'Taylor R.'; if (o.scan !== false){ r[1] = code(o.mg, String(++sn), o.exp); } r[2] = o.mrn ?? ''; r[3] = o.ph; r[4] = o.ordered ?? ''; r[5] = o.rec ?? ''; if (o.admin){ r[11] = o.admin; r[12] = o.adminDate; r[15] = 'Taylor R.'; r[16] = 'Dr. Aujla'; } r[17] = o.cmt ?? ''; if (o.disp){ r[19]='Yes'; r[20]=o.disp; r[21]='Blue Bin'; r[22]=o.mg; r[11]='Marked For Disposal'; r[24]='Taylor R.'; r[25]='Jordan P.'; } inv.push(r); };
   for (let i = 0; i < 20; i++) addKit({ mg:84, ph:'Besse', rec:T-40+i, exp:T+200, admin:84, adminDate:T-30+i, mrn:900101 });
   for (let i = 0; i < 13; i++) addKit({ mg:84, ph:'Besse', rec:T-20+i, exp:T+120+i });
   addKit({ mg:84, ph:'Besse', rec:T-90, exp:T-3 }); // expired, unused
@@ -3075,11 +3075,34 @@ function itemState(i){
 const RESCUE = ['Zofran', 'Nifedipine', 'Captopril'];
 // PRN quick entry (Room time + Initial vitals, and the PRN med button from rooming to discharge). Saved to eskVisit[key].rescue,
 // the same list the Tx report reads, so it shows in the note, the Rescue tag and the "Rescue med logged" checklist item.
+// PRN totals on the Inventory: the visit's administered kit row gets the mg total per drug, in the column whose header names the drug
+// and "Administered" (e.g. "Zofran Administered (mg)", "Nefidipene Administered (mg)"; spelling of Nifedipine is forgiven).
+const PRN_TRACK = [{ med: /zofran|ondansetron/i, col: h => /zofran|ondansetron/.test(h) && /administ/.test(h), label: 'Zofran' },
+  { med: /n[ie]f[ie]dip/i, col: h => /n[ie]f[ie]dip/.test(h) && /administ/.test(h), label: 'Nifedipine' }];
+const prnMg = dose => { const m = String(dose ?? '').match(/(\d+(?:\.\d+)?)\s*mg/i) || String(dose ?? '').match(/^\s*(\d+(?:\.\d+)?)\s*$/); return m ? +m[1] : null; };
+const prnTracked = med => PRN_TRACK.find(t => t.med.test(String(med || ''))) || null;
+const prnColKey = t => { const c = S.tables.kits?.cols || {}; return Object.keys(c).find(t.col) || null; };
+// { colKey: total mg ('' when none) } for the drugs whose column is on the Inventory table.
+function prnTotals(rescue){
+  const out = {};
+  for (const t of PRN_TRACK){ const k = prnColKey(t); if (!k) continue; const L = (rescue || []).filter(r => t.med.test(r.med || '')); const sum = L.reduce((n, r) => n + (prnMg(r.dose) || 0), 0); out[k] = L.length ? Math.round(sum * 100) / 100 : ''; }
+  return out;
+}
+const prnKit = key => { const a = S.A.find(x => x.key === key); return a ? S.K.find(k => k.administered && k.mrn === a.mrn && k.adminDate === a.date) || null : null; };
+// After any PRN change: rewrite the totals on the kit row when they differ. No kit yet → Administer writes them.
+async function prnSyncKit(key){
+  const k = prnKit(key); if (!k || !S.tables.kits) return;
+  const want = prnTotals(visitGet(key)?.rescue), t = S.tables.kits, ch = {};
+  for (const [c, v] of Object.entries(want)){ const cur = t.get(k.r, c); if (String(cur ?? '') !== String(v)) ch[c] = v; }
+  const { out } = changesFor('kits', ch); if (!out.length) return;
+  await write(null, () => S.store.updateMany('kits', [{ r: k.r, snap: t.snap(k.r), changes: out }]));
+}
+const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
 function prnStart(key){ S.prn = { key, list: JSON.parse(JSON.stringify(visitGet(key)?.rescue || [])), msg: '' }; }
 function prnHTML(){
   const P = S.prn; if (!P) return '';
   const row = (r, i) => `<div class="prnrow">${RESCUE.includes(r.med) ? `<b class="prnmed">${esc(r.med)}</b>` : `<input class="fld prnmed" data-prn="${i}|med" value="${esc(r.med)}" placeholder="Medication" aria-label="PRN medication">`}
-    <input class="fld" data-prn="${i}|dose" value="${esc(r.dose || '')}" placeholder="Dose / route" aria-label="${esc(r.med || 'PRN')} dose and route">
+    <input class="fld" data-prn="${i}|dose" value="${esc(r.dose || '')}" placeholder="${prnTracked(r.med) ? 'mg / route, e.g. 4 mg ODT' : 'Dose / route'}" aria-label="${esc(r.med || 'PRN')} dose and route">
     <input class="fld" type="time" data-prn="${i}|time" value="${esc(r.time || '')}" aria-label="${esc(r.med || 'PRN')} time given">
     <input class="fld grow" data-prn="${i}|reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)" aria-label="${esc(r.med || 'PRN')} reason">
     <button class="linkbtn" data-act="prnDel" data-i="${i}" aria-label="Remove ${esc(r.med || 'PRN')}">Remove</button></div>`;
@@ -3091,6 +3114,7 @@ const prnDraw = () => { const b = $('#prnBox'); if (b) b.innerHTML = prnHTML(); 
 function prnClean(){
   const L = (S.prn?.list || []).map(r => ({ med: String(r.med || '').trim(), dose: String(r.dose || '').trim(), time: r.time || '', reason: String(r.reason || '').trim() })).filter(r => r.med || r.dose || r.reason);
   const bad = L.find(r => !r.med || !r.dose || !fromHHMM(r.time)); if (bad){ S.prn.msg = `Add the ${!bad.med ? 'medication name' : !bad.dose ? 'dose / route' : 'time given'} for ${esc(bad.med || 'the PRN')}, or remove it.`; prnDraw(); return null; }
+  const noMg = L.find(r => prnTracked(r.med) && prnMg(r.dose) == null); if (noMg){ S.prn.msg = `Enter the ${esc(noMg.med)} dose in mg (e.g. 4 mg ODT), so the total goes on the Inventory.`; prnDraw(); return null; }
   return L;
 }
 function openPrn(key){
@@ -3102,7 +3126,8 @@ function openPrn(key){
 }
 async function prnSave(key){
   const L = prnClean(); if (!L) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
-  await visitSet(key, { rescue: L }); S.prn = null; render();
+  await visitSet(key, { rescue: L }); S.prn = null; render(); await prnSyncKit(key);
+  const miss = prnMissingCols(L); if (miss.length) toast('warn', `No “${esc(miss[0])} Administered (mg)” column on the Inventory table, so the total wasn’t written there. Add the header inside the table.`);
   if (L.length > had){ const mi = (S.shared || {}).medInvUrl; toast('warn', `PRN saved. Log it on the Medication Inventory Tracker${mi ? `: <a href="${esc(mi)}" target="_blank" rel="noopener">open it ↗</a>` : '.'}`); }
 }
 const LVL = ['Not at all', 'Mild', 'Moderate', 'Severe', 'Extreme'];
@@ -3381,7 +3406,7 @@ async function coPersist(checkout, quiet){
   const cleanVit = {}; for (const [w, x] of Object.entries(vit || {})) if (x && (x.bp || x.hr || x.o2)) cleanVit[w] = { bp: x.bp || '', hr: x.hr || '', o2: x.o2 || '', at: x.at === '' || x.at == null ? null : +x.at, by: x.by || CFG.me || '' };
   const patch = { form, rescue: cleanRx, vit: cleanVit, note: $('#coText')?.value ?? coNote(S.co).text, noteEdited: S.coEdit != null, savedAt: Date.now() };
   if (checkout && !prev.out) patch.out = { at: nowMin(), by: CFG.me || '' };
-  await visitSet(key, patch); if (!quiet) render();
+  await visitSet(key, patch); if (!quiet){ render(); await prnSyncKit(key); }
 }
 // Visit documentation checklist. ESK Tracker + med logs are done by Administer in this add-in;
 // Tx report (NextGen) and the REMS monitoring form are ticked by hand (saved with the workbook).
@@ -3544,7 +3569,7 @@ function renderAdmin(){
   if (!S.adm.tech) probs.push('Enter the treating technician.');
   if (!S.adm.sup) probs.push('Enter the supervising physician.');
   if (fromHHMM(S.adm.at) == null) probs.push('Enter the time the dose was given.');
-  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup };
+  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup, ...prnTotals(visitGet(it.a.key)?.rescue) };
   if (k && !k.mrn) obj.mrn = mrnVal(it.a.mrn);
   if (k && !k.comments) obj.comments = nm(it.a.mrn);
   const { out } = changesFor('kits', obj);
@@ -3569,7 +3594,7 @@ function renderAdmin(){
 }
 async function adminSave(){
   const it = todayModel(S.day).find(i => i.a.key === S.adm.key); const k = S.K.find(x => x.id === S.adm.kitId); if (!it || !k) return;
-  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup };
+  const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup, ...prnTotals(visitGet(it.a.key)?.rescue) };
   if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
   CFG.sup = S.adm.sup; if (!CFG.me) CFG.me = S.adm.tech; saveCfg();
   const { out } = changesFor('kits', obj);
@@ -5360,7 +5385,7 @@ const ACT = {
     const bp = ($('#vtBp')?.value || '').trim(), hr = ($('#vtHr')?.value || '').trim(), o2 = ($('#vtO2')?.value || '').trim(); const vit = { ...(visitGet(key)?.vit || {}) };
     if (bp || hr || o2) vit.init = { bp, hr, o2, at: m, by: CFG.me || '' };
     const rescue = S.prn?.key === key ? prnClean() : null; if (S.prn?.key === key && !rescue) return;
-    closeModal(); await visitSet(key, rescue ? { start: m, bay, vit, rescue } : { start: m, bay, vit }); S.prn = null; render(); },
+    closeModal(); await visitSet(key, rescue ? { start: m, bay, vit, rescue } : { start: m, bay, vit }); S.prn = null; render(); if (rescue) await prnSyncKit(key); },
   prnAdd: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); prnDraw(); const ins = document.querySelectorAll('#prnBox [data-prn$="|' + (el.dataset.m ? 'dose' : 'med') + '"]'); ins[ins.length - 1]?.focus(); },
   prnDel: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.splice(+el.dataset.i, 1); prnDraw(); },
   prnOpen: el => openPrn(el.dataset.k),
