@@ -969,6 +969,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .prnrow .fld{width:auto;flex:0 1 130px;min-width:0}
 .prnrow .fld.grow{flex:1 1 180px}
 .prnrow .prnmed{flex:0 0 110px}
+.prnrow .fld.rkn{flex:0 1 84px}
 .pg-today .rems-close .task{margin-bottom:6px}
 .pg-reports .card{margin-bottom:16px}
 .pg-reports .acc-bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between}
@@ -3098,18 +3099,36 @@ async function prnSyncKit(key){
   await write(null, () => S.store.updateMany('kits', [{ r: k.r, snap: t.snap(k.r), changes: out }]));
 }
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
-function prnStart(key){ S.prn = { key, list: JSON.parse(JSON.stringify(visitGet(key)?.rescue || [])), msg: '' }; }
+function prnStart(key){ const v = visitGet(key) || {}; S.prn = { key, list: JSON.parse(JSON.stringify(v.rescue || [])), rk: JSON.parse(JSON.stringify(v.rechk || [])), msg: '' }; }
+// Vitals rechecks (e.g. BP too high): eskVisit[key].rechk = [{ bp, hr, o2, at 'HH:MM', why, by }], any number, each timestamped.
+const rkText = r => [r.bp && `BP ${r.bp}`, r.hr && `HR ${r.hr}`, r.o2 && `O2 ${r.o2}%`].filter(Boolean).join(' · ');
+function rkHTML(){
+  const P = S.prn; if (!P) return '';
+  const row = (r, i) => `<div class="prnrow"><b class="prnmed">Recheck ${i + 1}</b>
+    <input class="fld" data-rk="${i}|bp" value="${esc(r.bp || '')}" placeholder="BP 120/80" inputmode="numeric" aria-label="Recheck ${i + 1} BP">
+    <input class="fld rkn" type="number" min="0" data-rk="${i}|hr" value="${esc(r.hr || '')}" placeholder="Pulse" aria-label="Recheck ${i + 1} pulse">
+    <input class="fld rkn" type="number" min="0" max="100" data-rk="${i}|o2" value="${esc(r.o2 || '')}" placeholder="O2 %" aria-label="Recheck ${i + 1} O2">
+    <input class="fld" type="time" data-rk="${i}|at" value="${esc(r.at || '')}" aria-label="Recheck ${i + 1} time">
+    <input class="fld grow" data-rk="${i}|why" value="${esc(r.why || '')}" placeholder="Why (e.g. BP too high)" aria-label="Recheck ${i + 1} reason">
+    <button class="linkbtn" data-act="rkDel" data-i="${i}" aria-label="Remove recheck ${i + 1}">Remove</button></div>`;
+  return `<div class="prnbox"><div class="prnadd"><button class="btn sm" data-act="rkAdd">+ Recheck vitals</button></div>${P.rk.map(row).join('')}</div>`;
+}
+function rkClean(){
+  const L = (S.prn?.rk || []).map(r => ({ bp: String(r.bp || '').trim(), hr: String(r.hr || '').trim(), o2: String(r.o2 || '').trim(), at: r.at || '', why: String(r.why || '').trim(), by: r.by || CFG.me || '' })).filter(r => r.bp || r.hr || r.o2 || r.why);
+  const bad = L.findIndex(r => !(r.bp || r.hr || r.o2) || !fromHHMM(r.at)); if (bad >= 0){ S.prn.msg = `Recheck ${bad + 1} needs ${!(L[bad].bp || L[bad].hr || L[bad].o2) ? 'at least one reading' : 'a time'}, or remove it.`; prnDraw(); return null; }
+  return L.sort((a, b) => fromHHMM(a.at) - fromHHMM(b.at));
+}
 function prnHTML(){
   const P = S.prn; if (!P) return '';
   const row = (r, i) => `<div class="prnrow">${RESCUE.includes(r.med) ? `<b class="prnmed">${esc(r.med)}</b>` : `<input class="fld prnmed" data-prn="${i}|med" value="${esc(r.med)}" placeholder="Medication" aria-label="PRN medication">`}
-    <input class="fld" data-prn="${i}|dose" value="${esc(r.dose || '')}" placeholder="${prnTracked(r.med) ? 'mg / route, e.g. 4 mg ODT' : 'Dose / route'}" aria-label="${esc(r.med || 'PRN')} dose and route">
+    <input class="fld" data-prn="${i}|dose" value="${esc(r.dose || '')}" placeholder="${prnTracked(r.med) ? 'e.g. 4 mg ODT' : 'Dose / route'}" aria-label="${esc(r.med || 'PRN')} dose and route">
     <input class="fld" type="time" data-prn="${i}|time" value="${esc(r.time || '')}" aria-label="${esc(r.med || 'PRN')} time given">
     <input class="fld grow" data-prn="${i}|reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)" aria-label="${esc(r.med || 'PRN')} reason">
     <button class="linkbtn" data-act="prnDel" data-i="${i}" aria-label="Remove ${esc(r.med || 'PRN')}">Remove</button></div>`;
   return `<div class="prnbox"><div class="prnadd">${RESCUE.map(m => `<button class="btn sm" data-act="prnAdd" data-m="${esc(m)}">+ ${esc(m)}</button>`).join('')}<button class="btn sm ghost" data-act="prnAdd" data-m="">+ Other</button></div>
     ${P.list.map(row).join('')}${P.msg ? `<div class="msg bad small">${P.msg}</div>` : ''}</div>`;
 }
-const prnDraw = () => { const b = $('#prnBox'); if (b) b.innerHTML = prnHTML(); };
+const prnDraw = () => { const b = $('#prnBox'); if (b) b.innerHTML = prnHTML(); const r = $('#rkBox'); if (r) r.innerHTML = rkHTML(); };
 // Clean list, or null (with S.prn.msg set) when a row is missing its dose or time.
 function prnClean(){
   const L = (S.prn?.list || []).map(r => ({ med: String(r.med || '').trim(), dose: String(r.dose || '').trim(), time: r.time || '', reason: String(r.reason || '').trim() })).filter(r => r.med || r.dose || r.reason);
@@ -3118,15 +3137,16 @@ function prnClean(){
   return L;
 }
 function openPrn(key){
-  const a = S.A.find(x => x.key === key); prnStart(key); if (!S.prn.list.length) S.prn.list.push({ med: RESCUE[0], dose: '', time: hhmm(nowMin()), reason: '' });
-  openModal(`<h2>PRN medication</h2><div class="small muted">${esc(nm(a?.mrn))} · MRN ${esc(a?.mrn)}. Saved with the visit; it goes into the Tx report note.</div>
-    <div id="prnBox" style="margin-top:8px">${prnHTML()}</div>
-    <div class="small muted" style="margin-top:8px">Log it on the Medication Inventory Tracker too.</div>
+  const a = S.A.find(x => x.key === key); prnStart(key);
+  openModal(`<h2>Recheck vitals / PRN</h2><div class="small muted">${esc(nm(a?.mrn))} · MRN ${esc(a?.mrn)}. Saved with the visit; both go into the Tx report note.</div>
+    <div class="lbl" style="margin-top:10px">Vitals rechecks <span class="muted">(time stamped)</span></div><div id="rkBox">${rkHTML()}</div>
+    <div class="lbl" style="margin-top:12px">PRN given</div><div id="prnBox">${prnHTML()}</div>
+    <div class="small muted" style="margin-top:8px">Log PRNs on the Medication Inventory Tracker too.</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="prnSave" data-k="${esc(key)}">Save</button></div>`);
 }
 async function prnSave(key){
-  const L = prnClean(); if (!L) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
-  await visitSet(key, { rescue: L }); S.prn = null; render(); await prnSyncKit(key);
+  const L = prnClean(); if (!L) return; const RK = rkClean(); if (!RK) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
+  await visitSet(key, { rescue: L, rechk: RK }); S.prn = null; render(); await prnSyncKit(key);
   const miss = prnMissingCols(L); if (miss.length) toast('warn', `No “${esc(miss[0])} Administered (mg)” column on the Inventory table, so the total wasn’t written there. Add the header inside the table.`);
   if (L.length > had){ const mi = (S.shared || {}).medInvUrl; toast('warn', `PRN saved. Log it on the Medication Inventory Tracker${mi ? `: <a href="${esc(mi)}" target="_blank" rel="noopener">open it ↗</a>` : '.'}`); }
 }
@@ -3217,6 +3237,8 @@ function stepsHTML(i, v, pri){
     v?.out ? { c: 'done', t: 'Discharged', m: '', w: tm(v.out.at, 'vEdit') }
       : { c: roomed && finalDue(v) ? 'active' : 'upcoming', t: 'Discharge', m: roomed && finalDue(v) ? '<span>Discharge &amp; copy note is in Record vitals</span>' : '', w: fd ? `<span class="muted">after ${fmtT(fd.at)}</span>` : '' }
   ];
+  const rk = (v?.rechk || []).map(x => ({ c: 'done', t: 'Vitals recheck', m: `<button class="linkbtn vv" data-act="prnOpen" data-k="${k}" title="Edit">${esc(rkText(x))}</button>${x.why ? ` <span>${esc(x.why)}</span>` : ''}`, w: `<button class="linkbtn tm" data-act="prnOpen" data-k="${k}" title="Edit">${fmtT(fromHHMM(x.at))}</button>` }));
+  if (rk.length) L.splice(L.length - 1, 0, ...rk);
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
 }
 // Bottom of the appointment card. Today: timeline + steps; once discharged only the discharge time shows (timeline folds away).
@@ -3312,7 +3334,7 @@ async function baysSave(){
 // ----- check-out form (same order as the paper post-treatment form) -----
 function coDefaults(key){
   const v = visitGet(key) || {}; const o = v.form || {};
-  return Object.assign({ self: 'self', disc: null, unreal: null, sed10: null, nausea: false, dizzy: false, safe: null, ride: null, exp: null, notes: '', sedMin: '', dissMin: '', ngSed: null, gait: false, rescue: JSON.parse(JSON.stringify(v.rescue || [])) }, JSON.parse(JSON.stringify(o)), { rescue: JSON.parse(JSON.stringify(v.rescue || [])), vit: JSON.parse(JSON.stringify(v.vit || {})) });
+  return Object.assign({ self: 'self', disc: null, unreal: null, sed10: null, nausea: false, dizzy: false, safe: null, ride: null, exp: null, notes: '', sedMin: '', dissMin: '', ngSed: null, gait: false, rescue: JSON.parse(JSON.stringify(v.rescue || [])) }, JSON.parse(JSON.stringify(o)), { rescue: JSON.parse(JSON.stringify(v.rescue || [])), vit: JSON.parse(JSON.stringify(v.vit || {})), rechk: JSON.parse(JSON.stringify(v.rechk || [])) });
 }
 function coNote(c){
   const miss = []; const L = n => n == null ? (miss.push('x'), '[___]') : LVL[n].toLowerCase();
@@ -3330,6 +3352,7 @@ function coNote(c){
   else out.push('Pt experienced dizziness. Pt did not experience nausea/upset stomach.');
   for (const [w, l] of VIT()){ const x = (c.vit || {})[w] || {}; const at = x.at != null && x.at !== '' ? ` at ${fmtT(+x.at)}` : '';
     if (x.bp || x.hr || x.o2) out.push(`${l} vitals${at}: BP ${x.bp || '[___]'}, HR ${x.hr || '[___]'}, O2 ${x.o2 ? x.o2 + '%' : '[___]'}.`); else { miss.push('vit'); out.push(`${l} vitals: [___].`); } }
+  for (const r of c.rechk || []) out.push(`Vitals rechecked at ${fmtT(fromHHMM(r.at))}${r.why ? ` (${r.why})` : ''}: ${[r.bp && 'BP ' + r.bp, r.hr && 'HR ' + r.hr, r.o2 && 'O2 ' + r.o2 + '%'].filter(Boolean).join(', ')}.`);
   for (const r of c.rescue || []) if (r.med) out.push(`${r.med} ${r.dose || '[dose]'} administered${r.time ? ' at ' + fmtT(fromHHMM(r.time)) : ''}${r.reason ? ' for ' + r.reason : ''}.`);
   if (c.safe === 'yes' && c.ride === 'yes') out.push('Pt confirmed feeling safe/able to leave clinic and having a ride home.');
   else {
@@ -3371,6 +3394,7 @@ function openCheckout(key){
       <div class="small" style="font-weight:800;margin-top:6px">Vitals <span class="muted" style="font-weight:500">(same as the card)</span></div>
       <div class="vitgrid small"><span></span><b>BP</b><b>Pulse</b><b>O2 %</b><b>Time</b>${VIT().map(([w, l]) => { const x = S.co.vit[w] || {}; const due = w === 'init' ? (v.start ?? it?.time) : obsAt(v) != null ? (w === 'mid' ? v40At(v) : disAt(obsAt(v))) : null;
         return `<span class="vh">${esc(l)}${due != null ? ` <span class="muted">due ${fmtT(due)}</span>` : ''}</span><input class="fld" data-cv="${w}|bp" value="${esc(x.bp || '')}" placeholder="120/80" aria-label="${esc(l)} BP"><input class="fld" type="number" min="0" data-cv="${w}|hr" value="${esc(x.hr || '')}" aria-label="${esc(l)} pulse"><input class="fld" type="number" min="0" max="100" data-cv="${w}|o2" value="${esc(x.o2 || '')}" aria-label="${esc(l)} O2"><input class="fld" type="time" data-cv="${w}|at" value="${x.at != null && x.at !== '' ? hhmm(+x.at) : ''}" aria-label="${esc(l)} time">`; }).join('')}</div>
+      ${(v.rechk || []).length ? `<div class="small" style="margin-top:6px"><b>Rechecks:</b> ${v.rechk.map(x => `${fmtT(fromHHMM(x.at))} ${esc(rkText(x))}${x.why ? ' (' + esc(x.why) + ')' : ''}`).join('; ')} <span class="muted">· edit with Recheck vitals / PRN on the visit</span></div>` : ''}
       <div class="small" style="font-weight:800;margin-top:12px">Patient form <span class="muted" style="font-weight:500">(same order as the paper form)</span></div>
       ${radio('self', [['self', 'Pt self-answered'], ['staff', 'Staff assisted']])}
       <div class="q">Did you feel disconnected from yourself or the world?</div>${radio('disc', disLab.map((l, i) => [i, l]))}
@@ -3400,7 +3424,7 @@ function coRefresh(){
 }
 function coAutosave(){ clearTimeout(S._coT); S._coT = setTimeout(() => { if (S.co && S.coKey && !$('#modal').hidden) coPersist(false, true).then(() => { const el = $('#coSaved'); if (el) el.textContent = 'Draft saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }); }, 900); }
 async function coPersist(checkout, quiet){
-  const key = S.coKey; const { rescue, vit, ...form } = S.co;
+  const key = S.coKey; const { rescue, vit, rechk, ...form } = S.co;
   const cleanRx = (rescue || []).filter(r => r.med);
   const prev = visitGet(key) || {};
   const cleanVit = {}; for (const [w, x] of Object.entries(vit || {})) if (x && (x.bp || x.hr || x.o2)) cleanVit[w] = { bp: x.bp || '', hr: x.hr || '', o2: x.o2 || '', at: x.at === '' || x.at == null ? null : +x.at, by: x.by || CFG.me || '' };
@@ -4434,7 +4458,7 @@ function tdDetail(r){
   const pri = tdPrimary(r);
   const facts = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, `<button class="btn inline" data-act="copyMrn" data-m="${mrn}" title="Copy the MRN">MRN ${mrn}</button>`,
     a.time != null ? `Booked ${fmtT(a.time)}` : 'No time booked', a.moved ? `moved from ${fmtT(a.origTime)} with ${esc(a.origRendering || 'no clinician')}` : ''].filter(Boolean).join(' · ');
-  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}${a.active && roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="prnOpen" data-k="${k}" title="Zofran or another PRN given during the visit">PRN med</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
+  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}${a.active && roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="prnOpen" data-k="${k}" title="Retake vitals (time stamped) or record a PRN such as Zofran">Recheck vitals / PRN</button>` : ''}${a.active && !v?.out && vitGet(key, 'init') && pri.act !== 'vOut' ? `<button class="btn ghost mute sm" data-act="vOut" data-k="${k}" title="Start the Tx report now; it saves as you type">Draft Tx report</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
   const flow = !a.active ? '' : v?.out
     ? `<details class="tfold" data-open="tl:${k}"${tdOpen('tl:' + key, false) ? ' open' : ''}><summary>Timeline</summary>${v.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}</details>`
     : `${roomed ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}`;
@@ -5206,7 +5230,7 @@ const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm
 // SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
 // the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
 const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis']);
-const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sVitN', 'sVitS', 'sFull', 'sAuto']);
+const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sSnd', 'sVitN', 'sVitS', 'sFull', 'sAuto']);
 function setEditing(on){ if (on){ S.editing = true; S._setEd = true; } else if (S._setEd){ S.editing = false; S._setEd = false; } }
 function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
 // True when everything in the draft is what cfgSave would have stored, i.e. the save went through.
@@ -5214,6 +5238,7 @@ function setDraftSaved(){
   return Object.entries(S.setDraft || {}).every(([id, x]) => {
     if (SET_CFG[id]){ const k = SET_CFG[id]; let want = SET_NUM.has(id) ? Math.max(1, +x || DEF[k]) : String(x).trim(); if (id === 'sMe' && S.msName && (!want || want === S.msName)) want = S.msName; return CFG[k] === want; }
     if (id === 'sMedInv') return String(x).trim() === ((S.shared || {}).medInvUrl || '');
+    if (id === 'sSnd') return sndFormat(sndParse(x)) === sndFormat((S.shared || {}).soundLinks);
     if (id === 'sVitN') return !!CFG.vitNotify === x;
     if (id === 'sVitS') return CFG.vitSound === x;
     if (id === 'sFull') return !!CFG.autoFull === x;
@@ -5253,6 +5278,7 @@ function settingsHTML(){
     <label class="check"><input type="checkbox" id="sVitN" ${on('sVitN', CFG.vitNotify)}><span class="l">Alert me when vitals are due<small>A browser pop-up and a sound. Pop-ups show the bay and time, never the patient.</small></span></label>
     <div class="set-row set-snd"><label class="lbl" for="sVitS">Sound</label><select id="sVitS" class="fld">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${snd === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn" data-act="vitTest">Test</button></div>
     <div class="set-hint">${notifyHint()}</div>
+    <div class="set-f wide"><label class="lbl" for="sSnd">Shared sound links <span class="muted">(everyone, saved with the workbook)</span></label><textarea id="sSnd" class="fld" rows="4" placeholder="bing = https://mymhs-my.sharepoint.com/:u:/…">${esc(val('sSnd', sndFormat((S.shared || {}).soundLinks)))}</textarea><div class="set-hint">One line per sound: bing, boom, bop or bow, then its OneDrive link (Share › Anyone with the link). If a link doesn’t play, the add-in’s built-in copy of that sound plays, then the browser chime.</div></div>
     ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
   </section>`;
   const sumV = (+val('sV40', CFG.vitalsMin) || DEF.vitalsMin) + (+val('sDis', CFG.disAfter) || DEF.disAfter);
@@ -5388,6 +5414,8 @@ const ACT = {
     closeModal(); await visitSet(key, rescue ? { start: m, bay, vit, rescue } : { start: m, bay, vit }); S.prn = null; render(); if (rescue) await prnSyncKit(key); },
   prnAdd: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); prnDraw(); const ins = document.querySelectorAll('#prnBox [data-prn$="|' + (el.dataset.m ? 'dose' : 'med') + '"]'); ins[ins.length - 1]?.focus(); },
   prnDel: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.splice(+el.dataset.i, 1); prnDraw(); },
+  rkAdd: () => { if (!S.prn) return; S.prn.msg = ''; S.prn.rk.push({ bp: '', hr: '', o2: '', at: hhmm(nowMin()), why: '', by: CFG.me || '' }); prnDraw(); const ins = document.querySelectorAll('#rkBox [data-rk$="|bp"]'); ins[ins.length - 1]?.focus(); },
+  rkDel: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.rk.splice(+el.dataset.i, 1); prnDraw(); },
   prnOpen: el => openPrn(el.dataset.k),
   prnSave: el => prnSave(el.dataset.k),
   vEdit: el => openVisitEdit(el.dataset.k),
@@ -5401,7 +5429,7 @@ const ACT = {
   vitClear: async el => { closeModal(); await vitSave(el.dataset.k, el.dataset.w, null); },
   provEmailSave: el => provEmailSave(el.dataset.n, el.dataset.e),
   provEmailFill: () => provEmailFill(),
-  vitTest: async () => { const s = $('#sVitS')?.value || CFG.vitSound; playSound(s); await askNotify(); if (notifyPerm() === 'granted') try { new Notification('Final vitals due · test', { body: 'Bay 1', tag: 'esk-test', icon: 'assets/icon-80.png' }); } catch {} if (SOUNDS.includes(s) && !(await findSound(s))) toast('warn', `No ${esc(s)} sound file found yet, so the built-in chime played.`); },
+  vitTest: async () => { const s = $('#sVitS')?.value || CFG.vitSound; playSound(s); await askNotify(true); render(); if (notifyPerm() === 'granted') try { new Notification('Final vitals due · test', { body: 'Bay 1', tag: 'esk-test', icon: 'assets/icon-80.png' }); } catch {} if (SOUNDS.includes(s) && !(await findSound(s))) toast('warn', `No ${esc(s)} sound file found yet, so the built-in chime played.`); },
   rxAdd: el => { coAutosave(); S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { coAutosave(); S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   coReset: () => { S.coEdit = null; coRefresh(); },
@@ -5490,6 +5518,7 @@ const ACT = {
     document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
+    const sn = $('#sSnd'); if (sn){ const o = sndParse(sn.value); if (sndFormat(o) !== sndFormat((S.shared || {}).soundLinks)){ if (Object.values(o).some(u => !/^https:\/\//i.test(u))) return toast('warn', 'Sound links should start with https://'); S.shared = { ...(S.shared || {}), soundLinks: o }; for (const k of Object.keys(soundUrl)) delete soundUrl[k]; await S.store.setDoc('eskShared', S.shared); } }
     const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; if (vn.checked) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
@@ -5526,6 +5555,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('input', e => {
   const el = e.target;
   if (el.dataset.prn && S.prn){ const [i, f] = el.dataset.prn.split('|'); if (S.prn.list[+i]) S.prn.list[+i][f] = el.value; }
+  if (el.dataset.rk && S.prn){ const [i, f] = el.dataset.rk.split('|'); if (S.prn.rk[+i]) S.prn.rk[+i][f] = el.value; }
   if (el.id === 'coText'){ const first = S.coEdit == null; S.coEdit = el.value; coAutosave(); if (first){ const en = $('#coEditNote'); if (en) en.innerHTML = EDIT_HINT; } }
   if (el.dataset.cv && S.co){ const [w, f] = el.dataset.cv.split('|'); const x = (S.co.vit = S.co.vit || {})[w] || (S.co.vit[w] = {}); x[f] = f === 'at' ? fromHHMM(el.value) : el.value.trim(); if (f !== 'at' && x.at == null && el.value.trim()){ x.at = nowMin(); const t = document.querySelector(`[data-cv="${w}|at"]`); if (t) t.value = hhmm(x.at); } coAutosave(); if (S.coEdit == null) coRefresh(); }
   if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
@@ -5572,14 +5602,20 @@ document.addEventListener('change', e => {
 });
 
 // ---------- vitals-due alerts (per person, off by default): browser pop-up + the Kinnect sounds ----------
-// Sounds: bing/boom/bop/bow from this add-in's assets/sounds, else Kinnect Relay's; neither found = built-in chime.
+// Sounds: bing/boom/bop/bow from the shared links in Settings (eskShared.soundLinks, e.g. OneDrive "anyone" links), else this
+// add-in's assets/sounds (bundled), else Kinnect Relay's; none found = built-in chime. Pop-ups use the browser's own sound.
 // Pop-ups never name the patient (anyone walking by can read them): vitals type, time and bay only.
 const SOUNDS = ['bing', 'boom', 'bop', 'bow'], SOUND_EXTS = ['mp3', 'wav', 'ogg', 'm4a'];
 const SOUND_DIRS = ['assets/sounds/', 'https://brendannyates.github.io/kinnect-addin/assets/sounds/'];
 const soundUrl = {};
+// A OneDrive / SharePoint share link plays only as a direct download: add download=1.
+const sndLink = u => { u = String(u || '').trim(); if (!/^https:\/\//i.test(u)) return ''; return /sharepoint\.com|1drv\.ms|onedrive\.live\.com/i.test(u) && !/[?&]download=1/i.test(u) ? u + (u.includes('?') ? '&' : '?') + 'download=1' : u; };
+const sndParse = t => { const o = {}; for (const ln of String(t || '').split(/\n/)){ const m = ln.match(/^\s*(bing|boom|bop|bow)\s*[=:]\s*(\S+)/i); if (m) o[m[1].toLowerCase()] = m[2]; } return o; };
+const sndFormat = o => SOUNDS.filter(k => o?.[k]).map(k => `${k} = ${o[k]}`).join('\n');
 function findSound(id){
   if (id in soundUrl) return Promise.resolve(soundUrl[id]);
-  const urls = SOUND_DIRS.flatMap(d => SOUND_EXTS.map(x => d + id + '.' + x));
+  const link = sndLink((S.shared || {}).soundLinks?.[id]);
+  const urls = [...(link ? [link] : []), ...SOUND_DIRS.flatMap(d => SOUND_EXTS.map(x => d + id + '.' + x))];
   return new Promise(done => {
     const a = new Audio(); let i = 0, over = false;
     const finish = (u, keep = true) => { if (over) return; over = true; clearTimeout(t); a.onloadedmetadata = a.onerror = null; if (keep) soundUrl[id] = u; done(u); };
@@ -5605,8 +5641,9 @@ async function playSound(id = CFG.vitSound){
 }
 document.addEventListener('click', () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {} }, { once: true });   // the first click unlocks sound
 const notifyPerm = () => 'Notification' in window ? Notification.permission : 'unsupported';
-async function askNotify(){
-  if (notifyPerm() === 'default'){ try { await Notification.requestPermission(); } catch {} }
+async function askNotify(force){
+  if (notifyPerm() === 'default' || (force && notifyPerm() !== 'granted' && notifyPerm() !== 'unsupported')){ try { await Notification.requestPermission(); } catch {} }
+  if (force && notifyPerm() === 'denied') return toast('warn', 'Pop-ups are blocked for this site. In the browser, click the lock icon by the address, set Notifications to Allow, then click Test again.');
   if (notifyPerm() !== 'granted') toast('warn', 'This browser didn’t allow pop-ups here, so vitals alerts will use the sound and the in-panel message.');
 }
 const notifyHint = () => ({ granted: 'Pop-ups allowed in this browser.', denied: 'Pop-ups are blocked in this browser’s site settings; the sound still plays.', unsupported: 'Pop-ups aren’t available here; the sound still plays.' })[notifyPerm()] || 'Excel may block the pop-up permission prompt inside the panel; the sound still plays.';
