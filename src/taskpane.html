@@ -963,6 +963,12 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: settings ===== */
 .badText{color:var(--bad);font-weight:500}
 .pg-today .rems-close{margin-top:14px}
+.prnbox{display:flex;flex-direction:column;gap:8px}
+.prnadd{display:flex;flex-wrap:wrap;gap:6px}
+.prnrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.prnrow .fld{width:auto;flex:0 1 130px;min-width:0}
+.prnrow .fld.grow{flex:1 1 180px}
+.prnrow .prnmed{flex:0 0 110px}
 .pg-today .rems-close .task{margin-bottom:6px}
 .pg-reports .card{margin-bottom:16px}
 .pg-reports .acc-bar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;justify-content:space-between}
@@ -3067,6 +3073,38 @@ function itemState(i){
 // ---------- in-clinic visit: start time, vitals/discharge timers, check-out, Tx report draft, rescue meds ----------
 // Saved with the workbook (document setting "eskVisit"), keyed by appointment.
 const RESCUE = ['Zofran', 'Nifedipine', 'Captopril'];
+// PRN quick entry (Room time + Initial vitals, and the PRN med button from rooming to discharge). Saved to eskVisit[key].rescue,
+// the same list the Tx report reads, so it shows in the note, the Rescue tag and the "Rescue med logged" checklist item.
+function prnStart(key){ S.prn = { key, list: JSON.parse(JSON.stringify(visitGet(key)?.rescue || [])), msg: '' }; }
+function prnHTML(){
+  const P = S.prn; if (!P) return '';
+  const row = (r, i) => `<div class="prnrow">${RESCUE.includes(r.med) ? `<b class="prnmed">${esc(r.med)}</b>` : `<input class="fld prnmed" data-prn="${i}|med" value="${esc(r.med)}" placeholder="Medication" aria-label="PRN medication">`}
+    <input class="fld" data-prn="${i}|dose" value="${esc(r.dose || '')}" placeholder="Dose / route" aria-label="${esc(r.med || 'PRN')} dose and route">
+    <input class="fld" type="time" data-prn="${i}|time" value="${esc(r.time || '')}" aria-label="${esc(r.med || 'PRN')} time given">
+    <input class="fld grow" data-prn="${i}|reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)" aria-label="${esc(r.med || 'PRN')} reason">
+    <button class="linkbtn" data-act="prnDel" data-i="${i}" aria-label="Remove ${esc(r.med || 'PRN')}">Remove</button></div>`;
+  return `<div class="prnbox"><div class="prnadd">${RESCUE.map(m => `<button class="btn sm" data-act="prnAdd" data-m="${esc(m)}">+ ${esc(m)}</button>`).join('')}<button class="btn sm ghost" data-act="prnAdd" data-m="">+ Other</button></div>
+    ${P.list.map(row).join('')}${P.msg ? `<div class="msg bad small">${P.msg}</div>` : ''}</div>`;
+}
+const prnDraw = () => { const b = $('#prnBox'); if (b) b.innerHTML = prnHTML(); };
+// Clean list, or null (with S.prn.msg set) when a row is missing its dose or time.
+function prnClean(){
+  const L = (S.prn?.list || []).map(r => ({ med: String(r.med || '').trim(), dose: String(r.dose || '').trim(), time: r.time || '', reason: String(r.reason || '').trim() })).filter(r => r.med || r.dose || r.reason);
+  const bad = L.find(r => !r.med || !r.dose || !fromHHMM(r.time)); if (bad){ S.prn.msg = `Add the ${!bad.med ? 'medication name' : !bad.dose ? 'dose / route' : 'time given'} for ${esc(bad.med || 'the PRN')}, or remove it.`; prnDraw(); return null; }
+  return L;
+}
+function openPrn(key){
+  const a = S.A.find(x => x.key === key); prnStart(key); if (!S.prn.list.length) S.prn.list.push({ med: RESCUE[0], dose: '', time: hhmm(nowMin()), reason: '' });
+  openModal(`<h2>PRN medication</h2><div class="small muted">${esc(nm(a?.mrn))} · MRN ${esc(a?.mrn)}. Saved with the visit; it goes into the Tx report note.</div>
+    <div id="prnBox" style="margin-top:8px">${prnHTML()}</div>
+    <div class="small muted" style="margin-top:8px">Log it on the Medication Inventory Tracker too.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="prnSave" data-k="${esc(key)}">Save</button></div>`);
+}
+async function prnSave(key){
+  const L = prnClean(); if (!L) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
+  await visitSet(key, { rescue: L }); S.prn = null; render();
+  if (L.length > had){ const mi = (S.shared || {}).medInvUrl; toast('warn', `PRN saved. Log it on the Medication Inventory Tracker${mi ? `: <a href="${esc(mi)}" target="_blank" rel="noopener">open it ↗</a>` : '.'}`); }
+}
 const LVL = ['Not at all', 'Mild', 'Moderate', 'Severe', 'Extreme'];
 const SED_NG = [[6, 'Agitated'], [5, 'Responds readily to name spoken in normal tone (alert)'], [4, 'Lethargic response to name spoken in normal tone'], [3, 'Responds only after name is called loudly and/or repeatedly'], [2, 'Responds only after mild prodding or shaking'], [1, 'Does not respond to mild prodding or shaking'], [0, 'Does not respond to deep stimulus']];
 const NG_BOX = 'Patient denies dizziness. Patient endorses having a ride home. Gait noted to be stable.';
@@ -3191,6 +3229,7 @@ function openStart(key){
     <div><label class="lbl" for="vtBp">Initial BP</label><input id="vtBp" class="fld" value="${esc(x.bp || '')}" placeholder="120/80" inputmode="numeric" autocomplete="off"></div>
     <div><label class="lbl" for="vtHr">Pulse (BPM)</label><input id="vtHr" class="fld" type="number" min="0" value="${esc(x.hr || '')}"></div>
     <div><label class="lbl" for="vtO2">O2 sat (%)</label><input id="vtO2" class="fld" type="number" min="0" max="100" value="${esc(x.o2 || '')}"></div></div>
+    <div class="lbl" style="margin-top:10px">PRN given <span class="muted">(optional)</span></div><div id="prnBox">${(prnStart(key), prnHTML())}</div>
     <div class="small muted" style="margin-top:8px">Initial vitals are timed at the room time. The ${esc(CFG.vitalsMin)}-min vitals run from the dose time (saved when you Administer), then final vitals ${esc(CFG.disAfter)} min later (change in Settings).</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
   setTimeout(() => $('#vtBp')?.focus(), 30);
@@ -3297,7 +3336,7 @@ function openCheckout(key){
   const disLab = ['Not at all.', 'Mild, a little disconnected, but basically all here.', 'Moderate, somewhat detached, but basically all together.', 'Severe, detached but not far removed.', 'Extreme, completely out of body / removed from the room.'];
   const unLab = ['Not at all.', 'Mild, a little unreal, but aware and mostly present.', 'Moderate, dream-like, although knew I was awake.', 'Severe, very dream-like, felt like I might have been asleep.', 'Extreme, nothing was real.'];
   const medInv = (S.shared || {}).medInvUrl;
-  const rescueHTML = () => `${(S.co.rescue || []).map((r, idx) => `<div class="row small" style="margin-top:6px;flex-wrap:wrap"><select class="fld" data-rx="${idx}" data-rf="med" style="max-width:150px">${RESCUE.map(m => `<option ${r.med === m ? 'selected' : ''}>${m}</option>`).join('')}</select><input class="fld" data-rx="${idx}" data-rf="dose" value="${esc(r.dose || '')}" placeholder="Dose / route" style="max-width:140px"><input class="fld" type="time" data-rx="${idx}" data-rf="time" value="${esc(r.time || '')}" style="max-width:120px"><input class="fld grow" data-rx="${idx}" data-rf="reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)"><button class="linkbtn" data-act="rxDel" data-i="${idx}">Remove</button></div>`).join('')}
+  const rescueHTML = () => `${(S.co.rescue || []).map((r, idx) => `<div class="row small" style="margin-top:6px;flex-wrap:wrap"><select class="fld" data-rx="${idx}" data-rf="med" style="max-width:150px">${[...new Set([...RESCUE, r.med].filter(Boolean))].map(m => `<option ${r.med === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select><input class="fld" data-rx="${idx}" data-rf="dose" value="${esc(r.dose || '')}" placeholder="Dose / route" style="max-width:140px"><input class="fld" type="time" data-rx="${idx}" data-rf="time" value="${esc(r.time || '')}" style="max-width:120px"><input class="fld grow" data-rx="${idx}" data-rf="reason" value="${esc(r.reason || '')}" placeholder="Reason (e.g. nausea, BP)"><button class="linkbtn" data-act="rxDel" data-i="${idx}">Remove</button></div>`).join('')}
     <div class="row small" style="margin-top:6px">${RESCUE.map(m => `<button class="btn sm" data-act="rxAdd" data-m="${m}">+ ${m}</button>`).join('')}</div>
     ${(S.co.rescue || []).length ? `<div class="msg warn small" style="margin-top:6px">Log ${S.co.rescue.length > 1 ? 'these' : 'this'} on the Medication Inventory Tracker. ${medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener">Open Medication Inventory Tracker ↗</a>` : 'Add its link in Settings to open it from here.'}</div>` : ''}`;
   S.coRescueHTML = rescueHTML;
@@ -4370,7 +4409,7 @@ function tdDetail(r){
   const pri = tdPrimary(r);
   const facts = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, `<button class="btn inline" data-act="copyMrn" data-m="${mrn}" title="Copy the MRN">MRN ${mrn}</button>`,
     a.time != null ? `Booked ${fmtT(a.time)}` : 'No time booked', a.moved ? `moved from ${fmtT(a.origTime)} with ${esc(a.origRendering || 'no clinician')}` : ''].filter(Boolean).join(' · ');
-  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
+  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}${a.active && roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="prnOpen" data-k="${k}" title="Zofran or another PRN given during the visit">PRN med</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
   const flow = !a.active ? '' : v?.out
     ? `<details class="tfold" data-open="tl:${k}"${tdOpen('tl:' + key, false) ? ' open' : ''}><summary>Timeline</summary>${v.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}</details>`
     : `${roomed ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}`;
@@ -5320,7 +5359,12 @@ const ACT = {
   vStartSave: async el => { const m = fromHHMM($('#vsT')?.value); if (m == null) return toast('warn', 'Enter the room time.'); const key = el.dataset.k; const bay = ($('#vsB')?.value || '').trim();
     const bp = ($('#vtBp')?.value || '').trim(), hr = ($('#vtHr')?.value || '').trim(), o2 = ($('#vtO2')?.value || '').trim(); const vit = { ...(visitGet(key)?.vit || {}) };
     if (bp || hr || o2) vit.init = { bp, hr, o2, at: m, by: CFG.me || '' };
-    closeModal(); await visitSet(key, { start: m, bay, vit }); render(); },
+    const rescue = S.prn?.key === key ? prnClean() : null; if (S.prn?.key === key && !rescue) return;
+    closeModal(); await visitSet(key, rescue ? { start: m, bay, vit, rescue } : { start: m, bay, vit }); S.prn = null; render(); },
+  prnAdd: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); prnDraw(); const ins = document.querySelectorAll('#prnBox [data-prn$="|' + (el.dataset.m ? 'dose' : 'med') + '"]'); ins[ins.length - 1]?.focus(); },
+  prnDel: el => { if (!S.prn) return; S.prn.msg = ''; S.prn.list.splice(+el.dataset.i, 1); prnDraw(); },
+  prnOpen: el => openPrn(el.dataset.k),
+  prnSave: el => prnSave(el.dataset.k),
   vEdit: el => openVisitEdit(el.dataset.k),
   veSave: el => visitEditSave(el.dataset.k, false),
   veReset: el => visitEditSave(el.dataset.k, true),
@@ -5456,6 +5500,7 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.dataset.prn && S.prn){ const [i, f] = el.dataset.prn.split('|'); if (S.prn.list[+i]) S.prn.list[+i][f] = el.value; }
   if (el.id === 'coText'){ const first = S.coEdit == null; S.coEdit = el.value; coAutosave(); if (first){ const en = $('#coEditNote'); if (en) en.innerHTML = EDIT_HINT; } }
   if (el.dataset.cv && S.co){ const [w, f] = el.dataset.cv.split('|'); const x = (S.co.vit = S.co.vit || {})[w] || (S.co.vit[w] = {}); x[f] = f === 'at' ? fromHHMM(el.value) : el.value.trim(); if (f !== 'at' && x.at == null && el.value.trim()){ x.at = nowMin(); const t = document.querySelector(`[data-cv="${w}|at"]`); if (t) t.value = hhmm(x.at); } coAutosave(); if (S.coEdit == null) coRefresh(); }
   if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
