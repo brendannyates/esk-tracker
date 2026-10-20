@@ -2903,8 +2903,13 @@ function todayHTML(){
 async function setCancelled(key, on){
   const a = S.A.find(x => x.key === key); if (!a) return;
   const T = todaySerial(); const c = Object.fromEntries(Object.entries(S.cancel || {}).filter(([, v]) => v.date >= T - 30));
-  if (on) c[key] = { date: a.date, at: isoOf(T) }; else delete c[key];
+  const orig = (S.cancel || {})[key]?.orig ?? (a.marked ? null : a.status);   // NextGen status before the cancel, for Undo
+  if (on) c[key] = { date: a.date, at: isoOf(T), orig }; else delete c[key];
   S.cancel = c; await S.store.setDoc('eskCancel', c); derive(); render();
+  // Also write it on the Appt List tab (Status column), so the sheet matches until the next NextGen upload replaces the list.
+  const ta = S.tables.appts, cur = ta ? String(ta.get(a.r, 'status') ?? '') : '';
+  const val = on ? 'Cancelled' : /cancel/i.test(cur) ? (orig || 'Expected') : null;
+  if (ta && val != null && val !== cur){ const { out } = changesFor('appts', { status: val }); if (out.length) await write(null, () => S.store.updateMany('appts', [{ r: a.r, snap: ta.snap(a.r), changes: out }])); }
   toast(on ? 'warn' : 'ok', on ? `${esc(nm(a.mrn))} ${fmtT(a.time)} marked cancelled. Cancel it in NextGen too. Undo is under “Cancelled” below the list.` : 'Appointment restored.');
 }
 function cancelledHTML(items){
@@ -2958,6 +2963,13 @@ function loadXLSX(){
   if (window.XLSX) return Promise.resolve(true);
   return xlsxP || (xlsxP = new Promise(res => { const s = document.createElement('script'); s.src = 'assets/xlsx.full.min.js'; s.onload = () => res(!!window.XLSX); s.onerror = () => { xlsxP = null; s.remove(); res(false); }; document.head.appendChild(s); }));
 }
+// The new list vs the one on file. flag when it's under 20 rows, under half the rows on file, or ends more than a week earlier.
+function apptShrink(rows, cur){
+  const n = rows.length, had = cur.length, ds = rows.map(r => r[2]).filter(d => d != null), cd = cur.filter(d => d != null);
+  const nMax = ds.length ? Math.max(...ds) : null, cMax = cd.length ? Math.max(...cd) : null, cMin = cd.length ? Math.min(...cd) : null;
+  const few = n < 20, half = had >= 20 && n < had * 0.5, short = nMax != null && cMax != null && nMax < cMax - 7;
+  return { flag: few || half || short, few, half, short, n, had, cMin, cMax, nMax };
+}
 async function readApptFile(f){
   if (!S.store?.live) return toast('warn', 'Demo mode: uploads only work in a real workbook.');
   if (!(await loadXLSX())) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
@@ -2967,14 +2979,19 @@ async function readApptFile(f){
   if (!rows || !rows.length) return toast('bad', 'This doesn’t look like the 1 ESK Ordering - B report (no MRN / Appt Dt columns). Upload the export unchanged.');
   S.upRows = rows; const ds = rows.map(r => r[2]), sts = {}; rows.forEach(r => { const k = String(r[5] || 'blank'); sts[k] = (sts[k] || 0) + 1; });
   const had = S.tables.appts ? S.tables.appts.values.filter(r => r.some(v => v !== '' && v != null)).length : 0;
+  const sh = apptShrink(rows, S.A.map(a => a.date)); sh.had = had; sh.half = had >= 20 && rows.length < had * 0.5; sh.flag = sh.few || sh.half || sh.short; S.upShrink = sh.flag;
+  const why = [sh.few ? `only <b>${rows.length}</b> appointment${rows.length === 1 ? '' : 's'}` : '', sh.half ? `fewer than half of the <b>${had}</b> on file` : '', sh.short ? `it ends ${fmtD(sh.nMax, 'full')}; the list on file runs to ${fmtD(sh.cMax, 'full')}` : ''].filter(Boolean);
+  const warn = sh.flag ? `<div class="msg ${sh.few ? 'bad' : 'warn'}" style="margin-top:8px"><div><b>This list is much smaller than the one on file:</b> ${why.join('; ')}. The date range in NextGen may have been narrowed. Replacing would drop the other appointments, and the meds and reminders tied to them.
+      <div class="small" style="margin-top:6px">On file now: ${had} appointments${sh.cMin != null ? `, ${fmtD(sh.cMin, 'full')} to ${fmtD(sh.cMax, 'full')}` : ''}. Re-run 1 ESK Ordering - B with the usual date range, or confirm below.</div>
+      <label class="opt" style="margin-top:8px"><input type="checkbox" id="apptShrinkOk"> The smaller list is right; replace anyway</label></div></div>` : '';
   openModal(`<h2>Replace the appointment list?</h2>
     <div class="small muted">${esc(f.name)}</div>
     <div class="msg info" style="margin-top:8px">${rows.length} appointments, ${fmtD(Math.min(...ds), 'full')} to ${fmtD(Math.max(...ds), 'full')}. ${Object.entries(sts).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}</div>
-    <div class="small" style="margin-top:8px">The ${had} rows now in the Appt List tab (MRN to Status in M:R, and Rendering in S, from row 5 down) are replaced. The formula columns after them are left alone.</div>${S.upRendering ? '' : '<div class="msg warn" style="margin-top:8px">This report has no Rendering column, so Rendering will be left blank and the consent provider list will be empty. Add Rendering to the 1 ESK Ordering - B report in NextGen.</div>'}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="apptReplace">Replace list</button></div>`);
+    <div class="small" style="margin-top:8px">The ${had} rows now in the Appt List tab (MRN to Status in M:R, and Rendering in S, from row 5 down) are replaced. The formula columns after them are left alone.</div>${S.upRendering ? '' : '<div class="msg warn" style="margin-top:8px">This report has no Rendering column, so Rendering will be left blank and the consent provider list will be empty. Add Rendering to the 1 ESK Ordering - B report in NextGen.</div>'}${warn}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" id="apptGo" data-act="apptReplace" ${sh.flag ? 'disabled' : ''}>Replace list</button></div>`);
 }
 async function apptReplace(){
-  const rows = S.upRows; if (!rows) return; closeModal();
+  const rows = S.upRows; if (!rows) return; if (S.upShrink && !$('#apptShrinkOk')?.checked) return; closeModal();
   try { busy('Writing the appointment list…'); await S.store.replaceAppts(rows); S.upRows = null; S.freshHidden = null; toast('ok', `Appointment list updated: ${rows.length} appointments.`); }
   catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); }
   finally { busy(false); }
@@ -3062,18 +3079,20 @@ async function saveVisit(){
   await S.store.setDoc('eskVisit', S.visit || {});
 }
 function visitSet(key, patch){ S.visit = S.visit || {}; S.visit[key] = Object.assign(S.visit[key] || {}, patch); return saveVisit(); }
-// Timers run off the start time only (vitals themselves stay on paper / in NextGen).
-const disAt = start => start + (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); // discharge vitals: one hour after the 40-min vitals
+// Room time = initial vitals. The observation timers run from the dose time (eskVisit[key].adm, minutes), saved by Administer
+// or entered in Edit visit; until there is one, no 40-min or final vitals are due.
+const obsAt = v => v?.adm ?? null;
+const disAt = start => start + (+CFG.vitalsMin || 40) + (+CFG.disAfter || 60); // final vitals: one hour after the 40-min vitals (pass the dose time)
 const GRACE = 10; // minutes the vitals reminder stays red before the countdown moves on to discharge
 // Vitals for the visit (eskVisit[key].vit = { init|mid|fin: { bp, hr, o2, at (minutes), by } }): entered on the card or in the Tx report.
 const VIT = () => [['init', 'Initial'], ['mid', `${CFG.vitalsMin}-min`], ['fin', 'Final']];
 const vitGet = (key, w) => { const x = (visitGet(key)?.vit || {})[w]; return x && (x.bp || x.hr || x.o2) ? x : null; };
 const vitText = x => [x.bp && `BP ${x.bp}`, x.hr && `HR ${x.hr}`, x.o2 && `O2 ${x.o2}%`].filter(Boolean).join(' · ');
-const finalDue = v => !!v && v.start != null && nowMin() >= disAt(v.start);   // "Check out" only shows from here
+const finalDue = v => !!v && v.start != null && obsAt(v) != null && nowMin() >= disAt(obsAt(v));   // "Check out" only shows from here
 function visitMarks(v, key){
-  if (!v || v.start == null || v.out) return [];
+  if (!v || v.start == null || v.out || obsAt(v) == null) return [];
   const has = w => key && vitGet(key, w);
-  return [{ what: `${CFG.vitalsMin}-min vitals`, at: v.start + (+CFG.vitalsMin || 40), kind: 'v40', w: 'mid' }, { what: 'Final vitals', at: disAt(v.start), kind: 'dis', w: 'fin' }].filter(m => !has(m.w));
+  return [{ what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40', w: 'mid' }, { what: 'Final vitals', at: disAt(obsAt(v)), kind: 'dis', w: 'fin' }].filter(m => !has(m.w));
 }
 function dueText(due, isToday){
   if (!due) return '';
@@ -3097,20 +3116,20 @@ function kitRowHTML(i){
   return `<span class="kit">${[`${i.inf.mg ?? '?'} mg`, k ? `<span class="mono sn">SN ${esc(k.serial)}</span>` : '', k ? `received ${fmtD(k.received)}` : '', au ? `<span class="${au.cls === 'warn' ? 'warnText' : ''}">${esc(au.text)}</span>` : ''].filter(Boolean).join(' · ')}</span>`;
 }
 const txBtnLabel = v => v?.out ? 'Tx report' : 'Record vitals';
-const txBtn = (key, v, pri) => `<button class="btn ${pri ? 'primary lg' : 'sm'}" data-act="vOut" data-k="${esc(key)}" ${pri && v?.start != null && !v.out ? `data-coat="${disAt(v.start)}"` : ''} title="Vitals, Tx report draft and discharge">${txBtnLabel(v)}${v?.savedAt && !v.out ? ' · draft saved' : ''}</button>`;
+const txBtn = (key, v, pri) => `<button class="btn ${pri ? 'primary lg' : 'sm'}" data-act="vOut" data-k="${esc(key)}" ${pri && obsAt(v) != null && !v.out ? `data-coat="${disAt(obsAt(v))}"` : ''} title="Vitals, Tx report draft and discharge">${txBtnLabel(v)}${v?.savedAt && !v.out ? ' · draft saved' : ''}</button>`;
 // Today's timeline: Room → 40-min vitals → Final vitals → Discharge. Equal segments; the fill moves through each by the clock.
-const v40At = v => v.start + (+CFG.vitalsMin || 40);
+const v40At = v => obsAt(v) == null ? null : obsAt(v) + (+CFG.vitalsMin || 40);
 function trackPos(v, now){
-  if (v.out) return 3; const m = v40At(v), f = disAt(v.start);
+  if (v.out) return 3; if (obsAt(v) == null) return 0; const m = v40At(v), f = disAt(obsAt(v));
   if (now < m) return Math.max(0, (now - v.start) / (m - v.start));
   return now < f ? 1 + (now - m) / (f - m) : 2;
 }
 const markCls = (mk, at, now) => mk === 'mid' ? (at < now ? 'late' : at - now <= 5 ? 'soon' : '') : now >= at ? 'due' : at - now <= 5 ? 'soon' : '';
 function trackHTML(key, v){
-  const now = nowMin(), m = v40At(v), f = disAt(v.start), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin');
+  const now = nowMin(), m = v40At(v), f = obsAt(v) == null ? null : disAt(obsAt(v)), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin');
   const pct = x => (x / 3 * 100).toFixed(1) + '%', p = trackPos(v, now);
-  const st = [['Room', v.start, 'done'], [`${CFG.vitalsMin}-min`, mid ? mid.at : m, mid ? 'done' : markCls('mid', m, now), mid ? null : ['mid', m]], ['Final vitals', fin ? fin.at : f, fin ? 'done' : markCls('fin', f, now), fin ? null : ['fin', f]], ['Discharge', v.out?.at, v.out ? 'done' : '']];
-  return `<div class="track" data-start="${v.start}"${v.out ? ' data-out="1"' : ''} aria-hidden="true"><div class="tbar"></div><div class="tfill" style="width:${pct(p)}"></div>
+  const st = [['Room', v.start, 'done'], [`${CFG.vitalsMin}-min`, mid ? mid.at : m, mid ? 'done' : m == null ? '' : markCls('mid', m, now), mid || m == null ? null : ['mid', m]], ['Final vitals', fin ? fin.at : f, fin ? 'done' : f == null ? '' : markCls('fin', f, now), fin || f == null ? null : ['fin', f]], ['Discharge', v.out?.at, v.out ? 'done' : '']];
+  return `<div class="track" data-start="${v.start}"${obsAt(v) != null ? ` data-obs="${obsAt(v)}"` : ''}${v.out ? ' data-out="1"' : ''} aria-hidden="true"><div class="tbar"></div><div class="tfill" style="width:${pct(p)}"></div>
     ${st.map(([l, t, c, live], n) => `<div class="tmark ${c}" style="left:${pct(n)}"${live ? ` data-mk="${live[0]}" data-at="${live[1]}"` : ''}></div><div class="tlb${n === 0 ? ' start' : n === 3 ? ' end' : ''}" style="left:${pct(n)}"><b>${t != null ? fmtT(t) : '—'}</b>${esc(l)}</div>`).join('')}
     ${v.out ? '' : `<div class="tnow" style="left:${pct(p)}"></div>`}</div>`;
 }
@@ -3120,20 +3139,20 @@ function stepsHTML(i, v, pri){
   const init = vitGet(key, 'init'), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), kit = i.adminKit;
   const tm = (t, act, w) => `<button class="linkbtn tm" data-act="${act}" data-k="${k}"${w ? ` data-w="${w}"` : ''} title="Edit">${fmtT(t)}</button>`;
   const val = (x, act, w) => `<button class="linkbtn vv" data-act="${act}" data-k="${k}"${w ? ` data-w="${w}"` : ''} title="Edit">${esc(vitText(x))}</button>`;
-  const md = roomed && { what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' }, fd = roomed && { what: 'Final vitals', at: disAt(v.start), kind: 'dis' };
+  const dosed = roomed && obsAt(v) != null, md = dosed && { what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' }, fd = dosed && { what: 'Final vitals', at: disAt(obsAt(v)), kind: 'dis' };
   const L = [
     roomed ? { c: 'done', t: `Roomed${v.bay ? ' · Bay ' + esc(v.bay) : ''}`, m: init ? 'Initial ' + val(init, 'vit', 'init') : `<button class="linkbtn" data-act="vit" data-k="${k}" data-w="init">Add initial vitals</button>`, w: tm(v.start, 'vStart') }
       : { c: 'active', t: 'Room time + Initial vitals', m: a.time != null ? `Booked ${fmtT(a.time)}` : '', w: pri === 'vStart' ? '' : `<button class="btn sm" data-act="vStart" data-k="${k}">Room time + Initial vitals</button>` },
-    kit ? { c: 'done', t: 'Dose given', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · tracker and med logs updated`, w: '' }
+    kit ? { c: 'done', t: 'Dose given', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · tracker and med logs updated`, w: obsAt(v) != null ? tm(obsAt(v), 'vEdit') : `<button class="btn sm" data-act="vEdit" data-k="${k}" title="The vitals timers run from the dose time">Add dose time</button>` }
       : { c: roomed ? 'active' : 'upcoming', t: 'Give dose', m: SAFE(i.inf.pharm) + kitRowHTML(i), w: pri === 'admin' ? '' : `<button class="btn sm" data-act="admin" data-k="${k}">Administer</button>` },
     mid ? { c: 'done', t: `${CFG.vitalsMin}-min vitals`, m: val(mid, 'vit', 'mid'), w: mid.at != null ? tm(mid.at, 'vit', 'mid') : '' }
-      : roomed ? { c: 'active ' + markCls('mid', md.at, now), t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<button class="vdue" data-act="vit" data-k="${k}" data-w="mid" title="Record the ${esc(CFG.vitalsMin)}-min vitals">${dueChip(md, true)}</button>` }
-      : { c: 'upcoming', t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<span class="muted">${esc(CFG.vitalsMin)} min after room time</span>` },
+      : md ? { c: 'active ' + markCls('mid', md.at, now), t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<button class="vdue" data-act="vit" data-k="${k}" data-w="mid" title="Record the ${esc(CFG.vitalsMin)}-min vitals">${dueChip(md, true)}</button>` }
+      : { c: 'upcoming', t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<span class="muted">${esc(CFG.vitalsMin)} min after the dose</span>` },
     fin ? { c: 'done', t: 'Final vitals', m: val(fin, 'vOut'), w: fin.at != null ? tm(fin.at, 'vOut') : '' }
-      : roomed ? { c: mid || now > md.at + GRACE ? 'active' : 'upcoming', t: 'Final vitals', m: '<span>in Record vitals</span>', w: `<button class="vdue" data-act="vOut" data-k="${k}" title="Final vitals are entered in Record vitals">${dueChip(fd, true)}</button>` }
+      : fd ? { c: mid || now > md.at + GRACE ? 'active' : 'upcoming', t: 'Final vitals', m: '<span>in Record vitals</span>', w: `<button class="vdue" data-act="vOut" data-k="${k}" title="Final vitals are entered in Record vitals">${dueChip(fd, true)}</button>` }
       : { c: 'upcoming', t: 'Final vitals', m: '', w: `<span class="muted">${esc(CFG.disAfter)} min after that</span>` },
     v?.out ? { c: 'done', t: 'Discharged', m: '', w: tm(v.out.at, 'vEdit') }
-      : { c: roomed && finalDue(v) ? 'active' : 'upcoming', t: 'Discharge', m: roomed && finalDue(v) ? '<span>Discharge &amp; copy note is in Record vitals</span>' : '', w: roomed ? `<span class="muted">after ${fmtT(fd.at)}</span>` : '' }
+      : { c: roomed && finalDue(v) ? 'active' : 'upcoming', t: 'Discharge', m: roomed && finalDue(v) ? '<span>Discharge &amp; copy note is in Record vitals</span>' : '', w: fd ? `<span class="muted">after ${fmtT(fd.at)}</span>` : '' }
   ];
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
 }
@@ -3172,7 +3191,7 @@ function openStart(key){
     <div><label class="lbl" for="vtBp">Initial BP</label><input id="vtBp" class="fld" value="${esc(x.bp || '')}" placeholder="120/80" inputmode="numeric" autocomplete="off"></div>
     <div><label class="lbl" for="vtHr">Pulse (BPM)</label><input id="vtHr" class="fld" type="number" min="0" value="${esc(x.hr || '')}"></div>
     <div><label class="lbl" for="vtO2">O2 sat (%)</label><input id="vtO2" class="fld" type="number" min="0" max="100" value="${esc(x.o2 || '')}"></div></div>
-    <div class="small muted" style="margin-top:8px">Timers run from the room time: ${esc(CFG.vitalsMin)}-min vitals, then final vitals ${esc(CFG.disAfter)} min later (change in Settings). Initial vitals are timed at the room time.</div>
+    <div class="small muted" style="margin-top:8px">Initial vitals are timed at the room time. The ${esc(CFG.vitalsMin)}-min vitals run from the dose time (saved when you Administer), then final vitals ${esc(CFG.disAfter)} min later (change in Settings).</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="vStartSave" data-k="${esc(key)}">Save</button></div>`);
   setTimeout(() => $('#vtBp')?.focus(), 30);
 }
@@ -3184,7 +3203,8 @@ function openVisitEdit(key){
     <div class="form2" style="margin-top:8px"><div><label class="lbl" for="veP">Clinician</label><input id="veP" class="fld" list="dlVeP" value="${esc(a.rendering || '')}" autocomplete="off">${datalist('dlVeP', provs)}</div>
     <div><label class="lbl" for="veT">Appointment time</label><input id="veT" class="fld" type="time" value="${hhmm(a.time)}"></div>
     ${isToday ? `<div><label class="lbl" for="veR">Room time <span class="muted">(blank = not roomed)</span></label><input id="veR" class="fld" type="time" value="${hhmm(v.start)}"></div>
-    <div><label class="lbl" for="veB">Bay #</label><input id="veB" class="fld" value="${esc(v.bay || '')}"></div>` : ''}
+    <div><label class="lbl" for="veB">Bay #</label><input id="veB" class="fld" value="${esc(v.bay || '')}"></div>
+    <div><label class="lbl" for="veD">Dose time <span class="muted">(vitals timers start here)</span></label><input id="veD" class="fld" type="time" value="${hhmm(v.adm)}"></div>` : ''}
     ${v.out ? `<div><label class="lbl" for="veO">Discharge time</label><input id="veO" class="fld" type="time" value="${hhmm(v.out.at)}"></div><label class="opt" style="align-self:end"><input type="checkbox" id="veU"> Undo discharge</label>` : ''}</div>
     <div class="small muted" style="margin-top:8px">A move only changes this tracker; change it in NextGen too. It stays until you reset it here.</div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">${a.moved ? `<button class="btn ghost" data-act="veReset" data-k="${esc(key)}">Reset to NextGen</button><span class="grow"></span>` : ''}<button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="veSave" data-k="${esc(key)}">Save</button></div>`);
@@ -3197,7 +3217,7 @@ async function visitEditSave(key, reset){
     const t = fromHHMM($('#veT')?.value), p = ($('#veP')?.value || '').trim();
     const mv = {}; if (t != null && t !== o.time) mv.time = t; if (p && canonProv(p) !== canonProv(o.prov)) mv.prov = p;
     if (Object.keys(mv).length) v.mv = { ...mv, by: CFG.me || '', at: new Date().toISOString() }; else delete v.mv;
-    if ($('#veR')){ const r = fromHHMM($('#veR').value); if (r == null) delete v.start; else v.start = r; const b = $('#veB').value.trim(); if (b) v.bay = b; else delete v.bay; }
+    if ($('#veR')){ const r = fromHHMM($('#veR').value); if (r == null) delete v.start; else v.start = r; const b = $('#veB').value.trim(); if (b) v.bay = b; else delete v.bay; const dz = fromHHMM($('#veD')?.value); if (dz == null) delete v.adm; else v.adm = dz; }
     if (v.out){ if ($('#veU')?.checked) delete v.out; else { const d = fromHHMM($('#veO')?.value); if (d != null) v.out = { ...v.out, at: d }; } }
   }
   if (Object.keys(v).length) S.visit[key] = v; else delete S.visit[key];
@@ -3213,7 +3233,7 @@ function bayClashes(day){
 function openBays(){
   const day = S.day; const rows = todayModel(day).filter(i => i.a.active);
   const draw = () => { const bad = bayClashes(day);
-    openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after room time; final vitals ${esc(CFG.disAfter)} min after that.</div>
+    openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after the dose; final vitals ${esc(CFG.disAfter)} min after that.</div>
       <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
       ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td>${day === todaySerial() ? `<button class="linkbtn" data-act="goCard" data-k="${esc(i.a.key)}" title="Open on Today">${esc(nm(i.a.mrn))}</button>` : `<b>${esc(nm(i.a.mrn))}</b>`} <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
       </tbody></table></div>
@@ -3282,10 +3302,10 @@ function openCheckout(key){
     ${(S.co.rescue || []).length ? `<div class="msg warn small" style="margin-top:6px">Log ${S.co.rescue.length > 1 ? 'these' : 'this'} on the Medication Inventory Tracker. ${medInv ? `<a href="${esc(medInv)}" target="_blank" rel="noopener">Open Medication Inventory Tracker ↗</a>` : 'Add its link in Settings to open it from here.'}</div>` : ''}`;
   S.coRescueHTML = rescueHTML;
   const fd = finalDue(v) || !!v.out; S.coFinal = fd;
-  openModal(`<h2>Record vitals · Tx report</h2><div class="small muted">${esc(nm(it?.mrn))} · MRN ${esc(it?.mrn)} · ${fmtT(it?.time)}${v.start != null ? ` · started ${fmtT(v.start)} · final vitals ${fmtT(disAt(v.start))}` : ''}</div>
+  openModal(`<h2>Record vitals · Tx report</h2><div class="small muted">${esc(nm(it?.mrn))} · MRN ${esc(it?.mrn)} · ${fmtT(it?.time)}${v.start != null ? ` · roomed ${fmtT(v.start)}` : ''}${obsAt(v) != null ? ` · dose ${fmtT(obsAt(v))} · final vitals ${fmtT(disAt(obsAt(v)))}` : ''}</div>
     <div class="cocols"><div class="coform">
       <div class="small" style="font-weight:800;margin-top:6px">Vitals <span class="muted" style="font-weight:500">(same as the card)</span></div>
-      <div class="vitgrid small"><span></span><b>BP</b><b>Pulse</b><b>O2 %</b><b>Time</b>${VIT().map(([w, l]) => { const x = S.co.vit[w] || {}; const due = w === 'init' ? (v.start ?? it?.time) : v.start != null ? (w === 'mid' ? v.start + (+CFG.vitalsMin || 40) : disAt(v.start)) : null;
+      <div class="vitgrid small"><span></span><b>BP</b><b>Pulse</b><b>O2 %</b><b>Time</b>${VIT().map(([w, l]) => { const x = S.co.vit[w] || {}; const due = w === 'init' ? (v.start ?? it?.time) : obsAt(v) != null ? (w === 'mid' ? v40At(v) : disAt(obsAt(v))) : null;
         return `<span class="vh">${esc(l)}${due != null ? ` <span class="muted">due ${fmtT(due)}</span>` : ''}</span><input class="fld" data-cv="${w}|bp" value="${esc(x.bp || '')}" placeholder="120/80" aria-label="${esc(l)} BP"><input class="fld" type="number" min="0" data-cv="${w}|hr" value="${esc(x.hr || '')}" aria-label="${esc(l)} pulse"><input class="fld" type="number" min="0" max="100" data-cv="${w}|o2" value="${esc(x.o2 || '')}" aria-label="${esc(l)} O2"><input class="fld" type="time" data-cv="${w}|at" value="${x.at != null && x.at !== '' ? hhmm(+x.at) : ''}" aria-label="${esc(l)} time">`; }).join('')}</div>
       <div class="small" style="font-weight:800;margin-top:12px">Patient form <span class="muted" style="font-weight:500">(same order as the paper form)</span></div>
       ${radio('self', [['self', 'Pt self-answered'], ['staff', 'Staff assisted']])}
@@ -3431,7 +3451,7 @@ function vitalsDoc(day){
     const acts = !it ? [] : [it.needsMadrs ? `<b class="madrs"><span class="mp">MADRS</span> Needs MADRS (auth ${it.p.authExp < todaySerial() ? 'expired' : 'exp'} ${fmtD(it.p.authExp)})</b>` : null, it.needsSched ? `Schedule out (booked thru ${it.thru ? fmtD(it.thru) : '—'})` : null, it.needsProto ? `New protocol (${it.p?.protoExp ? (it.p.protoExp < todaySerial() ? 'expired ' : 'exp ') + fmtD(it.p.protoExp) : 'no date'})` : null].filter(Boolean);
     const note = !it ? '' : `<b>Med:</b> ${med}<span class="ai"><b>Action Items:</b> ${acts.length ? acts.join(' · ') : 'None'}</span>`;
     const vv = it ? visitGet(it.a.key) : null;
-    return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center;font-size:13pt;font-weight:700">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit(it ? fmtT(it.a.time) : '', it && vitGet(it.a.key, 'init'))}${vit(vv?.start != null ? fmtT(vv.start + (+CFG.vitalsMin || 40)) : '', it && vitGet(it.a.key, 'mid'))}${vit(vv?.start != null ? fmtT(disAt(vv.start)) : '', it && vitGet(it.a.key, 'fin'))}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
+    return `<tr class="pt"><td class="pc">${pt}</td><td style="text-align:center;font-size:13pt;font-weight:700">${esc(vv?.bay || '')}</td><td style="text-align:center">${vv?.start != null ? fmtT(vv.start) : ''}</td>${vit(it ? fmtT(it.a.time) : '', it && vitGet(it.a.key, 'init'))}${vit(obsAt(vv) != null ? fmtT(v40At(vv)) : '', it && vitGet(it.a.key, 'mid'))}${vit(obsAt(vv) != null ? fmtT(disAt(obsAt(vv))) : '', it && vitGet(it.a.key, 'fin'))}<td class="todo">${todo.map(t => `<div><span class="box"></span>${t}</div>`).join('')}</td></tr><tr class="nt"><td colspan="7"><b>Notes:</b> ${note}</td></tr>`;
   };
   const page = list => `<table class="sheet"><colgroup><col style="width:16%"><col style="width:6%"><col style="width:9%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:19%"></colgroup><tr class="ti"><td colspan="5" class="title">Esketamine Daily Patient Tracker</td><td colspan="2" class="date">Date: <u>&nbsp;${fmtD(day, 'full')}&nbsp;</u></td></tr>
     <tr class="hd"><th>Patient</th><th>Bay #</th><th>Tx Start Time</th><th>Initial Vitals</th><th>${esc(CFG.vitalsMin)} min Vitals</th><th>Discharge Vitals</th><th>To Do</th></tr>
@@ -3467,7 +3487,7 @@ function openPrintable(html, title){
 function openAdmin(key){
   const it = todayModel(S.day).find(i => i.a.key === key); if (!it) return;
   const kit = it.pulledKit || it.suggest || null;
-  S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, msg: null };
+  S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, at: hhmm(nowMin()), msg: null };
   renderAdmin();
 }
 function renderAdmin(){
@@ -3484,6 +3504,7 @@ function renderAdmin(){
   }
   if (!S.adm.tech) probs.push('Enter the treating technician.');
   if (!S.adm.sup) probs.push('Enter the supervising physician.');
+  if (fromHHMM(S.adm.at) == null) probs.push('Enter the time the dose was given.');
   const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup };
   if (k && !k.mrn) obj.mrn = mrnVal(it.a.mrn);
   if (k && !k.comments) obj.comments = nm(it.a.mrn);
@@ -3497,6 +3518,7 @@ function renderAdmin(){
     <div class="form2">
       <div><label class="lbl" for="admMg">Administered (mg)</label><select id="admMg" class="fld" data-adm="mg">${[56, 84, 28, 70, 14].map(v => `<option ${+S.adm.mg === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div><label class="lbl">Date administered</label><input class="fld ro" value="${fmtD(S.day, 'full')}" readonly></div>
+      <div><label class="lbl" for="admAt">Time given <span class="muted">(vitals timers start here)</span></label><input id="admAt" class="fld" type="time" data-adm="at" value="${esc(S.adm.at || '')}"></div>
       <div><label class="lbl" for="admTech">Treating technician</label><input id="admTech" class="fld" data-adm="tech" list="dlTech" value="${esc(S.adm.tech)}"></div>
       <div><label class="lbl" for="admSup">Supervising physician</label><input id="admSup" class="fld" data-adm="sup" list="dlSup" value="${esc(S.adm.sup)}"></div>
     </div>
@@ -3513,7 +3535,7 @@ async function adminSave(){
   CFG.sup = S.adm.sup; if (!CFG.me) CFG.me = S.adm.tech; saveCfg();
   const { out } = changesFor('kits', obj);
   const ok = await write('Recording administration…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Recorded ${S.adm.mg} mg for ${nm(it.a.mrn)}.`);
-  if (ok){ const d = isoOf(S.day); if (S.pull[d]) { delete S.pull[d][it.a.key]; savePull(); } closeModal(); render(); }
+  if (ok){ const d = isoOf(S.day); if (S.pull[d]) { delete S.pull[d][it.a.key]; savePull(); } const at = fromHHMM(S.adm.at); if (at != null) await visitSet(it.a.key, { adm: at }); closeModal(); render(); }
 }
 
 // ---------- receive ----------
@@ -4220,7 +4242,7 @@ const tdType = a => a.isStart ? 'Start' : a.isEFU ? 'Follow-up' : (a.event || 'V
 // Live text: the 20 s timer rewrites textContent and replaces className with "st <tone>", so nothing else goes on this span.
 const tdLive = due => `<span class="st ${dueCls(due, true)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="1">${esc(dueText(due, true))}</span>`;
 const tdM40 = v => ({ what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' });
-const tdFin = v => ({ what: 'Final vitals', at: disAt(v.start), kind: 'dis' });
+const tdFin = v => ({ what: 'Final vitals', at: disAt(obsAt(v)), kind: 'dis' });
 const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'Rescue: ' + v.rescue.map(r => r.med).join(', ')) : '';
 
 // One queue row per visit: group, sort rank, dot tone, state line and up to two tags.
@@ -4232,20 +4254,20 @@ function tdRow(i, now, on){
   if (v?.out){ r.grp = 'done'; r.at = v.out.at; r.line = `Discharged ${fmtT(v.out.at)}`; return r; }
   if (v?.start == null){ r.line = a.time == null ? 'No appointment time' : i.adminKit ? `Given, no room time · booked ${fmtT(a.time)}` : tdLive({ what: 'Expected', at: a.time, kind: 'arr' }); return r; }
   if (!on.has(key)){ r.grp = 'done'; r.lost = true; r.at = v.start; r.line = 'Not discharged in the tracker'; return r; }
-  const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = v40At(v) - now, fd = finalDue(v);
-  const late = !mid && d40 < 0, soon = !mid && d40 >= 0 && d40 <= TD_SOON, noDose = !i.adminKit;
+  const o = obsAt(v), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = o == null ? Infinity : v40At(v) - now, fd = finalDue(v);
+  const late = !mid && d40 < 0, soon = !mid && d40 >= 0 && d40 <= TD_SOON, noDose = !i.adminKit || o == null;
   r.grp = late || soon || noDose || fd ? 'need' : 'chair';
   r.rank = late ? 0 : soon ? 1 : noDose ? 2 : fd ? 3 : 4;
   r.tone = late ? 'late' : soon || r.rank === 2 ? 'soon' : 'ok';
-  const nx = !mid ? tdM40(v) : !fin ? tdFin(v) : null; r.at = nx ? nx.at : disAt(v.start);
-  r.line = late || soon ? tdLive(tdM40(v)) : noDose ? `Roomed ${fmtT(v.start)} · dose not recorded` : nx ? tdLive(nx) : 'Ready to discharge';
+  const nx = o == null ? null : !mid ? tdM40(v) : !fin ? tdFin(v) : null; r.at = o == null ? v.start : nx ? nx.at : disAt(o);
+  r.line = late || soon ? tdLive(tdM40(v)) : noDose ? `Roomed ${fmtT(v.start)} · ${i.adminKit ? 'dose time not recorded' : 'dose not recorded'}` : nx ? tdLive(nx) : 'Ready to discharge';
   return r;
 }
 // Today's groups. On site = roomed, not discharged, at most 60 min past final vitals due, one per bay (the most recently roomed).
 function tdModel(){
   const T = todaySerial(), now = nowMin(), items = todayModel(T);
   const live = items.filter(i => !i.a.cancelled), act = live.filter(i => i.a.active);
-  const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out && now <= disAt(x.v.start) + 60);
+  const inC = act.map(i => ({ i, v: visitGet(i.a.key) })).filter(x => x.v && x.v.start != null && !x.v.out && now <= disAt(x.v.adm ?? x.v.start) + 60);
   const bay = new Map(); for (const x of inC){ const b = String(x.v.bay || '').trim().toLowerCase() || 'k:' + x.i.a.key; const o = bay.get(b); if (!o || x.v.start > o.v.start) bay.set(b, x); }
   const on = new Set([...bay.values()].map(x => x.i.a.key));
   const rows = live.map(i => tdRow(i, now, on)); const g = k => rows.filter(r => r.grp === k);
@@ -4261,9 +4283,10 @@ function tdPrimary(r){
   const b = (act, label, extra = '', cls = '') => `<button class="btn primary lg${cls ? ' ' + cls : ''}" data-act="${act}" data-k="${k}"${extra}>${label}</button>`;
   if (v?.out) return { act: 'tx', html: txBtn(key, v) };
   if (!v || v.start == null) return { act: 'vStart', html: b('vStart', 'Room time + Initial vitals') };
-  const mid = vitGet(key, 'mid'), d40 = v40At(v) - nowMin(), fd = finalDue(v), lab = `Record ${esc(CFG.vitalsMin)}-min vitals`;
+  const mid = vitGet(key, 'mid'), d40 = obsAt(v) == null ? Infinity : v40At(v) - nowMin(), fd = finalDue(v), lab = `Record ${esc(CFG.vitalsMin)}-min vitals`;
   if (!mid && d40 <= TD_SOON && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"', d40 < 0 ? 'late' : '') };
   if (!i.adminKit) return { act: 'admin', html: b('admin', 'Administer') };
+  if (obsAt(v) == null) return { act: 'vEdit', html: b('vEdit', 'Add dose time') };
   if (!mid && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"') };
   return { act: 'vOut', html: txBtn(key, v, true) };
 }
@@ -4274,12 +4297,13 @@ function tdLead(r){
   if (!a.active) return P('', `Not coming: ${esc(a.hold ? 'Hold' : a.status || 'not active')}`);
   if (v?.out) return P('', `Discharged ${fmtT(v.out.at)} ${tdRescue(v)}`);
   if (v?.start == null) return P('', a.time == null ? 'Not roomed yet.' : i.adminKit ? `Dose recorded, but no room time. Booked ${fmtT(a.time)}.` : `Not roomed yet. ${tdLive({ what: 'Expected', at: a.time, kind: 'arr' })}`);
-  const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = v40At(v) - nowMin(), fd = finalDue(v), rx = tdRescue(v);
-  if (r.lost) return P('', `Not discharged in the tracker. Final vitals were due ${fmtT(disAt(v.start))}. ${rx}`);
+  const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = obsAt(v) == null ? Infinity : v40At(v) - nowMin(), fd = finalDue(v), rx = tdRescue(v);
+  if (r.lost) return P('', `Not discharged in the tracker.${obsAt(v) != null ? ` Final vitals were due ${fmtT(disAt(obsAt(v)))}.` : ''} ${rx}`);
   if (!mid && d40 <= TD_SOON && !fd) return P(d40 < 0 ? 'late' : 'soon', `${tdLive(tdM40(v))} ${rx}`);
   if (!i.adminKit) return P('soon', `Roomed ${fmtT(v.start)}${v.bay ? ' in Bay ' + esc(v.bay) : ''}. Dose not recorded yet. ${rx}`);
+  if (obsAt(v) == null) return P('soon', `Dose given, but no dose time. Add it so the ${esc(CFG.vitalsMin)}-min and final vitals timers can run. ${rx}`);
   if (!mid && !fd) return P('', `${tdLive(tdM40(v))} ${rx}`);
-  if (fin) return P('', `Final vitals recorded. ${fd ? 'Ready to discharge.' : `Discharge opens at ${fmtT(disAt(v.start))}.`} ${rx}`);
+  if (fin) return P('', `Final vitals recorded. ${fd ? 'Ready to discharge.' : `Discharge opens at ${fmtT(disAt(obsAt(v)))}.`} ${rx}`);
   return P('', `${tdLive(tdFin(v))} ${rx}`);
 }
 // Ids of every card to-do this visit has (eskSnooze ids, unchanged: todo|mrn|kind|date).
@@ -5189,9 +5213,9 @@ function settingsHTML(){
     </div>
     <h2 class="set-sec">Timing</h2>
     <div class="set-grid">
-      ${f('sV40', '2nd vitals after room time (min)', { num: true })}
+      ${f('sV40', '2nd vitals after the dose (min)', { num: true })}
       ${f('sDis', 'Final vitals after 2nd vitals (min)', { num: true })}
-      <div class="set-hint wide">Final vitals are due ${sumV} min after room time.</div>
+      <div class="set-hint wide">Final vitals are due ${sumV} min after the dose.</div>
       ${f('sSched', '“Booked through” window (days)', { num: true })}
       ${f('sGen', 'Genoa look-ahead (days)', { num: true, hint: 'Not used yet: the Genoa list runs through Friday of next week.' })}
     </div>
@@ -5447,6 +5471,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
+  if (el.id === 'apptShrinkOk'){ const b = $('#apptGo'); if (b) b.disabled = !el.checked; return; }
   if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
   if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
@@ -5528,7 +5553,7 @@ setInterval(() => {
   document.querySelectorAll('.floor [data-exp]').forEach(el => { if (now > +el.dataset.exp) el.remove(); });
   document.querySelectorAll('.floor').forEach(el => { if (!el.querySelector('.fl')) el.remove(); });
   document.querySelectorAll('[data-due]').forEach(el => { if (el.dataset.today !== '1') return; const at = +el.dataset.due; const due = { what: el.dataset.what, at, kind: el.dataset.kind }; el.textContent = dueText(due, true); el.className = (el.classList.contains('st') ? 'st ' : 'chip ') + dueCls(due, true); });
-  document.querySelectorAll('.track[data-start]').forEach(el => { if (el.dataset.out) return; const p = trackPos({ start: +el.dataset.start }, now) / 3 * 100 + '%'; const f = el.querySelector('.tfill'), n = el.querySelector('.tnow'); if (f) f.style.width = p; if (n) n.style.left = p;
+  document.querySelectorAll('.track[data-start]').forEach(el => { if (el.dataset.out) return; const p = trackPos({ start: +el.dataset.start, adm: el.dataset.obs ? +el.dataset.obs : null }, now) / 3 * 100 + '%'; const f = el.querySelector('.tfill'), n = el.querySelector('.tnow'); if (f) f.style.width = p; if (n) n.style.left = p;
     el.querySelectorAll('[data-mk]').forEach(m => { m.className = 'tmark ' + markCls(m.dataset.mk, +m.dataset.at, now); }); });
   document.querySelectorAll('[data-coat]').forEach(el => { if (now >= +el.dataset.coat) el.classList.add('primary'); });   // final vitals now due
   for (const f of TICKS){ try { f(now); } catch (err) { console.error(err); } }   // page live updates (ui kit)
