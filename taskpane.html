@@ -558,6 +558,54 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-today .dfacts .btn.inline{color:var(--muted)}
 .pg-today .dtools{display:flex;gap:4px;flex-wrap:wrap}
 .pg-today .lead{margin:0}
+/* bay map: collapsible floor plan of the two treatment rooms (CFG.bayMap keeps it open or closed per user) */
+.pg-today .bmap{padding:4px 18px;margin-bottom:18px}
+.pg-today .bmap>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:44px;font-weight:600}
+.pg-today .bmap>summary::-webkit-details-marker{display:none}
+.pg-today .bmap>summary::after{content:"▸";color:var(--faint);font-weight:400}
+.pg-today .bmap[open]>summary::after{content:"▾"}
+.pg-today .bmap>summary .muted{font-weight:400;font-size:13px}
+.pg-today .bmap[open]{padding-bottom:14px}
+.bplan{position:relative;aspect-ratio:808/392;container-type:inline-size;margin-top:4px}
+.bplan svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible;pointer-events:none}
+.bplan .wall{stroke:var(--ink);stroke-width:8;fill:none;stroke-linecap:square}
+.bplan .curtain{stroke:var(--faint);stroke-width:3.5;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:16 7 4 7}
+.bplan .door{stroke:var(--faint);stroke-width:1.75;fill:none}
+.bplan .table{fill:var(--surface3);stroke:var(--faint);stroke-width:1.75}
+.bplan .seat{fill:var(--surface);stroke:var(--muted);stroke-width:1.75}
+.bplan .back,.bplan .arm{fill:var(--surface2);stroke:var(--muted);stroke-width:1.5}
+.bplan .room{position:absolute;transform:translate(-50%,-50%);font-size:clamp(10px,1.6cqw,12.5px);font-weight:600;color:var(--muted);white-space:nowrap}
+.bplan .bay{position:absolute;aspect-ratio:1;border-radius:50%;--rw:2px;--rc:var(--surface2);background:var(--surface3);box-shadow:inset 0 0 0 var(--rw) var(--rc);transition:box-shadow .2s,background .2s,filter .2s}
+.bplan .bay[data-state="open"]{background:transparent;box-shadow:none;border:2px dashed var(--faint)}
+.bplan .bay[data-state="track"]{background:var(--surface2);--rc:var(--faint);--rw:2.5px}
+.bplan .bay[data-state="soon"]{background:var(--warn-soft);--rc:var(--warn);--rw:3px}
+.bplan .bay[data-state="late"]{background:var(--bad-soft);--rc:var(--bad);--rw:3.5px}
+.bplan .bay[data-state="ready"]{background:var(--accent-soft);--rc:var(--accent);--rw:3px}
+.bplan .bay:hover{filter:brightness(.96)}
+.bplan .bay[aria-current="true"]{box-shadow:inset 0 0 0 var(--rw) var(--rc),0 0 0 3px var(--surface),0 0 0 5px var(--ink)}
+.bplan .bay[data-state="open"][aria-current="true"]{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--ink)}
+.bplan .btag{position:absolute;transform:translate(-50%,-50%);pointer-events:none;background:var(--surface);border-radius:clamp(6px,1.4cqw,11px);padding:clamp(2px,.8cqw,7px) clamp(5px,1.4cqw,11px);box-shadow:0 1px 2px rgba(16,24,20,.08),0 8px 18px -10px rgba(16,24,20,.35);white-space:nowrap;line-height:1.2;max-width:28cqw}
+.bplan .btag .n{font-weight:600;font-size:clamp(10px,2cqw,14px);overflow:hidden;text-overflow:ellipsis}
+.bplan .btag .num{color:var(--muted);margin-right:.4em}
+.bplan .btag .s{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:clamp(9px,1.75cqw,12.5px);color:var(--muted);overflow:hidden}
+.bplan .btag .dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+.bplan .btag[data-state="track"] .dot{background:var(--muted)}
+.bplan .btag[data-state="ready"] .dot{background:var(--accent)} .bplan .btag[data-state="ready"] .s{color:var(--accent);font-weight:600}
+.bplan .btag[data-state="soon"] .dot{background:var(--warn)} .bplan .btag[data-state="soon"] .s{color:var(--warn);font-weight:600}
+.bplan .btag[data-state="late"] .dot{background:var(--bad)} .bplan .btag[data-state="late"] .s{color:var(--bad);font-weight:600}
+.bplan .btag[data-state="open"] .n{color:var(--muted)}
+.bplan .btag .tx{overflow:hidden;text-overflow:ellipsis}
+@container (max-width:560px){.bplan .btag .tx{display:none}.bplan .btag .s{margin-top:1px}}
+.bkey{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--muted)}
+.bkey li{display:flex;align-items:center;gap:7px}
+.bkey .bsw{flex:none;width:14px;height:14px;border-radius:50%;background:var(--surface3);box-shadow:inset 0 0 0 2px var(--surface2)}
+.bkey .bsw[data-k="open"]{background:transparent;box-shadow:none;border:1.5px dashed var(--faint)}
+.bkey .bsw[data-k="track"]{background:var(--surface2);box-shadow:inset 0 0 0 2px var(--faint)}
+.bkey .bsw[data-k="soon"]{background:var(--warn-soft);box-shadow:inset 0 0 0 2px var(--warn)}
+.bkey .bsw[data-k="late"]{background:var(--bad-soft);box-shadow:inset 0 0 0 2px var(--bad)}
+.bkey .bsw[data-k="ready"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
+.bmap .boff{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.bmap .boff .btn.inline{color:var(--warn)}
 .pg-today .lead .tag{vertical-align:2px}
 .pg-today .talerts{display:grid;gap:8px;margin-top:14px}
 .pg-today .alert .abtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}
@@ -1152,7 +1200,7 @@ function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOS
 // One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
 // on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'bayMap'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
@@ -2904,7 +2952,7 @@ function todayHTML(){
   const m = tdModel(); S._tdSig = tdSig(m);
   if (!m.all.length && !m.cx.length) return '<div class="card tempty"><p class="lead">No ESK visits today.</p><p class="muted">Upcoming visits and the week are on Schedule.</p><button class="btn" data-act="view" data-v="schedule">Open Schedule</button></div>';
   const sel = tdPick(m);
-  return pageCols('q', tdQueue(m, sel), tdDetail(sel));
+  return bayMapHTML(m, sel) + pageCols('q', tdQueue(m, sel), tdDetail(sel));
 }
 // ---------- cancelled visits: marked here (saved with the workbook) or cancelled in NextGen; listed under the day, not in it ----------
 async function setCancelled(key, on){
@@ -4490,6 +4538,61 @@ function tdSub(m){
   return [`${m.need.length + m.chair.length} in chair`, over ? `<strong>${over} overdue for vitals</strong>` : '', `${m.wait.length} not roomed yet`].filter(Boolean).join(', ')
     + ` · ${given}/${n} given · ${docd}/${n} documented${remsToday().imported && remsToday().opps.length ? ` · ${remsToday().tot.missing ? `<strong>${remsToday().tot.missing} REMS form${remsToday().tot.missing > 1 ? 's' : ''} not in chart</strong>` : 'REMS forms in chart'}` : ''}${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
 }
+// ---------- bay map: the two ESK treatment rooms, one rug per bay, coloured by what that bay needs ----------
+// Geometry is traced from the clinic drawing in an 808 × 392 box (bay centre, radius, tag position).
+// Bays match the Bay # saved on the visit ("4", "Bay 4"); anything else is listed under the map.
+const BAY_PLAN = { w: 808, h: 392, bays: [
+  { id: '1', cx: 118, cy: 298, r: 58, tag: [176, 300] }, { id: '2', cx: 118, cy: 128, r: 60, tag: [158, 180] },
+  { id: '3', cx: 345, cy: 150, r: 55, tag: [332, 206] }, { id: '4', cx: 500, cy: 140, r: 58, tag: [572, 170] },
+  { id: '5', cx: 695, cy: 150, r: 58, tag: [684, 230] }] };
+const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, ''); return BAY_PLAN.bays.some(x => x.id === s) ? s : null; };
+function bayState(r){
+  const { v, key } = r;
+  if (r.grp === 'chair') return { st: 'track', s: obsAt(v) == null ? `Roomed ${fmtT(v.start)}` : vitGet(key, 'mid') ? `Final vitals ${fmtT(disAt(obsAt(v)))}` : `Vitals ${fmtT(v40At(v))}` };
+  if (r.rank === 0) return { st: 'late', s: `Vitals overdue · ${fmtT(v40At(v))}` };
+  if (r.rank === 1) return { st: 'soon', s: `Vitals due ${fmtT(v40At(v))}` };
+  if (r.rank === 2) return { st: 'soon', s: r.i.adminKit ? 'No dose time' : 'Dose not given' };
+  return vitGet(key, 'fin') ? { st: 'ready', s: 'Ready to discharge' } : { st: 'soon', s: 'Final vitals due' };
+}
+function bayMapModel(m){
+  const on = [...m.need, ...m.chair];
+  const bays = BAY_PLAN.bays.map(b => {
+    const r = on.find(x => bayNo(x.v?.bay) === b.id);
+    if (r) return { ...b, row: r, ...bayState(r), title: nm(r.a.mrn) };
+    const res = m.wait.filter(x => x.a.time != null && bayNo(x.v?.bay) === b.id).sort((x, y) => x.a.time - y.a.time)[0] || null;
+    return { ...b, row: null, res, st: 'open', title: 'Open', s: res ? `${nm(res.a.mrn)} at ${fmtT(res.a.time)}` : 'Nobody booked' };
+  });
+  return { bays, off: on.filter(x => !bayNo(x.v?.bay)), used: bays.filter(b => b.row).length, late: bays.filter(b => b.st === 'late').length };
+}
+function bayMapHTML(m, sel){
+  if (!m.act.length) return '';
+  const M = bayMapModel(m), W = BAY_PLAN.w, H = BAY_PLAN.h, pct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
+  const bay = b => { const r = b.row || b.res;
+    const lab = `Bay ${b.id}, ${b.row ? `${b.title}, ${b.s}` : `open${b.res ? `, ${b.s}` : ''}`}`;
+    return `<button class="bay" ${r ? `data-act="tSel" data-k="${esc(r.key)}"` : 'data-act="bays"'} data-state="${b.st}" aria-current="${!!r && sel?.key === r.key}" aria-label="${esc(lab)}" title="${esc(r ? 'Open this visit' : 'Plan bays')}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
+  const tag = b => `<div class="btag" data-state="${b.st}" style="left:${pct(b.tag[0], W)};top:${pct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${b.id}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
+  const chair = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
+  const head = [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
+  const off = M.off.length ? `<p class="boff">Not on the map: ${M.off.map(r => `<button class="btn inline" data-act="tSel" data-k="${esc(r.key)}">${esc(nm(r.a.mrn))}${r.v?.bay ? ` (Bay ${esc(r.v.bay)})` : ' (no bay)'}</button>`).join(', ')}. <button class="btn inline" data-act="bays">Set bays</button></p>` : '';
+  return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
+    <div class="bplan">
+      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+        <g class="curtain"><path d="M30 207H158C202 207 226 242 226 292L226 364"/><path d="M204 54C212 122 236 192 268 232C282 240 296 241 316 241L410 241"/><path d="M600 54C606 130 592 200 600 262C606 312 610 338 608 364"/><path d="M424 244C470 246 516 236 554 208"/></g>
+        <g class="door"><path d="M376 372V324A48 48 0 0 0 328 372"/><path d="M440 372V324A50 50 0 0 1 490 372"/></g>
+        <g class="wall"><path d="M22 50H800V372H490M440 372H376M328 372H22V50"/><path d="M418 50V372"/></g>
+      </svg>
+      <div class="room" style="left:27.2%;top:6.6%">ESK Room 1</div><div class="room" style="left:75.7%;top:6.6%">ESK Room 2</div>
+      ${M.bays.map(bay).join('')}
+      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+        <g class="table"><circle cx="72" cy="253" r="24"/><circle cx="150" cy="84" r="26"/><circle cx="62" cy="162" r="22"/><circle cx="322" cy="88" r="26"/><rect x="252" y="80" width="40" height="40" rx="8"/><circle cx="527" cy="90" r="22"/><circle cx="450" cy="185" r="25"/><circle cx="655" cy="90" r="27"/><circle cx="770" cy="272" r="20"/></g>
+        ${chair(74, 300, -80)}${chair(96, 108, -40)}${chair(358, 122, 35)}${chair(472, 108, -35)}${chair(722, 126, 30)}
+      </svg>
+      ${M.bays.map(tag).join('')}
+    </div>
+    <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li></ul>
+    ${off}</details>`;
+}
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap' && !!CFG.bayMap !== d.open){ CFG.bayMap = d.open; saveLocal(); } }, true);
 const ACT_TODAY = {
   tSel: el => { const x0 = $('.pg-today .qstrip')?.scrollLeft || 0;
     S.tSel = el.dataset.k; if (S.noteFor && S.noteFor !== el.dataset.k) S.noteFor = null; render();
