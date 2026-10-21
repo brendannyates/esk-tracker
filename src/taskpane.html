@@ -1389,7 +1389,9 @@ function OfficeStore(){
           tables[k] = new Tbl(k, x.t.name, x.ws.name, x.h.values[0], d.values, d.formulas);
         }
         const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [] };
+        let vlog = []; const vw = wss.items.find(w => w.name === VLOG_SHEET);   // visit log: its own sync, it can be the biggest range here
+        if (vw){ const vr = vw.getUsedRangeOrNullObject(true); vr.load('values'); await ctx.sync(); if (!vr.isNullObject) vlog = parseVlog(vr.values); }
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [], vlog };
       }));
     },
     // REMS uploads (Document Management report) → hidden "ESK REMS Uploads" sheet, upsert by Doc Nbr. Plain text cells, not a table.
@@ -1405,6 +1407,31 @@ function OfficeStore(){
         if (!u.isNullObject) u.clear(Excel.ClearApplyTo.contents);
         for (let s0 = 0; s0 < all.length; s0 += CH){ const part = all.slice(s0, s0 + CH); const r = ws.getRange('A1').getOffsetRange(s0, 0).getResizedRange(part.length - 1, W - 1); r.numberFormat = txt(part.length); r.values = part; await ctx.sync(); }
         return { added: m.added, updated: m.updated };
+      });
+    },
+    // Visit log (hidden "ESK Visit Log"): append rows under the last used row. Plain text cells, not a table, so the watcher ignores it.
+    async appendVisitLog(rows){
+      if (!rows.length) return;
+      return Excel.run(async ctx => {
+        const W = VLOG_COLS.length, txt = n => Array.from({ length: n }, () => Array(W).fill('@'));
+        let ws = ctx.workbook.worksheets.getItemOrNullObject(VLOG_SHEET); await ctx.sync();
+        if (ws.isNullObject){ ws = ctx.workbook.worksheets.add(VLOG_SHEET); ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+        const u = ws.getUsedRangeOrNullObject(true); u.load('rowCount'); const h = ws.getRange('A1'); h.load('values'); await ctx.sync();
+        const fresh = u.isNullObject || String(h.values[0][0]).trim() !== VLOG_COLS[0], all = fresh ? [VLOG_COLS, ...rows] : rows, at = fresh ? 0 : u.rowCount;
+        const r = ws.getRange('A1').getOffsetRange(at, 0).getResizedRange(all.length - 1, W - 1); r.numberFormat = txt(all.length); r.values = all;
+        await ctx.sync();
+      });
+    },
+    // Remove the rows of these visits (their patient has had their next appointment) and write the rest back.
+    async pruneVisitLog(keys){
+      const drop = new Set(keys); if (!drop.size) return 0;
+      return Excel.run(async ctx => {
+        const W = VLOG_COLS.length, ws = ctx.workbook.worksheets.getItemOrNullObject(VLOG_SHEET); await ctx.sync(); if (ws.isNullObject) return 0;
+        const u = ws.getUsedRangeOrNullObject(true); u.load('values'); await ctx.sync(); if (u.isNullObject) return 0;
+        const keep = u.values.filter((r, i) => i === 0 || !drop.has(String(r[1]))), gone = u.values.length - keep.length; if (!gone) return 0;
+        u.clear(Excel.ClearApplyTo.contents);
+        for (let s0 = 0; s0 < keep.length; s0 += CH){ const part = keep.slice(s0, s0 + CH); const r = ws.getRange('A1').getOffsetRange(s0, 0).getResizedRange(part.length - 1, W - 1); r.numberFormat = Array.from({ length: part.length }, () => Array(W).fill('@')); r.values = part.map(x => x.map(String)); await ctx.sync(); }
+        return gone;
       });
     },
     // Write one person's row on the hidden profiles sheet, creating the sheet the first time. Plain cells, not a table,
@@ -1654,7 +1681,7 @@ function DemoStore(){
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = {};
-  const rems = [];
+  const rems = [], vlogDemo = [];
   { let n = 0; for (const a of apVals){ if (a[5] !== 'Kept' || a[2] >= T) continue; n++; if (n % 7 === 3) continue; const late = n % 9 === 4 ? 1 : 0, w = isoOf(a[2] + late) + ' 1' + (n % 6) + ':' + String(10 + n % 50).padStart(2, '0');
     rems.push([String(1550000 + n), 'REMS PT Monitoring Form', '', a[1], w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); }
     for (const r of inv){ if (!r[12] || r[12] >= T || ++n % 8 === 0) continue; const w = isoOf(r[12]) + ' 15:' + String(n % 60).padStart(2, '0'); rems.push([String(1550000 + n), 'REMS PT Monitoring Form', String(r[2]), '', w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); } }
@@ -1668,7 +1695,7 @@ function DemoStore(){
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: JSON.parse(JSON.stringify(ref)),
-        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]) };
+        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), vlog: parseVlog([VLOG_COLS, ...vlogDemo]) };
     },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
@@ -1685,6 +1712,8 @@ function DemoStore(){
     async addMany(k, list){ for (const ch of list) await this.add(k, ch); },
     async updateMany(k, items){ const done = []; for (const x of items){ try { await this.update(k, x.r, x.snap, x.changes); done.push(x); } catch {} } return done; },
     async setDropdown(colHeader, refHeader, values){ ref[norm(refHeader)] = values.slice(); await new Promise(r => setTimeout(r, 150)); return { source: `REF › ${refHeader}` }; },
+    async appendVisitLog(rows){ vlogDemo.push(...rows); },
+    async pruneVisitLog(keys){ const d = new Set(keys), n = vlogDemo.length; vlogDemo.splice(0, n, ...vlogDemo.filter(r => !d.has(r[1]))); return n - vlogDemo.length; },
     async upsertRems(rows){ const m = mergeRems(rems, rows); rems.splice(0, rems.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { added: m.added, updated: m.updated }; },
     async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
@@ -3208,6 +3237,96 @@ const fromHHMM = v => { const m = String(v || '').match(/^(\d{1,2}):(\d{2})/); r
 async function saveVisit(){
   const cut = todaySerial() - 45; for (const k of Object.keys(S.visit || {})){ const d = Number(k.split('|')[1]); if (d && d < cut) delete S.visit[k]; }
   await S.store.setDoc('eskVisit', S.visit || {});
+  await vlogWrite();
+}
+// ---------- visit log: a backup of eskVisit on the hidden "ESK Visit Log" sheet ----------
+// Every save appends one row per change (room time, dose time, bay, vitals, rechecks, PRN, discharge, move), right after the
+// document settings are written. Snapshot = that visit's tracked fields after the change, so a visit lost from the document
+// settings (two people saving at once) is filled back in from its latest row on the next load. Fills blanks only.
+// A patient's rows stay until their next appointment day comes, then the daily prune removes them.
+const VLOG_SHEET = 'ESK Visit Log', VLOG_COLS = ['Logged', 'Visit', 'MRN', 'Appt date', 'Event', 'Time', 'BP', 'HR', 'O2', 'Detail', 'By', 'Snapshot'];
+const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv'];
+const vlogEmpty = x => x == null || x === '' || (typeof x === 'object' && !Object.keys(x).length);
+function vlogPick(v){ const o = {}; for (const f of VLOG_F) if (v && !vlogEmpty(v[f])) o[f] = v[f]; return JSON.parse(JSON.stringify(o)); }
+const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+// What changed between two picked visits: [{ ev, time, bp, hr, o2, detail, by }]
+function vlogEvents(p, c){
+  const E = [], J = x => JSON.stringify(x ?? null), add = (ev, o = {}) => E.push({ ev, time: '', bp: '', hr: '', o2: '', detail: '', by: '', ...o });
+  if (J(p.start) !== J(c.start)) add(c.start != null ? 'Roomed' : 'Room time cleared', { time: hhmm(c.start) });
+  if (J(p.adm) !== J(c.adm)) add(c.adm != null ? 'Dose time' : 'Dose time cleared', { time: hhmm(c.adm) });
+  if (J(p.bay) !== J(c.bay)) add('Bay', { detail: c.bay != null ? String(c.bay) : 'cleared' });
+  const lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals' };
+  for (const w of new Set([...Object.keys(p.vit || {}), ...Object.keys(c.vit || {})])){
+    const a = (p.vit || {})[w], b = (c.vit || {})[w]; if (J(a) === J(b)) continue;
+    if (b) add(lab[w] || w + ' vitals', { time: hhmm(b.at), bp: b.bp || '', hr: b.hr || '', o2: b.o2 || '', by: b.by || '' }); else add((lab[w] || w) + ' cleared');
+  }
+  const P = p.rechk || [], R = c.rechk || [];
+  R.forEach((x, i) => { if (J(x) !== J(P[i])) add('Vitals recheck', { time: x.at || '', bp: x.bp || '', hr: x.hr || '', o2: x.o2 || '', detail: x.why || '', by: x.by || '' }); });
+  if (P.length > R.length) add('Recheck removed', { detail: `${P.length - R.length} removed` });
+  const PX = p.rescue || [], RX = c.rescue || [];
+  RX.forEach((x, i) => { if (J(x) !== J(PX[i])) add('PRN', { time: x.time || '', detail: [x.med, x.dose, x.reason && `(${x.reason})`].filter(Boolean).join(' ') }); });
+  if (PX.length > RX.length) add('PRN removed', { detail: `${PX.length - RX.length} removed` });
+  if (J(p.out) !== J(c.out)) add(c.out ? 'Discharged' : 'Discharge undone', { time: hhmm(c.out?.at), by: c.out?.by || '' });
+  if (J(p.mv) !== J(c.mv)) add(c.mv ? 'Moved' : 'Move undone', { time: hhmm(c.mv?.time), detail: c.mv?.prov || '', by: c.mv?.by || '' });
+  return E;
+}
+// Sheet rows for everything that changed from prev to cur (both eskVisit maps). Visits dropped by the 45-day cut aren't logged.
+function vlogRows(prev, cur, when, me, cut){
+  const out = [], at = vlogStamp(when);
+  for (const k of new Set([...Object.keys(prev || {}), ...Object.keys(cur || {})])){
+    const [mrn, ds] = k.split('|'), d = Number(ds);
+    if (!(cur || {})[k] && d && d < cut) continue;
+    const p = vlogPick((prev || {})[k]), c = vlogPick((cur || {})[k]); if (JSON.stringify(p) === JSON.stringify(c)) continue;
+    const E = vlogEvents(p, c), snap = JSON.stringify(c);
+    for (const e of E.length ? E : [{ ev: 'Updated', time: '', bp: '', hr: '', o2: '', detail: '', by: '' }])
+      out.push([at, k, mrn, d ? isoOf(d) : '', e.ev, e.time, e.bp, e.hr, e.o2, e.detail, e.by || me, snap]);
+  }
+  return out;
+}
+function parseVlog(values){
+  const v = values || []; if (!v.length || String(v[0][0]).trim() !== VLOG_COLS[0]) return [];
+  return v.slice(1).filter(r => r[1] !== '' && r[1] != null).map(r => ({ at: String(r[0]), key: String(r[1]), mrn: String(r[2]), date: String(r[3]), ev: String(r[4]), snap: String(r[11] || '') }));
+}
+// Fill blanks in eskVisit from each visit's latest snapshot. Returns how many visits got something back.
+function vlogRestore(visit, rows, cut){
+  const last = new Map(); for (const r of rows) if (r.snap && (!last.has(r.key) || r.at >= last.get(r.key).at)) last.set(r.key, r);
+  let n = 0;
+  for (const [k, r] of last){
+    const d = Number(k.split('|')[1]); if (d && d < cut) continue;
+    let s; try { s = JSON.parse(r.snap); } catch { continue; }
+    const cur = visit[k] || {}; let got = false;
+    for (const f of VLOG_F){
+      if (vlogEmpty(s[f])) continue;
+      if (vlogEmpty(cur[f])){ cur[f] = s[f]; got = true; }
+      else if (f === 'vit') for (const w of Object.keys(s.vit)) if (!cur.vit[w]){ cur.vit[w] = s.vit[w]; got = true; }
+    }
+    if (got){ visit[k] = cur; n++; }
+  }
+  return n;
+}
+// Visits whose rows can go: the patient has another appointment (not cancelled) after that visit, on or before today.
+function vlogDrop(rows, appts, today){
+  const by = new Map(); for (const a of appts) if (!a.cancelled && a.date <= today){ const L = by.get(a.mrn) || []; L.push(a.date); by.set(a.mrn, L); }
+  const drop = new Set();
+  for (const r of rows){ const d = Number(r.key.split('|')[1]); if (d && (by.get(r.mrn) || []).some(x => x > d)) drop.add(r.key); }
+  return [...drop];
+}
+async function vlogWrite(){
+  if (!S.store?.appendVisitLog) return;
+  const rows = [...(S._vlogPend || []), ...vlogRows(S._vlogBase || {}, S.visit || {}, new Date(), CFG.me || '', todaySerial() - 45)];
+  S._vlogBase = JSON.parse(JSON.stringify(S.visit || {})); S._vlogPend = [];
+  if (!rows.length) return;
+  try { await S.store.appendVisitLog(rows); }
+  catch (e){ console.error(e); S._vlogPend = rows; toast('warn', 'Saved, but the visit log sheet couldn’t be written. It will try again on the next save.'); }
+}
+// After each load: refill lost visits from the log, take the new baseline, and prune once a day (task pane only).
+async function vlogAfterLoad(rows){
+  const n = vlogRestore(S.visit, rows, todaySerial() - 45);
+  if (n){ await S.store.setDoc('eskVisit', S.visit); toast('warn', `Restored ${n} visit${n > 1 ? 's' : ''} from the visit log (vitals or times were missing).`); }
+  S._vlogBase = JSON.parse(JSON.stringify(S.visit || {}));
+  const T = todaySerial(); if (S.store.remote || S._vlogPruned === T || !S.store.pruneVisitLog) return;
+  const drop = vlogDrop(rows, S.A, T); S._vlogPruned = T;
+  if (drop.length) try { await S.store.pruneVisitLog(drop); } catch (e){ console.error(e); S._vlogPruned = null; }
 }
 function visitSet(key, patch){ S.visit = S.visit || {}; S.visit[key] = Object.assign(S.visit[key] || {}, patch); return saveVisit(); }
 // Room time = initial vitals. The observation timers run from the dose time (eskVisit[key].adm, minutes), saved by Administer
@@ -5797,7 +5916,7 @@ async function reload1(quiet){
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles(); S.rems = d.rems || [];
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
@@ -5831,12 +5950,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], docs: { eskRemsCov: store.getDoc('eskRemsCov'), eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], docs: { eskRemsCov: store.getDoc('eskRemsCov'), eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [] };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [] };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -5852,6 +5971,7 @@ function RemoteStore(){
     addMany: (k, list) => call('addMany', [k, list]),
     upsertBenefits: rows => call('upsertBenefits', [rows]),
     upsertRems: rows => call('upsertRems', [rows]),
+    appendVisitLog: rows => call('appendVisitLog', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
     replaceAppts: rows => call('replaceAppts', [rows]),
@@ -5877,7 +5997,7 @@ function openFull(){
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
-      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
