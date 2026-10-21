@@ -1302,6 +1302,12 @@ const colLetter = n => { let s = ''; n++; while (n){ const m = (n-1) % 26; s = S
 // ---------- store: live workbook (Office.js) ----------
 function OfficeStore(){
   const names = {}; let besseSheet = null;
+  // Office keeps its own copy of the document settings from when the pane opened; refreshAsync re-reads the file so
+  // vitals and visit times saved by someone else show up. seen[key] = that setting as last loaded or written by this pane.
+  const docs = () => Office.context.document.settings;
+  const refreshDocs = () => new Promise(res => { try { docs().refreshAsync(() => res()); } catch { res(); } });
+  const sig = k => { try { return JSON.stringify(docs().get(k) ?? null); } catch { return 'null'; } };
+  let seen = null, onDocs = null, polling = false;
   const CH = 250; // rows per request — Excel on the web rejects very large single reads ("An internal error has occurred")
   const hasManual = (v, f) => v.some((x, c) => !isF(f[c]) && x !== '' && x != null);
   async function retry(fn){
@@ -1364,6 +1370,7 @@ function OfficeStore(){
   return {
     live: true,
     async load(){
+      await refreshDocs(); seen = Object.fromEntries(DOC_KEYS.map(k => [k, sig(k)]));
       return retry(() => Excel.run(async ctx => {
         const ts = ctx.workbook.tables; ts.load('items/name'); const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const hs = ts.items.map(t => { const h = t.getHeaderRowRange(); h.load('values'); const ws = t.worksheet; ws.load('name'); return { t, h, ws }; });
@@ -1588,10 +1595,25 @@ function OfficeStore(){
         await ctx.sync();
       });
     },
-    getDoc(key){ try { return Office.context.document.settings.get(key); } catch { return null; } },
-    setDoc(key, val){ return new Promise(res => { try { Office.context.document.settings.set(key, val); Office.context.document.settings.saveAsync(() => res()); } catch { res(); } }); },
+    getDoc(key){ try { return docs().get(key); } catch { return null; } },
+    setDoc(key, val){ return new Promise(res => { try { docs().set(key, val); if (seen) seen[key] = sig(key); docs().saveAsync(() => res()); } catch { res(); } }); },
+    async freshDoc(key){ await refreshDocs(); return this.getDoc(key); },
+    // Called from the 20 s timer: someone else saved settings (vitals, room or dose time, PRN, tasks…) → same path as a cell change.
+    // seen is only reset by load(), so a change keeps firing until a reload picks it up.
+    async pollDocs(){
+      if (polling || !onDocs || !seen) return; polling = true;
+      try { await refreshDocs(); if (DOC_KEYS.some(k => sig(k) !== seen[k])) onDocs(); } finally { polling = false; }
+    },
+    // Any cell edit on any sheet (yours or a co-author's), plus Office's settings-changed event. Older Excel: the tracker tables only.
     watch(cb){
-      Excel.run(async ctx => { for (const k in names){ ctx.workbook.tables.getItem(names[k]).onChanged.add(() => { cb(); return Promise.resolve(); }); } await ctx.sync(); }).catch(() => {});
+      onDocs = cb;
+      try { docs().addHandlerAsync(Office.EventType.SettingsChanged, () => cb()); } catch {}
+      let all = false; try { all = Office.context.requirements.isSetSupported('ExcelApi', '1.9'); } catch {}
+      Excel.run(async ctx => {
+        if (all) ctx.workbook.worksheets.onChanged.add(() => { cb(); return Promise.resolve(); });
+        else for (const k in names){ ctx.workbook.tables.getItem(names[k]).onChanged.add(() => { cb(); return Promise.resolve(); }); }
+        await ctx.sync();
+      }).catch(() => {});
     },
   };
 }
@@ -1720,6 +1742,7 @@ function DemoStore(){
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
     async setDoc(key, val){ docs[key] = JSON.parse(JSON.stringify(val)); },
+    async freshDoc(key){ return docs[key] == null ? null : JSON.parse(JSON.stringify(docs[key])); },
     watch(){},
   };
 }
@@ -3235,9 +3258,21 @@ const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMin
 const hhmm = m => m == null ? '' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const fromHHMM = v => { const m = String(v || '').match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
 async function saveVisit(){
-  const cut = todaySerial() - 45; for (const k of Object.keys(S.visit || {})){ const d = Number(k.split('|')[1]); if (d && d < cut) delete S.visit[k]; }
-  await S.store.setDoc('eskVisit', S.visit || {});
-  await vlogWrite();
+  S._vlogBase = S._vlogBase || {}; S.visit = visitMerge(S.visit || {}, S._vlogBase, S.store.freshDoc ? await S.store.freshDoc('eskVisit') : null);
+  const cut = todaySerial() - 45; for (const k of Object.keys(S.visit)){ const d = Number(k.split('|')[1]); if (d && d < cut) delete S.visit[k]; }
+  try { await S.store.setDoc('eskVisit', S.visit); await vlogWrite(); }
+  finally { S._selfWriteAt = Date.now(); }   // the watcher ignores the change events from this write
+}
+// Someone else may have saved visits since this pane last read them. Visits this pane changed (vs base, the last read) keep
+// this pane's version; every other visit takes the file's. base follows the file too, so the visit log records only our changes.
+function visitMerge(mine, base, fresh){
+  if (!fresh || typeof fresh !== 'object') return mine;
+  const J = x => JSON.stringify(x ?? null);
+  for (const k of new Set([...Object.keys(fresh), ...Object.keys(base), ...Object.keys(mine)])){
+    if (J(mine[k]) !== J(base[k])) continue;
+    if (fresh[k]){ mine[k] = fresh[k]; base[k] = JSON.parse(JSON.stringify(fresh[k])); } else { delete mine[k]; delete base[k]; }
+  }
+  return mine;
 }
 // ---------- visit log: a backup of eskVisit on the hidden "ESK Visit Log" sheet ----------
 // Every save appends one row per change (room time, dose time, bay, vitals, rechecks, PRN, discharge, move), right after the
@@ -5893,6 +5928,9 @@ setInterval(() => {
 // ---------- load ----------
 let _loading = null, _again = false;
 const REFRESH_MS = 20000;   // workbook changes refresh the panel at most once per 20 s
+// Shared document settings: sent to the full-screen view on load, and watched for other people's saves. New esk* keys go here.
+const DOC_KEYS = ['eskRemsCov', 'eskPull', 'eskAudit', 'eskTasks', 'eskSnooze', 'eskProvAlias', 'eskFreqAlias', 'eskFreqRate', 'eskProvCred', 'eskCapacity', 'eskNotes', 'eskDocs', 'eskVisit', 'eskShared', 'eskDailyDay', 'eskCancel', 'eskApptList', 'Office.AutoShowTaskpaneWithDocument'];
+TICKS.push(() => { if (S.loaded && !S.store?.remote) S.store?.pollDocs?.().catch(() => {}); });   // pane only; the full-screen view hears it from the pane
 async function reload(quiet, fromWatch){
   if (_loading){ if (!fromWatch) _again = true; return _loading; } // one read at a time; a save during a read queues one more, a workbook change is skipped
   _loading = reload1(quiet);
@@ -6047,7 +6085,7 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], docs: { eskRemsCov: store.getDoc('eskRemsCov'), eskPull: store.getDoc('eskPull'), eskAudit: store.getDoc('eskAudit'), eskTasks: store.getDoc('eskTasks'), eskSnooze: store.getDoc('eskSnooze'), eskProvAlias: store.getDoc('eskProvAlias'), eskFreqAlias: store.getDoc('eskFreqAlias'), eskFreqRate: store.getDoc('eskFreqRate'), eskProvCred: store.getDoc('eskProvCred'), eskCapacity: store.getDoc('eskCapacity'), eskNotes: store.getDoc('eskNotes'), eskDocs: store.getDoc('eskDocs'), eskVisit: store.getDoc('eskVisit'), eskShared: store.getDoc('eskShared'), eskDailyDay: store.getDoc('eskDailyDay'), eskCancel: store.getDoc('eskCancel'), eskApptList: store.getDoc('eskApptList'),'Office.AutoShowTaskpaneWithDocument': store.getDoc('Office.AutoShowTaskpaneWithDocument') } };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], docs: Object.fromEntries(DOC_KEYS.map(k => [k, store.getDoc(k)])) };
 }
 function hydrate(d){
   const tables = {};
@@ -6077,6 +6115,7 @@ function RemoteStore(){
     saveProfile: p => call('saveProfile', [p]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
+    async freshDoc(k){ const v = await call('freshDoc', [k]); docs[k] = v; return v; },
     watch(cb){ onChanged = cb; },
     close(){ up({ ev: 'close' }); },
   };
@@ -6094,9 +6133,10 @@ function openFull(){
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
-      try { if (!['load','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      const read = op === 'load' || op === 'freshDoc';
+      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
-      finally { if (op !== 'load'){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
+      finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
     DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; reload(true); });
