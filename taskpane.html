@@ -1566,6 +1566,7 @@ function OfficeStore(){
         }
         for (let s = 0; s < rows.length; s += CH){ const part = rows.slice(s, s + CH); b.getCell(s, c0).getResizedRange(part.length - 1, W - 1).values = part; await ctx.sync(); }
         if (had > rows.length){ b.getCell(rows.length, c0).getResizedRange(had - rows.length - 1, W - 1).clear(Excel.ClearApplyTo.contents); await ctx.sync(); }
+        try { t.getRange().format.autofitColumns(); await ctx.sync(); } catch {}   // fit widths to the new list; the rows are already saved if this fails
       });
     },
     // Clean list for one Master Patient Tracker column (Access › Merge): write `values` under `refHeader` on the REF sheet (that column is
