@@ -1191,7 +1191,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing' };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5 };
 let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
 function saveLocal(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
 function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
@@ -1200,7 +1200,7 @@ function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOS
 // One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
 // on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'bayMap'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
@@ -4763,7 +4763,7 @@ PAGES.today = {
   title: () => { const T = todaySerial(); return `Today <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span>`; },
   sub: () => tdSub(tdModel()),
   tools: () => { S.day = todaySerial(); const n = todayModel(S.day).filter(i => i.a.active).length;
-    return `<button class="btn" data-act="bays" ${n ? '' : 'disabled'} title="Plan bays and print the Vitals Tracker">Bays &amp; day sheet</button><button class="btn" data-act="copyPull" ${n ? '' : 'disabled'} title="Copy today's kits as a table">Copy med list</button>`; },
+    return `${CFG.vitNotify && !alertsAny() ? '<button class="btn" data-act="alertsOpen" title="Pop-ups for vitals, even with Excel in the background">Alerts window</button>' : ''}<button class="btn" data-act="bays" ${n ? '' : 'disabled'} title="Plan bays and print the Vitals Tracker">Bays &amp; day sheet</button><button class="btn" data-act="copyPull" ${n ? '' : 'disabled'} title="Copy today's kits as a table">Copy med list</button>`; },
   html: () => todayHTML(),
   badge: () => { const n = tdModel().need.length + remsMissToday(); return n ? { n, tone: 'bad' } : null; },
 };
@@ -5487,7 +5487,7 @@ const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm
 // SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
 // the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
 const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis']);
-const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sSnd', 'sVitN', 'sVitS', 'sFull', 'sAuto']);
+const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sSnd', 'sVitN', 'sVitS', 'sVitA', 'sFull', 'sAuto']);
 function setEditing(on){ if (on){ S.editing = true; S._setEd = true; } else if (S._setEd){ S.editing = false; S._setEd = false; } }
 function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
 // True when everything in the draft is what cfgSave would have stored, i.e. the save went through.
@@ -5498,6 +5498,7 @@ function setDraftSaved(){
     if (id === 'sSnd') return sndFormat(sndParse(x)) === sndFormat((S.shared || {}).soundLinks);
     if (id === 'sVitN') return !!CFG.vitNotify === x;
     if (id === 'sVitS') return CFG.vitSound === x;
+    if (id === 'sVitA') return String(CFG.vitAhead ?? 5) === String(x);
     if (id === 'sFull') return !!CFG.autoFull === x;
     if (id === 'sAuto') return !S.store?.live || !!S.store.getDoc('Office.AutoShowTaskpaneWithDocument') === x;
     return true;
@@ -5534,7 +5535,9 @@ function settingsHTML(){
     <h2 class="set-sec">Vitals alerts</h2>
     <label class="check"><input type="checkbox" id="sVitN" ${on('sVitN', CFG.vitNotify)}><span class="l">Alert me when vitals are due<small>A browser pop-up and a sound. Pop-ups show the bay and time, never the patient.</small></span></label>
     <div class="set-row set-snd"><label class="lbl" for="sVitS">Sound</label><select id="sVitS" class="fld">${[...SOUNDS.map(s => [s, s[0].toUpperCase() + s.slice(1)]), ['chime', 'Built-in chime'], ['none', 'No sound']].map(([v, l]) => `<option value="${v}" ${snd === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn" data-act="vitTest">Test</button></div>
-    <div class="set-hint">${notifyHint()}</div>
+    <div class="set-row set-snd"><label class="lbl" for="sVitA">Heads-up</label><select id="sVitA" class="fld">${[['0', 'Off'], ['2', '2 min before'], ['5', '5 min before'], ['10', '10 min before']].map(([v, l]) => `<option value="${v}" ${String(val('sVitA', CFG.vitAhead ?? 5)) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="set-row"><button class="btn" data-act="alertsOpen">${alertsAny() ? 'Show alerts window' : 'Open alerts window'}</button></div>
+    <div class="set-hint">${notifyHint()} The alerts window is a small browser window that shows pop-ups even when Excel is in the background. Open it once each time you open the workbook.</div>
     <div class="set-f wide"><label class="lbl" for="sSnd">Shared sound links <span class="muted">(everyone, saved with the workbook)</span></label><textarea id="sSnd" class="fld" rows="4" placeholder="bing = https://mymhs-my.sharepoint.com/:u:/…">${esc(val('sSnd', sndFormat((S.shared || {}).soundLinks)))}</textarea><div class="set-hint">One line per sound: bing, boom, bop or bow, then its OneDrive link (Share › Anyone with the link). If a link doesn’t play, the add-in’s built-in copy of that sound plays, then the browser chime.</div></div>
     ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
   </section>`;
@@ -5686,7 +5689,8 @@ const ACT = {
   vitClear: async el => { closeModal(); await vitSave(el.dataset.k, el.dataset.w, null); },
   provEmailSave: el => provEmailSave(el.dataset.n, el.dataset.e),
   provEmailFill: () => provEmailFill(),
-  vitTest: async () => { const s = $('#sVitS')?.value || CFG.vitSound; playSound(s); await askNotify(true); render(); if (notifyPerm() === 'granted') try { new Notification('Final vitals due · test', { body: 'Bay 1', tag: 'esk-test', icon: 'assets/icon-80.png' }); } catch {} if (SOUNDS.includes(s) && !(await findSound(s))) toast('warn', `No ${esc(s)} sound file found yet, so the built-in chime played.`); },
+  alertsOpen: () => S.mode === 'dialog' && S.alertsOn && !alertsWinOk() ? toast('ok', 'The alerts window is connected through the panel behind this view.') : openAlerts(),
+  vitTest: async () => { const s = $('#sVitS')?.value || CFG.vitSound; if (alertsWinOk()){ sendAlert({ title: 'Final vitals due · test', body: 'Bay 1', tag: 'esk-test', sound: s }); return toast('ok', 'Test sent to the alerts window.'); } playSound(s); await askNotify(true); render(); if (notifyPerm() === 'granted') try { new Notification('Final vitals due · test', { body: 'Bay 1', tag: 'esk-test', icon: 'assets/icon-80.png' }); } catch {} if (SOUNDS.includes(s) && !(await findSound(s))) toast('warn', `No ${esc(s)} sound file found yet, so the built-in chime played.`); },
   rxAdd: el => { coAutosave(); S.co.rescue.push({ med: el.dataset.m, dose: '', time: hhmm(nowMin()), reason: '' }); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   rxDel: el => { coAutosave(); S.co.rescue.splice(+el.dataset.i, 1); $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); },
   coReset: () => { S.coEdit = null; coRefresh(); },
@@ -5776,7 +5780,7 @@ const ACT = {
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sn = $('#sSnd'); if (sn){ const o = sndParse(sn.value); if (sndFormat(o) !== sndFormat((S.shared || {}).soundLinks)){ if (Object.values(o).some(u => !/^https:\/\//i.test(u))) return toast('warn', 'Sound links should start with https://'); S.shared = { ...(S.shared || {}), soundLinks: o }; for (const k of Object.keys(soundUrl)) delete soundUrl[k]; await S.store.setDoc('eskShared', S.shared); } }
-    const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; if (vn.checked) await askNotify(); }
+    const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; CFG.vitAhead = +($('#sVitA')?.value ?? 5); if (vn.checked && !alertsWinOk()) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
@@ -5903,12 +5907,33 @@ async function askNotify(force){
   if (force && notifyPerm() === 'denied') return toast('warn', 'Pop-ups are blocked for this site. In the browser, click the lock icon by the address, set Notifications to Allow, then click Test again.');
   if (notifyPerm() !== 'granted') toast('warn', 'This browser didn’t allow pop-ups here, so vitals alerts will use the sound and the in-panel message.');
 }
-const notifyHint = () => ({ granted: 'Pop-ups allowed in this browser.', denied: 'Pop-ups are blocked in this browser’s site settings; the sound still plays.', unsupported: 'Pop-ups aren’t available here; the sound still plays.' })[notifyPerm()] || 'Excel may block the pop-up permission prompt inside the panel; the sound still plays.';
-function vitAlert(id, d, v){
-  if (!CFG.vitNotify || S.full) return;   // S.full: the full-screen dialog is open and alerts from there instead
+const alertsAny = () => alertsWinOk() || (S.mode === 'dialog' && !!S.alertsOn);
+const notifyHint = () => alertsAny() ? 'Alerts window connected: pop-ups and sound come from there.' : ({ granted: 'Pop-ups allowed in this browser.', denied: 'Pop-ups are blocked in this browser’s site settings; the sound still plays.', unsupported: 'Pop-ups aren’t available here; the sound still plays.' })[notifyPerm()] || 'Inside Excel the browser usually won’t let the panel show pop-ups. Open the alerts window to get them; the sound still plays here.';
+// ---------- alerts window (alerts.html): a normal browser window on this site that shows the pop-ups and plays the sound ----------
+// The panel and the full-screen view are frames inside Excel, where the browser won't ask for pop-up permission; a top-level window can.
+// The panel posts each alert to it (location.origin only). The window says hello every 10 s, so a reloaded panel finds it again.
+// The full-screen view sends its alerts to the panel when the panel has the window (S.alertsOn), else opens its own.
+const ALERT_STALE = 150000;   // background tabs can throttle timers to once a minute
+const alertsWinOk = () => !!(S.alertWin && !S.alertWin.closed && Date.now() - (S.alertSeen || 0) < ALERT_STALE);
+function alertPost(msg){ try { S.alertWin.postMessage(msg, location.origin); return true; } catch { return false; } }
+function openAlerts(){
+  const w = window.open(location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, '') + 'alerts.html', 'esk-alerts', 'popup,width=400,height=560');
+  if (!w) return toast('warn', 'The browser blocked the alerts window. Allow pop-ups for this site (icon at the right end of the address bar), then click again.');
+  S.alertWin = w; S.alertSeen = Date.now(); alertsState(); try { w.focus(); } catch {}
+}
+function alertsState(){ const on = alertsWinOk(); if (on !== S._alertsWas){ S._alertsWas = on; S.notifyDialogAlerts?.(on); if (S.loaded) render(); } }
+window.addEventListener('message', e => { if (e.origin !== location.origin || e.data?.esk !== 'alerts-hello') return; S.alertWin = e.source; S.alertSeen = Date.now(); alertPost({ esk: 'hb' }); alertsState(); });
+TICKS.push(() => { if (S.alertWin && !S.alertWin.closed) alertPost({ esk: 'hb' }); if (S._alertsWas) alertsState(); });
+async function sendAlert(a){ const snd = SOUNDS.includes(a.sound) ? await findSound(a.sound) : null; if (!alertPost({ ...a, esk: 'alert', snd })) playSound(a.sound); }
+// pre = the heads-up CFG.vitAhead minutes before; it doesn't stay on screen.
+function vitAlert(id, d, v, pre){
+  if (!CFG.vitNotify || S.full) return;   // S.full: the full-screen view is open and alerts (through the panel if it has the window)
+  const a = { title: pre ? `${d.what} in ${Math.max(1, d.at - nowMin())} min · ${fmtT(d.at)}` : `${d.what} due · ${fmtT(d.at)}`, body: v?.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: !pre };
+  if (alertsWinOk()) return sendAlert(a);
+  if (S.mode === 'dialog' && S.alertsOn) return S.store.relayAlert?.(a);
   playSound();
   if (notifyPerm() !== 'granted') return;
-  try { const n = new Notification(`${d.what} due · ${fmtT(d.at)}`, { body: v?.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, icon: 'assets/icon-80.png' }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
+  try { const n = new Notification(a.title, { body: a.body, tag: a.tag, icon: 'assets/icon-80.png', requireInteraction: a.sticky }); n.onclick = () => { window.focus(); n.close(); }; } catch {}
 }
 
 // ---------- timers: refresh countdowns every 20 s; toast once when something comes due ----------
@@ -5922,7 +5947,7 @@ setInterval(() => {
   document.querySelectorAll('[data-coat]').forEach(el => { if (now >= +el.dataset.coat) el.classList.add('primary'); });   // final vitals now due
   for (const f of TICKS){ try { f(now); } catch (err) { console.error(err); } }   // page live updates (ui kit)
   if (!S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
-  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v, key)){ if (d.at > now || now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); vitAlert(id, d, v); } }
+  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue; for (const d of visitMarks(v, key)){ if (d.at > now){ const ah = +(CFG.vitAhead ?? 5), pid = key + d.kind + 'p'; if (ah > 0 && d.at - now <= ah && !S._dueSeen.has(pid)){ S._dueSeen.add(pid); vitAlert(pid, d, v, true); } continue; } if (now - d.at > GRACE) continue; const id = key + d.kind; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id); const a = S.A.find(x => x.key === key); toast('warn', `<b>${esc(d.what)} due</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}`); vitAlert(id, d, v); } }
 }, 20000);
 
 // ---------- load ----------
@@ -6094,7 +6119,7 @@ function hydrate(d){
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
-  const rx = makeRx(m => { if (m.rid && pend.has(m.rid)){ const p = pend.get(m.rid); pend.delete(m.rid); m.ok ? p.res(m.res) : p.rej(new Error(m.err)); } else if (m.ev === 'changed' && onChanged) onChanged(); });
+  const rx = makeRx(m => { if (m.rid && pend.has(m.rid)){ const p = pend.get(m.rid); pend.delete(m.rid); m.ok ? p.res(m.res) : p.rej(new Error(m.err)); } else if (m.ev === 'changed' && onChanged) onChanged(); else if (m.ev === 'alerts'){ S.alertsOn = !!m.on; if (S.loaded) render(); } });
   Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, a => rx(a.message));
   const up = obj => sendChunks(s => Office.context.ui.messageParent(s), obj);
   const call = (op, args) => new Promise((res, rej) => { const rid = Math.random().toString(36).slice(2); pend.set(rid, { res, rej }); up({ rid, op, args }); setTimeout(() => { if (pend.has(rid)){ pend.delete(rid); rej(new Error('Excel didn’t answer. Keep the ESK Tracker panel open behind this window, then try again.')); } }, 45000); });
@@ -6117,6 +6142,7 @@ function RemoteStore(){
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
     async freshDoc(k){ const v = await call('freshDoc', [k]); docs[k] = v; return v; },
     watch(cb){ onChanged = cb; },
+    relayAlert(a){ up({ ev: 'alert', a }); },
     close(){ up({ ev: 'close' }); },
   };
 }
@@ -6131,6 +6157,7 @@ function openFull(){
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
+      if (m.ev === 'alert'){ if (alertsWinOk()) sendAlert(m.a || {}); else playSound(m.a?.sound); return; }   // an alert from the full-screen view, for the alerts window
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
       const read = op === 'load' || op === 'freshDoc';
@@ -6139,8 +6166,9 @@ function openFull(){
       finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
-    DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; reload(true); });
+    DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; S.notifyDialogAlerts = null; reload(true); });
     S.notifyDialog = () => reply({ ev: 'changed' });
+    S.notifyDialogAlerts = on => reply({ ev: 'alerts', on }); S.notifyDialogAlerts(alertsWinOk());
   });
 }
 
