@@ -596,6 +596,25 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bplan .btag[data-state="open"] .n{color:var(--muted)}
 .bplan .btag .tx{overflow:hidden;text-overflow:ellipsis}
 @container (max-width:560px){.bplan .btag .tx{display:none}.bplan .btag .s{margin-top:1px}}
+.pg-today .bmap{container:bmap / inline-size}
+.bwrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);grid-template-areas:"map panel" "next panel";gap:0 18px;align-items:start}
+.bwrap>.bleft{grid-area:map}.bwrap>.bpanel{grid-area:panel}.bwrap>.bnext{grid-area:next}
+@container bmap (max-width:820px){.bwrap{grid-template-columns:minmax(0,1fr);grid-template-areas:"map" "panel" "next"}.bwrap>.bpanel{margin-top:14px}}
+.bpanel{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface);display:flex;flex-direction:column;gap:10px}
+.bpanel .bph{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.bpanel .name{font-weight:600;font-size:18px}
+.bpanel .bayno{margin-left:8px;font-weight:400;font-size:13px;color:var(--muted)}
+.bpanel .meta,.bpanel .body{color:var(--muted);margin:0}
+.bpanel .lead{margin:0}
+.bpanel .row{display:flex;gap:6px;flex-wrap:wrap}
+.bnext{margin-top:14px}
+.bnext h3{margin:0 0 6px;font-size:14px}
+.barr{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.barr .p{font-weight:600}.barr .w{font-variant-numeric:tabular-nums;white-space:nowrap}.barr .where{color:var(--muted)}.barr .where.none{color:var(--warn)}
+.bpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:10px}
+.bpick .btn{flex-direction:column;align-items:flex-start;min-height:56px;height:auto;padding:8px 12px}
+.bpick small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.bpick .btn.primary small{color:inherit}
 .bkey{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--muted)}
 .bkey li{display:flex;align-items:center;gap:7px}
 .bkey .bsw{flex:none;width:14px;height:14px;border-radius:50%;background:var(--surface3);box-shadow:inset 0 0 0 2px var(--surface2)}
@@ -4721,14 +4740,16 @@ function bayMapModel(m){
 function bayMapHTML(m, sel){
   if (!m.act.length) return '';
   const M = bayMapModel(m), W = BAY_PLAN.w, H = BAY_PLAN.h, pct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
+  const cur = bayPick(M, sel);
   const bay = b => { const r = b.row || b.res;
     const lab = `Bay ${b.id}, ${b.row ? `${b.title}, ${b.s}` : `open${b.res ? `, ${b.s}` : ''}`}`;
-    return `<button class="bay" ${r ? `data-act="tSel" data-k="${esc(r.key)}"` : 'data-act="bays"'} data-state="${b.st}" aria-current="${!!r && sel?.key === r.key}" aria-label="${esc(lab)}" title="${esc(r ? 'Open this visit' : 'Plan bays')}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
+    return `<button class="bay" data-act="bSel" data-b="${b.id}"${r ? ` data-k="${esc(r.key)}"` : ''} data-state="${b.st}" aria-current="${cur?.id === b.id}" aria-label="${esc(lab)}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
   const tag = b => `<div class="btag" data-state="${b.st}" style="left:${pct(b.tag[0], W)};top:${pct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${b.id}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
   const chair = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
   const head = [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
   const off = M.off.length ? `<p class="boff">Not on the map: ${M.off.map(r => `<button class="btn inline" data-act="tSel" data-k="${esc(r.key)}">${esc(nm(r.a.mrn))}${r.v?.bay ? ` (Bay ${esc(r.v.bay)})` : ' (no bay)'}</button>`).join(', ')}. <button class="btn inline" data-act="bays">Set bays</button></p>` : '';
   return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
+    <div class="bwrap"><div class="bleft">
     <div class="bplan">
       <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
         <g class="curtain"><path d="M30 207H158C202 207 226 242 226 292L226 364"/><path d="M204 54C212 122 236 192 268 232C282 240 296 241 316 241L410 241"/><path d="M600 54C606 130 592 200 600 262C606 312 610 338 608 364"/><path d="M424 244C470 246 516 236 554 208"/></g>
@@ -4744,15 +4765,75 @@ function bayMapHTML(m, sel){
       ${M.bays.map(tag).join('')}
     </div>
     <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li></ul>
-    ${off}</details>`;
+    ${off}</div>${cur ? bayPanelHTML(cur) : ''}${bayNextHTML(m)}</div></details>`;
+}
+// Selected bay: the one tapped on the map (S.bSel), else the bay of the visit selected on Today, else the most urgent bay.
+const BAY_ORDER = { late: 0, soon: 1, ready: 2, track: 3, open: 4 };
+function bayPick(M, sel){
+  return M.bays.find(b => b.id === S.bSel) || (sel && M.bays.find(b => b.row?.key === sel.key))
+    || M.bays.slice().sort((x, y) => BAY_ORDER[x.st] - BAY_ORDER[y.st] || +x.id - +y.id)[0] || null;
+}
+// Beside the map: the visit in the selected bay (lead, timeline, steps, the one next step), or what an open bay is waiting for.
+function bayPanelHTML(b){
+  const r = b.row, B = `Bay ${esc(b.id)}`;
+  if (!r){
+    const x = b.res, n = x && esc(nm(x.a.mrn));
+    return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div class="name">${B}<span class="bayno">open</span></div></div>
+      <p class="body">${x ? `${n} is booked here at ${fmtT(x.a.time)}. Seat them when they arrive to start the visit.` : 'Nobody is booked here yet.'}</p>
+      ${x ? `<button class="btn primary lg" data-act="baySeat" data-k="${esc(x.key)}" data-b="${esc(b.id)}">Seat ${n} in ${B}</button>` : `<button class="btn primary lg" data-act="bayFill" data-b="${esc(b.id)}" data-mode="seat">Seat a patient here</button>`}
+      ${x ? `<div class="row"><button class="btn ghost" data-act="bayFill" data-b="${esc(b.id)}" data-mode="book">Book someone else here</button></div>` : ''}</aside>`;
+  }
+  const { i, a, v, key } = r, k = esc(key), pri = tdPrimary(r), prov = a.rendering || i.p?.provider || '';
+  const meta = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, prov ? esc(prov) : ''].filter(Boolean).join(', ');
+  return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div><div class="meta">${meta}</div></div>
+      <button class="btn ghost mute sm" data-act="bayNote" data-k="${k}">Add note</button></div>
+    ${tdLead(r)}${v?.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}
+    ${pri.html ? `<div class="tact">${pri.html}</div>` : ''}
+    <div class="row"><button class="btn ghost" data-act="bayMove" data-k="${k}">Move to another bay</button></div></aside>`;
+}
+// Under the map: everyone not roomed yet, with the bay they're booked into.
+function bayNextHTML(m){
+  const L = m.wait.filter(r => r.a.active); if (!L.length) return '';
+  return `<div class="bnext"><h3>Still to come</h3>${L.map(r => { const b = bayNo(r.v?.bay);
+    return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span><button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button></div>`; }).join('')}</div>`;
+}
+// Pickers. bayMove: the bays this visit can go to (none with someone in the chair). bayFill: who to put in an open bay.
+function openBayMove(key){
+  const M = bayMapModel(tdModel()), it = S.A.find(a => a.key === key), cur = bayNo(visitGet(key)?.bay), roomed = visitGet(key)?.start != null;
+  const L = M.bays.filter(b => !b.row || b.row.key === key);
+  openModal(`<h2>${roomed ? 'Move to another bay' : 'Choose a bay'}</h2><div class="small muted">${esc(nm(it?.mrn))}${it?.time != null ? ` · ${fmtT(it.time)}` : ''}</div>
+    <div class="bpick">${L.map(b => `<button class="btn${b.id === cur ? ' primary' : ''}" data-act="bayPut" data-k="${esc(key)}" data-b="${b.id}" ${b.id === cur ? 'aria-current="true"' : ''}>Bay ${b.id}<small>${b.row ? 'Here now' : b.res && b.res.key !== key ? esc(b.s) : 'Open'}</small></button>`).join('')}
+    ${!roomed && cur ? `<button class="btn ghost" data-act="bayPut" data-k="${esc(key)}" data-b="">No bay yet</button>` : ''}</div>
+    ${L.length ? '' : '<p class="muted">Every bay has someone in the chair.</p>'}<div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button></div>`);
+}
+function openBayFill(b, mode){
+  const L = tdModel().wait.filter(r => r.a.active);
+  openModal(`<h2>${mode === 'seat' ? 'Seat a patient in' : 'Book someone in'} Bay ${esc(b)}</h2>
+    <div class="bpick">${L.map(r => `<button class="btn" data-act="bayPut" data-k="${esc(r.key)}" data-b="${esc(b)}" data-mode="${mode}">${esc(nm(r.a.mrn))}<small>${fmtT(r.a.time)}${bayNo(r.v?.bay) ? ` · now Bay ${esc(bayNo(r.v.bay))}` : ''}</small></button>`).join('')}</div>
+    ${L.length ? '' : '<p class="muted">Everyone today has been roomed.</p>'}<div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button></div>`);
+}
+// Save the bay. Booking someone into a bay takes it off whoever else was booked there and not roomed yet. Seat goes on to Room time.
+async function bayPut(key, b, mode){
+  S.visit = S.visit || {};
+  if (mode === 'book' || mode === 'seat') for (const r of tdModel().wait) if (r.key !== key && b && bayNo(r.v?.bay) === b && S.visit[r.key]) delete S.visit[r.key].bay;
+  const v = S.visit[key] = S.visit[key] || {}; if (b) v.bay = b; else delete v.bay;
+  closeModal(); if (b) S.bSel = b; await saveVisit();
+  if (mode === 'seat') return openStart(key);
+  render(); toast('ok', b ? `Bay ${esc(b)} saved.` : 'Bay cleared.');
 }
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap' && !!CFG.bayMap !== d.open){ CFG.bayMap = d.open; saveLocal(); } }, true);
 const ACT_TODAY = {
   tSel: el => { const x0 = $('.pg-today .qstrip')?.scrollLeft || 0;
-    S.tSel = el.dataset.k; if (S.noteFor && S.noteFor !== el.dataset.k) S.noteFor = null; render();
+    S.tSel = el.dataset.k; S.bSel = el.dataset.b || null; if (S.noteFor && S.noteFor !== el.dataset.k) S.noteFor = null; render();   // data-b: tapped on the bay map, which then keeps that bay
     const s = $('.pg-today .qstrip'), c = s && s.querySelector('.qrow[aria-current="true"]');   // keep the strip where it was, with the tapped tile in view
     if (s){ s.scrollLeft = x0; if (c){ const cr = c.getBoundingClientRect(), sr = s.getBoundingClientRect(); if (cr.left < sr.left || cr.right > sr.right) s.scrollLeft += cr.left - sr.left - 8; } }
     if (window.innerWidth < 1180){ const d = $('.pg-today .tdet'); if (d && d.getBoundingClientRect().top > window.innerHeight * 0.6) d.scrollIntoView({ block: 'start' }); } },
+  bSel: el => { if (el.dataset.k) return ACT_TODAY.tSel(el); S.bSel = el.dataset.b; render(); },
+  baySeat: el => openStart(el.dataset.k),
+  bayFill: el => openBayFill(el.dataset.b, el.dataset.mode),
+  bayMove: el => openBayMove(el.dataset.k),
+  bayPut: el => bayPut(el.dataset.k, el.dataset.b, el.dataset.mode || ''),
+  bayNote: el => { S.tSel = el.dataset.k; S.noteFor = el.dataset.k; render(); setTimeout(() => { const n = $('#noteIn'); if (n){ n.scrollIntoView({ block: 'center' }); n.focus(); } }, 20); },
   copyMrn: async el => { const ok = await copyText(el.dataset.m); toast(ok ? 'ok' : 'bad', ok ? 'MRN copied.' : 'Couldn’t copy the MRN.'); },
   goCard: el => {   // was: scroll to the On site card. Now: open that patient on Today (from the bays dialog's names)
     if (!$('#modal').hidden){ if ([...document.querySelectorAll('[data-bay]')].some(x => x.value.trim() !== String(visitGet(x.dataset.bay)?.bay || '').trim())) return toast('warn', 'Save the bays first, then open the patient.'); closeModal(); }
