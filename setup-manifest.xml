@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ESK Tracker Setup: one-time Appt List setup for an Esketamine Master Tracker. Upload in Excel: Home > Add-ins > More Add-ins > My Add-ins > Upload My Add-in. -->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
+  <Id>b8b6961b-399d-40ae-b3e5-dfcc3580f3dd</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Mindful Health Solutions</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="ESK Tracker Setup"/>
+  <Description DefaultValue="One-time setup: adds the Appt List tab and treatment-date columns to an Esketamine Master Tracker and fills it from the NextGen report."/>
+  <IconUrl DefaultValue="https://brendannyates.github.io/esk-tracker/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://brendannyates.github.io/esk-tracker/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://brendannyates.github.io/esk-tracker/setup.html"/>
+  <AppDomains>
+    <AppDomain>https://brendannyates.github.io</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.9"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://brendannyates.github.io/esk-tracker/setup.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <FunctionFile resid="Commands.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="ESKSetup.Group">
+                <Label resid="Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16"/>
+                  <bt:Image size="32" resid="Icon.32"/>
+                  <bt:Image size="80" resid="Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="ESKSetup.Open">
+                  <Label resid="Button.Label"/>
+                  <Supertip>
+                    <Title resid="Button.Label"/>
+                    <Description resid="Button.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16"/>
+                    <bt:Image size="32" resid="Icon.32"/>
+                    <bt:Image size="80" resid="Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ESKSetup</TaskpaneId>
+                    <SourceLocation resid="Setup.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://brendannyates.github.io/esk-tracker/assets/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://brendannyates.github.io/esk-tracker/assets/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://brendannyates.github.io/esk-tracker/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Setup.Url" DefaultValue="https://brendannyates.github.io/esk-tracker/setup.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://brendannyates.github.io/esk-tracker/commands.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Group.Label" DefaultValue="Esketamine setup"/>
+        <bt:String id="Button.Label" DefaultValue="ESK Setup"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="Button.Tooltip" DefaultValue="Add the Appt List tab to this tracker and fill it from the NextGen report."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

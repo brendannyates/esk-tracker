@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESK Tracker Setup</title>
+<link rel="icon" href="assets/icon-32.png">
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+:root{--ink:#16201b;--muted:#5b6660;--line:#d9ded9;--bg:#f6f5f1;--surface:#fff;--ok:#1d6b46;--ok-soft:#e3f1e9;--warn:#8a5a00;--warn-soft:#fbf0d9;--bad:#a3302a;--bad-soft:#f8e3e1;--accent:#b5532f}
+@media (prefers-color-scheme:dark){:root{--ink:#e9ece9;--muted:#a3aca6;--line:#38413c;--bg:#151a17;--surface:#1d231f;--ok:#7fd1a5;--ok-soft:#1f3529;--warn:#f0c46a;--warn-soft:#3a2f17;--bad:#f19a92;--bad-soft:#3d2120}}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 system-ui,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:520px;margin:0 auto;padding:14px}
+h1{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:8px} h1 img{width:20px;height:20px}
+h2{font-size:13px;margin:16px 0 6px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+p{margin:6px 0} .hint{color:var(--muted);font-size:13px}
+ul{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)} li{padding:7px 0;border-bottom:1px solid var(--line)}
+li.ok::before{content:"✓ ";color:var(--ok);font-weight:700} li.warn::before{content:"! ";color:var(--warn);font-weight:700} li.bad::before{content:"✕ ";color:var(--bad);font-weight:700}
+.msg{padding:10px 12px;border-radius:10px;margin:10px 0} .msg.ok{background:var(--ok-soft);color:var(--ok)} .msg.warn{background:var(--warn-soft);color:var(--warn)} .msg.bad{background:var(--bad-soft);color:var(--bad)}
+label{display:flex;gap:8px;align-items:flex-start;margin:8px 0} label.f{display:block} label.f span{display:block;font-weight:600;margin-bottom:4px}
+input[type=password]{font:inherit;width:100%;min-height:40px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+input[type=checkbox]{width:18px;height:18px;margin-top:1px}
+button{font:inherit;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600} button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1><img src="assets/icon-32.png" alt="">ESK Tracker Setup</h1>
+  <p class="hint">Adds the Appt List tab to an Esketamine Master Tracker, with Last Treatment, Next Treatment and Scheduled Thru on the Master Patient Tracker, and fills it from the clinic’s NextGen report. Run it once per tracker, then remove the add-in.</p>
+  <h2>This workbook</h2>
+  <ul id="checks"><li>Checking…</li></ul>
+  <div id="form" hidden>
+    <h2>Appointments</h2>
+    <p><button id="pick">Choose the clinic’s report</button> <span id="fname" class="hint"></span></p>
+    <p class="hint">The 1 ESK Ordering - B export from NextGen (.xls), unchanged.</p>
+    <label><input type="checkbox" id="none"> No appointments (the blank template)</label>
+    <div id="match"></div>
+    <label class="f" id="pwBox" hidden><span>Master Patient Tracker sheet password</span><input type="password" id="pw" autocomplete="off"><span class="hint" style="font-weight:400">Used to unprotect the sheet and protect it again afterwards. Not saved.</span></label>
+    <ul class="hint" style="border:0;margin-top:10px"><li style="border:0">Running this also removes links to other workbooks: formulas pointing at other files keep their current values.</li>
+      <li style="border:0">To undo, use File › Info › Version history and restore the version from before the run.</li></ul>
+    <p><button class="primary" id="run" disabled>Set up this tracker</button></p>
+  </div>
+  <div id="out"></div>
+  <ul id="log" hidden></ul>
+  <input type="file" id="file" accept=".xls,.xlsx,.csv" hidden>
+</main>
+<script>
+// One-time setup for an Esketamine Master Tracker (the same changes as the 2026-10 rollout script): Appt List tab with table Table47
+// (A4:I, MRN..Rendering from the report, Dose and Lookup Key formulas) and the AO/AP date helpers; Last Treatment / Next Treatment /
+// Scheduled Thru on Table1 after Order Status; Last Tx / Next Tx renamed; PCN and Care Nav columns removed; external links broken.
+// The report is read in this panel and written to the workbook only; nothing leaves the browser.
+const MPT = 'Master Patient Tracker', SHEET = 'Appt List';
+const HDR = ['MRN', 'Patient', 'Date', 'Time', 'Event', 'Status', 'Rendering', 'Dose', 'Lookup Key'];
+const F = {
+  Dose: '=IF([@MRN]="","",IF(ISNUMBER(SEARCH("Start",[@Event])),56,IFERROR(XLOOKUP([@MRN]&"",Table1[MRN]&"",Table1[Protocol mg],84),84)))',
+  DoseNoProtocol: '=IF([@MRN]="","",IF(ISNUMBER(SEARCH("Start",[@Event])),56,84))',
+  Key: '=IF(OR([@MRN]="",[@Date]=""),"",[@Date]&"|"&TEXT([@Time],"hh:mm")&"|"&[@MRN])',
+  AO: '=LET(d,Table47[Date],k,Table47[Lookup Key],IFERROR(--d,IFERROR(--TRIM(TEXTBEFORE(k,"|")),0)))',
+  AP: '=LET(d,$AO$5#,t,Table47[Time],k,Table47[Lookup Key],IF(d=0,0,d+IFERROR(--t,IFERROR(TIMEVALUE(TRIM(TEXTBEFORE(TEXTAFTER(k,"|"),"|"))),0))))',
+  'Last Treatment': `=IF([@MRN]="","",LET(x,MAXIFS('Appt List'!$AO$5#,Table47[MRN],[@MRN],Table47[Status],"Kept"),IF(x=0,"",x)))`,
+  'Next Treatment': `=IF([@MRN]="","",LET(x,MINIFS('Appt List'!$AO$5#,Table47[MRN],[@MRN],Table47[Status],"Expected",'Appt List'!$AO$5#,">="&TODAY()),IF(x=0,"None Scheduled",x)))`,
+  'Scheduled Thru': `=IF([@MRN]="","",LET(x,MAXIFS('Appt List'!$AO$5#,Table47[MRN],[@MRN],Table47[Status],"Expected",'Appt List'!$AO$5#,">="&TODAY()),IF(x=0,"None Scheduled",x)))`
+};
+const NEW_COLS = ['Last Treatment', 'Next Treatment', 'Scheduled Thru'], RENAME = [['Last Tx', 'Last Treatment'], ['Next Tx', 'Next Treatment']], DROP = /PCN|Care ?Nav/i;
+const CH = 2000;   // rows per write
+
+// ---------- report parsing (same rules as the ESK Tracker's Upload appt list) ----------
+const norm = h => String(h ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const ymd = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5);
+function toSerial(v){
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return (v > 1000 && v < 100000) ? Math.floor(v) : null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (m){ let y = +m[3]; if (y < 100) y += 2000; return ymd(y, +m[1], +m[2]); }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return ymd(+m[1], +m[2], +m[3]);
+  return null;
+}
+const APPT_COLS = ['mrn', 'patient', 'date', 'time', 'event', 'status'];
+const APPT_HDR = { mrn: ['mdrc', 'mrn'], patient: ['patname', 'patientname', 'patient'], date: ['apptdt', 'apptdate', 'date'], time: ['begtm', 'time'], event: ['event'], status: ['sts', 'status'], rendering: ['rendering', 'renderingprovider', 'provider'] };
+// rows of [MRN, Patient, Date serial, Time, Event, Status, Rendering]; null when the header row isn't found
+function parseReport(aoa){
+  const hr = aoa.slice(0, 30).findIndex(r => r.some(v => APPT_HDR.mrn.includes(norm(v))) && r.some(v => APPT_HDR.date.includes(norm(v))));
+  if (hr < 0) return null;
+  const hn = aoa[hr].map(norm), idx = APPT_COLS.map(k => hn.findIndex(h => APPT_HDR[k].includes(h)));
+  if (idx.some(i => i < 0)) return null;
+  const ri = APPT_HDR.rendering.map(k => hn.indexOf(k)).find(i => i >= 0) ?? -1;
+  const rows = [];
+  for (const r of aoa.slice(hr + 1)){
+    const v = idx.map(i => r[i] ?? ''); v[2] = toSerial(v[2]); v.push(ri >= 0 ? String(r[ri] ?? '').trim() : '');
+    if (v[0] === '' || v[2] == null) continue;   // blank and footer lines
+    rows.push(v);
+  }
+  return { rows, rendering: ri >= 0 };
+}
+// share of the report's patients already on this tracker's Master Patient Tracker
+function overlap(rows, mrns){
+  const have = new Set(mrns.map(m => String(m ?? '').trim()).filter(Boolean)), pts = new Set(rows.map(r => String(r[0]).trim()));
+  let k = 0; for (const m of pts) if (have.has(m)) k++;
+  return { pts: pts.size, pct: pts.size ? Math.round(100 * k / pts.size) : 0 };
+}
+const colLetter = n => { let s = ''; for (n++; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
+const fill = (n, v) => Array.from({ length: n }, () => [v]);
+
+// ---------- panel ----------
+const $ = id => document.getElementById(id), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const S = { info: null, rep: null };
+function li(cls, html){ return `<li class="${cls}">${html}</li>`; }
+function say(cls, html){ $('out').innerHTML = html ? `<div class="msg ${cls}" role="status">${html}</div>` : ''; }
+function step(cls, text){ const l = $('log'); l.hidden = false; l.insertAdjacentHTML('beforeend', li(cls, esc(text))); }
+
+async function inspect(){
+  return Excel.run(async ctx => {
+    const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
+    const names = wss.items.map(w => w.name), info = { names, mpt: names.includes(MPT), appt: names.includes(SHEET) };
+    if (!info.mpt) return info;
+    const ws = wss.getItem(MPT), t1 = ctx.workbook.tables.getItemOrNullObject('Table1'), t47 = ctx.workbook.tables.getItemOrNullObject('Table47');
+    ws.protection.load('protected'); t1.load('isNullObject'); t47.load('isNullObject'); await ctx.sync();
+    info.prot = ws.protection.protected; info.t1 = !t1.isNullObject; info.t47 = !t47.isNullObject;
+    if (info.t1){
+      t1.worksheet.load('name'); const h = t1.getHeaderRowRange(); h.load('values'); const m = t1.columns.getItemOrNullObject('MRN'); m.load('isNullObject'); await ctx.sync();
+      info.t1Sheet = t1.worksheet.name; info.hdr = h.values[0].map(v => String(v).trim()); info.hasMrn = !m.isNullObject;
+      if (info.hasMrn){ const b = m.getDataBodyRange(); b.load('values'); await ctx.sync(); info.mrns = b.values.map(r => r[0]); }
+    }
+    info.links = null;
+    try { const lw = ctx.workbook.linkedWorkbooks; lw.load('items'); await ctx.sync(); info.links = lw.items.length; } catch {}
+    return info;
+  });
+}
+function showChecks(){
+  const i = S.info, c = [];
+  c.push(i.mpt ? li('ok', 'Master Patient Tracker sheet found') : li('bad', 'No sheet named “Master Patient Tracker”. Open an Esketamine Master Tracker.'));
+  if (i.mpt){
+    c.push(i.t1 && i.t1Sheet === MPT ? li('ok', 'Table1 is on it') : li('bad', i.t1 ? `Table1 is on “${esc(i.t1Sheet)}”, not the Master Patient Tracker.` : 'The Master Patient Tracker has no Table1.'));
+    if (i.t1) c.push(i.hasMrn ? li('ok', `${i.mrns.filter(v => String(v).trim()).length} patients listed`) : li('bad', 'Table1 has no MRN column.'));
+    if (i.t1 && !i.hdr.some(h => h.toLowerCase() === 'protocol mg')) c.push(li('warn', 'No Protocol mg column: Dose will show 84 mg (56 for starts).'));
+    if (i.prot) c.push(li('warn', 'The Master Patient Tracker is protected. Enter its password below, or leave it blank if it has none.'));
+  }
+  c.push(i.appt ? li('bad', 'This tracker already has an Appt List tab. To refresh appointments, use Upload appt list in the ESK Tracker.')
+    : i.t47 ? li('bad', 'A table named Table47 already exists in this workbook.') : li('ok', 'No Appt List tab yet'));
+  if (i.links != null) c.push(li(i.links ? 'warn' : 'ok', i.links ? `${i.links} link${i.links === 1 ? '' : 's'} to other workbooks (will be removed)` : 'No links to other workbooks'));
+  else c.push(li('warn', 'This Excel can’t list links to other workbooks. Check Data › Workbook Links after the run.'));
+  $('checks').innerHTML = c.join('');
+  S.blocked = !i.mpt || !i.t1 || i.t1Sheet !== MPT || !i.hasMrn || i.appt || i.t47;
+  $('form').hidden = S.blocked; $('pwBox').hidden = !i.prot; ready();
+}
+function ready(){
+  const m = S.rep && overlap(S.rep.rows, S.info.mrns || []), low = m && m.pct < 50;
+  $('match').innerHTML = !S.rep ? '' : `<div class="msg ${low ? 'warn' : 'ok'}">${S.rep.rows.length} appointments, ${m.pts} patients; ${m.pct}% of them are on this tracker.${S.rep.rendering ? '' : ' This report has no Rendering column, so Rendering will be blank.'}
+    ${low ? `<label><input type="checkbox" id="lowOk"${S.lowOk ? ' checked' : ''}> This is the right clinic’s report</label>` : ''}</div>`;
+  if (low) $('lowOk').onchange = e => { S.lowOk = e.target.checked; ready(); };
+  $('run').disabled = S.blocked || S.busy || !(($('none').checked && !S.rep) || (S.rep && (!low || S.lowOk)));
+}
+
+async function readFile(f){
+  say('', ''); S.rep = null; S.lowOk = false; $('fname').textContent = f.name; $('none').checked = false;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    S.rep = parseReport(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' }));
+  } catch (e){ console.error(e); say('bad', 'That file couldn’t be read. Use the export from NextGen unchanged.'); }
+  if (S.rep && !S.rep.rows.length) S.rep = null;
+  if (!S.rep && !$('out').textContent) say('bad', 'This doesn’t look like the 1 ESK Ordering - B report (no MRN / Appt Dt columns).');
+  ready();
+}
+
+// ---------- the changes ----------
+async function run(){
+  const rows = S.rep ? S.rep.rows : [], n = rows.length, pw = $('pw').value;
+  S.busy = true; ready(); $('log').innerHTML = ''; say('', '');
+  let prot = null, done = false;
+  try {
+    await Excel.run(async ctx => {
+      const wb = ctx.workbook, mpt = wb.worksheets.getItem(MPT), t1 = wb.tables.getItem('Table1');
+      mpt.protection.load('protected,options'); mpt.load('position'); await ctx.sync();
+      if (mpt.protection.protected){
+        prot = mpt.protection.options;
+        try { if (pw) mpt.protection.unprotect(pw); else mpt.protection.unprotect(); await ctx.sync(); }
+        catch { prot = null; throw new Error(pw ? 'That password didn’t unprotect the Master Patient Tracker. Nothing was changed.' : 'The Master Patient Tracker needs its password. Enter it and run again. Nothing was changed.'); }
+        step('ok', 'Unprotected the Master Patient Tracker');
+      }
+
+      // Appt List sheet, values first, then the table over them
+      const ws = wb.worksheets.add(SHEET); ws.position = mpt.position + 1;
+      ws.getRange('A1').values = [['Appointment List']]; ws.getRange('A1').format.font.bold = true; ws.getRange('A1').format.font.size = 14;
+      ws.getRange('A2').values = [['Paste or upload the NextGen ESK report here (MRN through Rendering). Dose and Lookup Key fill automatically.']];
+      ws.getRange('A1:I1').merge(false); ws.getRange('A2:I2').merge(false);   // merged so autofit ignores them
+      ws.getRange('A2').format.wrapText = true; ws.getRange('A2').format.verticalAlignment = 'Top'; ws.getRange('A2').format.rowHeight = 30;
+      ws.getRange('A4:I4').values = [HDR];
+      for (let s = 0; s < n; s += CH){ const part = rows.slice(s, s + CH); ws.getRange(`A${5 + s}:G${4 + s + part.length}`).values = part; await ctx.sync(); }
+      const last = 4 + Math.max(1, n), t47 = wb.tables.add(`'${SHEET}'!A4:I${last}`, true); t47.name = 'Table47'; await ctx.sync();
+      const hasProto = S.info.hdr.some(h => h.toLowerCase() === 'protocol mg'), body = Math.max(1, n);
+      for (const [col, f] of [['H', hasProto ? F.Dose : F.DoseNoProtocol], ['I', F.Key]])
+        for (let s = 0; s < body; s += CH){ const k = Math.min(CH, body - s); ws.getRange(`${col}${5 + s}:${col}${4 + s + k}`).formulas = fill(k, f); await ctx.sync(); }
+      ws.getRange(`C5:C${last}`).numberFormat = fill(body, 'm/d/yyyy'); ws.getRange(`D5:D${last}`).numberFormat = fill(body, 'h:mm AM/PM');
+      ws.getRange('AO4:AP4').values = [['Appt Date (helper)', 'Appt Start (helper)']]; ws.getRange('AO5:AP5').formulas = [[F.AO, F.AP]];
+      const fmtTo = last + 2000; ws.getRange(`AO5:AO${fmtTo}`).numberFormat = fill(fmtTo - 4, 'm/d/yyyy'); ws.getRange(`AP5:AP${fmtTo}`).numberFormat = fill(fmtTo - 4, 'm/d/yyyy h:mm AM/PM');
+      ws.getRange('A:I').format.autofitColumns(); await ctx.sync();
+      step('ok', n ? `Added the Appt List tab with ${n} appointments` : 'Added the Appt List tab (no appointments)');
+
+      // Master Patient Tracker columns
+      const cols = t1.columns; cols.load('items/name,items/index'); const b1 = t1.getDataBodyRange(); b1.load('rowCount'); await ctx.sync();
+      const find = nm => cols.items.find(c => c.name.trim().toLowerCase() === nm.toLowerCase());
+      for (const [from, to] of RENAME){ const c = find(from); if (c && !find(to)){ c.name = to; step('ok', `Renamed ${from} to ${to}`); } }
+      await ctx.sync(); cols.load('items/name,items/index'); await ctx.sync();
+      let at = find('Order Status')?.index ?? cols.items.length - 1;
+      for (const nm of NEW_COLS){
+        let c = find(nm);
+        if (!c){ c = cols.add(at + 1, null, nm); step('ok', `Added ${nm}`); } else step('ok', `Set the ${nm} formula`);
+        c.load('index'); await ctx.sync(); at = c.index;
+        const r = c.getDataBodyRange(); r.formulas = fill(b1.rowCount, F[nm]); r.numberFormat = fill(b1.rowCount, 'm/d/yyyy'); await ctx.sync();
+        cols.load('items/name,items/index'); await ctx.sync();
+      }
+      for (const c of cols.items.filter(c => DROP.test(c.name))){ const nm = c.name; c.delete(); await ctx.sync(); step('ok', `Removed ${nm}`); }
+
+      // links to other workbooks
+      try {
+        const lw = wb.linkedWorkbooks; lw.load('items'); await ctx.sync();
+        if (lw.items.length){ const k = lw.items.length; lw.breakAllLinks(); await ctx.sync(); step('ok', `Removed ${k} link${k === 1 ? '' : 's'} to other workbooks`); }
+      } catch { step('warn', 'Couldn’t remove links to other workbooks here. Use Data › Workbook Links › Break all.'); }
+
+      // checks: no error cells in the new columns or the table, the helper spills one row per appointment
+      const nb = []; for (const nm of NEW_COLS){ const r = t1.columns.getItem(nm).getDataBodyRange(); r.load('valueTypes'); nb.push(r); }
+      const tb = t47.getDataBodyRange(); tb.load('valueTypes'); const ao = ws.getRange('AO5:AP5'); ao.load('valueTypes'); await ctx.sync();
+      const errs = [...nb, tb, ao].reduce((k, r) => k + r.valueTypes.flat().filter(v => v === 'Error').length, 0);
+      let spill = null; try { const sp = ws.getRange('AO5').getSpillingToRangeOrNullObject(); sp.load('rowCount'); await ctx.sync(); spill = sp.isNullObject ? 0 : sp.rowCount; } catch {}
+      if (errs) step('bad', `${errs} cell${errs === 1 ? ' shows' : 's show'} an error. Check the new columns.`); else step('ok', 'No error cells in the new columns');
+      if (spill != null && n && spill !== n) step('bad', `The date helper covers ${spill} rows, the table has ${n}.`);
+      done = !errs && (spill == null || !n || spill === n);
+    });
+  } catch (e){ console.error(e); step('bad', e.message || String(e)); }
+  finally {
+    if (prot) try {   // put protection back exactly as it was
+      await Excel.run(async ctx => { const p = ctx.workbook.worksheets.getItem(MPT).protection; if (pw) p.protect(prot, pw); else p.protect(prot); await ctx.sync(); });
+      step('ok', 'Protected the Master Patient Tracker again');
+    } catch { step('bad', 'Couldn’t protect the Master Patient Tracker again. Protect it from Review › Protect Sheet.'); done = false; }
+    $('pw').value = ''; S.busy = false;
+  }
+  say(done ? 'ok' : 'bad', done ? 'Done. Excel saves it automatically. You can remove this add-in now, or open the next tracker.' : 'Not finished. See the steps below. To go back, use File › Info › Version history.');
+  S.info = await inspect().catch(() => S.info); showChecks(); $('form').hidden = true;
+}
+
+Office.onReady(async () => {
+  if (!window.Excel || !Office.context.document){ $('checks').innerHTML = ''; return say('bad', 'Open this from Excel.'); }
+  if (!Office.context.requirements.isSetSupported('ExcelApi', '1.9')) return say('bad', 'This version of Excel is too old for the setup. Use Excel on the web.');
+  $('pick').onclick = () => $('file').click();
+  $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) readFile(f); };
+  $('none').onchange = () => { if ($('none').checked){ S.rep = null; $('fname').textContent = ''; } ready(); };
+  $('run').onclick = run;
+  try { S.info = await inspect(); showChecks(); } catch (e){ console.error(e); $('checks').innerHTML = li('bad', 'Couldn’t read this workbook: ' + esc(e.message || e)); }
+});
+</script>
+<script src="assets/xlsx.full.min.js" defer></script>
+</body>
+</html>
