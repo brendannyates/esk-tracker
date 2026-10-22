@@ -569,7 +569,19 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bplan{position:relative;aspect-ratio:808/392;container-type:inline-size;margin-top:4px}
 .bplan svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible;pointer-events:none}
 .bplan .wall{stroke:var(--ink);stroke-width:8;fill:none;stroke-linecap:square}
-.bplan .curtain{stroke:var(--faint);stroke-width:3.5;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:16 7 4 7}
+.bplan{--lamp:#FFD38A;--lamp-edge:#C98A2B;--glow:#FFC56B;--glow-a:.75}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bplan{--lamp-edge:#E9B150;--glow:#FFB547;--glow-a:.6}}
+:root[data-theme="dark"] .bplan{--lamp-edge:#E9B150;--glow:#FFB547;--glow-a:.6}
+.bplan .curtain path{fill:none;stroke-linejoin:round}
+.bplan .curtain .crail{stroke:var(--faint);stroke-width:1.25;stroke-dasharray:3 3}
+.bplan .curtain .fabric{stroke:var(--muted);stroke-width:5.5;stroke-linecap:round;stroke-dasharray:0 7}
+.bplan .curtain .bunch{stroke:var(--muted);stroke-width:11;stroke-linecap:butt;stroke-dasharray:1.4 1.4 1.4 1.4 1.4 1.4 1.4 1.4 1.4 1.4 0 86}
+.bplan .lantern .body{fill:var(--surface);stroke:var(--muted);stroke-width:1.5}
+.bplan .lantern .lens{fill:var(--surface2)}
+.bplan .lantern .touch{fill:var(--muted)}
+.bplan .lantern.on .body{stroke:var(--lamp-edge)}
+.bplan .lantern.on .lens{fill:var(--lamp)}
+.bplan .lantern.on .touch{fill:var(--lamp-edge)}
 .bplan .door{stroke:var(--faint);stroke-width:1.75;fill:none}
 .bplan .table{fill:var(--surface3);stroke:var(--faint);stroke-width:1.75}
 .bplan .seat{fill:var(--surface);stroke:var(--muted);stroke-width:1.75}
@@ -4712,12 +4724,15 @@ function tdSub(m){
     + ` · ${given}/${n} given · ${docd}/${n} documented${remsToday().imported && remsToday().opps.length ? ` · ${remsToday().tot.missing ? `<strong>${remsToday().tot.missing} REMS form${remsToday().tot.missing > 1 ? 's' : ''} not in chart</strong>` : 'REMS forms in chart'}` : ''}${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
 }
 // ---------- bay map: the two ESK treatment rooms, one rug per bay, coloured by what that bay needs ----------
-// Geometry is traced from the clinic drawing in an 808 × 392 box (bay centre, radius, tag position).
+// Geometry is traced from the clinic drawing in an 808 × 392 box (bay centre, radius, tag position, side-table lantern).
 // Bays match the Bay # saved on the visit ("4", "Bay 4"); anything else is listed under the map.
+// Each curtain track lists the bays it screens: drawn while any of them has someone in the chair, bunched at its wall anchor otherwise.
 const BAY_PLAN = { w: 808, h: 392, bays: [
-  { id: '1', cx: 118, cy: 298, r: 58, tag: [176, 300] }, { id: '2', cx: 118, cy: 128, r: 60, tag: [158, 180] },
-  { id: '3', cx: 345, cy: 150, r: 55, tag: [332, 206] }, { id: '4', cx: 500, cy: 140, r: 58, tag: [572, 170] },
-  { id: '5', cx: 695, cy: 150, r: 58, tag: [684, 230] }] };
+  { id: '1', cx: 118, cy: 298, r: 58, tag: [176, 300], lamp: [72, 253] }, { id: '2', cx: 118, cy: 128, r: 60, tag: [158, 180], lamp: [150, 84] },
+  { id: '3', cx: 345, cy: 150, r: 55, tag: [332, 206], lamp: [322, 88] }, { id: '4', cx: 500, cy: 140, r: 58, tag: [572, 170], lamp: [527, 90] },
+  { id: '5', cx: 695, cy: 150, r: 58, tag: [684, 230], lamp: [655, 90] }],
+  curtains: [{ d: 'M30 207H158C202 207 226 242 226 292L226 364', bays: ['1', '2'] }, { d: 'M204 54C212 122 236 192 268 232C282 240 296 241 316 241L410 241', bays: ['2', '3'] },
+    { d: 'M600 54C606 130 592 200 600 262C606 312 610 338 608 364', bays: ['4', '5'] }, { d: 'M424 244C470 246 516 236 554 208', bays: ['4'] }] };
 const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, ''); return BAY_PLAN.bays.some(x => x.id === s) ? s : null; };
 function bayState(r){
   const { v, key } = r;
@@ -4746,13 +4761,16 @@ function bayMapHTML(m, sel){
     return `<button class="bay" data-act="bSel" data-b="${b.id}"${r ? ` data-k="${esc(r.key)}"` : ''} data-state="${b.st}" aria-current="${cur?.id === b.id}" aria-label="${esc(lab)}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
   const tag = b => `<div class="btag" data-state="${b.st}" style="left:${pct(b.tag[0], W)};top:${pct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${b.id}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
   const chair = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
+  const used = id => !!M.bays.find(b => b.id === id)?.row;
+  const curtain = c => `<g class="curtain"><path class="crail" d="${c.d}"/>${c.bays.some(used) ? `<path class="fabric" d="${c.d}"/>` : `<path class="bunch" d="${c.d}" pathLength="100"/>`}</g>`;
+  const lamp = b => `${b.row ? `<circle class="glow" cx="${b.lamp[0]}" cy="${b.lamp[1]}" r="20" fill="url(#bmGlow)"/>` : ''}<g class="lantern${b.row ? ' on' : ''}" transform="translate(${b.lamp[0]} ${b.lamp[1]})"><circle class="body" r="7.5"/><circle class="lens" r="4.75"/><circle class="touch" r="1.4"/></g>`;
   const head = [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
   const off = M.off.length ? `<p class="boff">Not on the map: ${M.off.map(r => `<button class="btn inline" data-act="tSel" data-k="${esc(r.key)}">${esc(nm(r.a.mrn))}${r.v?.bay ? ` (Bay ${esc(r.v.bay)})` : ' (no bay)'}</button>`).join(', ')}. <button class="btn inline" data-act="bays">Set bays</button></p>` : '';
   return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
     <div class="bwrap"><div class="bleft">
     <div class="bplan">
       <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
-        <g class="curtain"><path d="M30 207H158C202 207 226 242 226 292L226 364"/><path d="M204 54C212 122 236 192 268 232C282 240 296 241 316 241L410 241"/><path d="M600 54C606 130 592 200 600 262C606 312 610 338 608 364"/><path d="M424 244C470 246 516 236 554 208"/></g>
+        ${BAY_PLAN.curtains.map(curtain).join('')}
         <g class="door"><path d="M376 372V324A48 48 0 0 0 328 372"/><path d="M440 372V324A50 50 0 0 1 490 372"/></g>
         <g class="wall"><path d="M22 50H800V372H490M440 372H376M328 372H22V50"/><path d="M418 50V372"/></g>
       </svg>
@@ -4761,6 +4779,8 @@ function bayMapHTML(m, sel){
       <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
         <g class="table"><circle cx="72" cy="253" r="24"/><circle cx="150" cy="84" r="26"/><circle cx="62" cy="162" r="22"/><circle cx="322" cy="88" r="26"/><rect x="252" y="80" width="40" height="40" rx="8"/><circle cx="527" cy="90" r="22"/><circle cx="450" cy="185" r="25"/><circle cx="655" cy="90" r="27"/><circle cx="770" cy="272" r="20"/></g>
         ${chair(74, 300, -80)}${chair(96, 108, -40)}${chair(358, 122, 35)}${chair(472, 108, -35)}${chair(722, 126, 30)}
+        <defs><radialGradient id="bmGlow"><stop offset="0" stop-color="var(--glow)" stop-opacity="var(--glow-a)"/><stop offset="1" stop-color="var(--glow)" stop-opacity="0"/></radialGradient></defs>
+        ${M.bays.map(lamp).join('')}
       </svg>
       ${M.bays.map(tag).join('')}
     </div>
