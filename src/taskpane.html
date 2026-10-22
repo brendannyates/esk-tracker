@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="payer-rules.js"></script><!-- shared with the Clinic Template Tool and Sohar Eligibility; if it doesn't load, the payer flags stay off -->
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -742,6 +743,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-schedule .sh .ctl .snz{margin-left:0}
 .pg-schedule .sl{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:6px}
 .pg-schedule .sl:empty{display:none}
+.pg-schedule .sl .tag{white-space:normal}
 .pg-schedule .sl.small{display:block}
 .pg-schedule .sitem .line.row{margin-top:6px}
 .pg-schedule .sgrp{margin-top:14px}
@@ -781,6 +783,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-schedule table.t .pt{padding:0;min-height:0;font-weight:600;color:var(--ink);font-size:14px;text-align:left}
 .pg-schedule table.t .mrn,.pg-schedule table.t .kd,.pg-schedule table.t .was,.pg-schedule table.t .clin{display:block;font-size:12px;color:var(--muted)}
 .pg-schedule table.t .clin{color:var(--ink);margin-top:2px}
+.pg-schedule table.t .pyr{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px} .pg-schedule table.t .pyr .chip{white-space:normal}
 .pg-schedule table.t .tag+.kd{margin-top:2px}
 .pg-schedule .pdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
 .pg-schedule tr.off td{color:var(--muted)}
@@ -1057,6 +1060,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 <div id="app"></div>
 <input type="file" id="apptFile" accept=".xls,.xlsx,.csv" hidden>
 <input type="file" id="benFile" accept=".csv,.xlsx,.xls" hidden>
+<input type="file" id="payerFile" accept=".csv,.xlsx,.xls" hidden>
 <input type="file" id="remsFile" accept=".xls,.xlsx,.csv" hidden>
 <div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" aria-live="polite"></div>
@@ -1196,6 +1200,72 @@ function benLine(o){
   return parts.join(' · ');
 }
 // ---------- Sohar benefits: end of the Node-tested block ----------
+
+// ---------- Payer credential rules: who may bill each ESK visit, and Besse approval (no Excel calls; tests/payer-credential.test.js runs this block in Node) ----------
+// The rules live on the editable "Payer Credential Rules" sheet (Settings › Import payer rules). payer-rules.js, shared with the
+// Clinic Template Tool and Sohar Eligibility, reads and matches them. No sheet, or a payer that isn't on it: nothing shows.
+// Besse approval is a flag only: ordering, kit assignment and FIFO don't change.
+const PR = () => (typeof PayerRules !== 'undefined' && PayerRules) || null;
+const PAYER_SHEET = PR()?.SHEET || 'Payer Credential Rules';
+const PAYER_CA = /^(SRL|CAS|SF)$/i;   // clinic codes of the California ESK clinics (see locName), used when Settings leaves the state blank
+// State that decides between a payer's state rules (a CA row and a WA row): Settings › Clinic, else from the location name or clinic code.
+function payerHint(cfg, loc){
+  const s = String(cfg.payerState || '').trim().toUpperCase(); if (/^[A-Z]{2}$/.test(s)) return s;
+  const X = PR(); return (X && (X.stateOf(loc) || X.stateOf(cfg.clinic))) || (PAYER_CA.test(String(cfg.clinic || '').trim()) ? 'CA' : '');
+}
+// Credential of a provider: Settings › Templates & chairs (eskProvCred, keyed by lowercased name), else from the name ("Lee PMHNP, Sam").
+function credFor(name, provCred){ const n = String(name ?? '').trim(); if (!n) return ''; const c = (provCred || {})[n.toLowerCase()]; return c === 'MD' || c === 'NP' ? c : (PR()?.credOf(n) || ''); }
+// One entry per current (Active / Pending Start) patient whose payer is on the list. The payer is the tracker's Insurance, else
+// the Sohar payer. Each booked visit from today is checked with its rendering provider (else the patient's), and the patient
+// with their tracker provider. Step: a Start event is the start; the first visit with nothing given before it (no kit
+// administered, no kept visit) is the first treatment; the rest are observation.
+// -> Map mrn → { mrn, payer, m, besse, besseOn, visits: [{ a, prov, cred, step, ok, why }], byKey, pt, bad, unsure }
+function payerModel({ rules, P, A, K, ben, provCred, hint, T }){
+  const out = new Map(), X = PR(); if (!X || !rules || !rules.length) return out;
+  const dosed = new Map(), dose = (mrn, d) => { if (d == null) return; if (!dosed.has(mrn)) dosed.set(mrn, []); dosed.get(mrn).push(d); };
+  for (const k of K || []) if (k.administered) dose(k.mrn, k.adminDate);
+  for (const a of A || []) if (/kept/i.test(a.status)) dose(a.mrn, a.date);
+  const fix = (m, cred, stp) => { const o = cred === 'NP' ? 'MD' : cred === 'MD' ? 'NP' : ''; return o && X.check(m, o, stp).ok === true ? `reassign to ${o === 'MD' ? 'an MD' : 'an NP'} or confirm with billing` : 'confirm with billing'; };
+  for (const p of P || []){
+    if (out.has(p.mrn) || !/^(active|pending)/i.test(p.status)) continue;
+    let m = null, payer = '';
+    for (const n of [p.insurance, ben ? ben(p.mrn)?.soharpayer : ''].map(v => String(v ?? '').trim()).filter(Boolean)){ m = X.match(rules, n, hint); if (m){ payer = n; break; } }
+    if (!m) continue;
+    const had = dosed.get(p.mrn) || [], before = d => had.some(x => x < d);
+    const one = (prov, stp) => { const cred = credFor(prov, provCred); if (!cred) return null; const r = X.check(m, cred, stp);
+      return { prov, cred, step: stp, ok: r.ok, why: r.ok === false ? `${r.why}: ${fix(m, cred, stp)}` : r.why }; };
+    const up = (A || []).filter(a => a.mrn === p.mrn && a.active && a.date >= T).sort((x, y) => x.date - y.date || (x.time ?? 0) - (y.time ?? 0));
+    const visits = up.map((a, i) => { const r = one(a.rendering || p.provider, X.step(a.event, i === 0 && !before(a.date))); return r && Object.assign({ a }, r); }).filter(Boolean);
+    const pt = one(p.provider, up.length ? X.step(up[0].event, !before(up[0].date)) : X.step('', !had.length));
+    const bad = visits.filter(v => v.ok === false); if (pt && pt.ok === false && !bad.some(v => v.why === pt.why)) bad.push(pt);
+    const besseOn = p.pharm === 'BESSE' || (K || []).some(k => k.mrn === p.mrn && k.pharm === 'BESSE' && !k.administered && !k.disposed), besse = X.besse(m);
+    const unsure = m.ambiguous.length > 0 && ([pt, ...visits].some(r => r && r.ok === null) || (besseOn && besse === 'unknown'));
+    out.set(p.mrn, { mrn: p.mrn, payer, m, besse, besseOn, visits, byKey: new Map(visits.map(v => [v.a.key, v])), pt, bad, unsure });
+  }
+  return out;
+}
+const payerStep = s => PR()?.STEPS?.[s] || s;
+// Patient chips (Coverage, Today › This visit): Besse approval for Besse patients, and the muted "check plan state" note.
+function payerChips(f){
+  if (!f) return ''; const L = [];
+  if (f.besseOn && f.besse === 'not approved') L.push(`<span class="chip warn" title="${esc(f.m.payer)} isn’t approved for Besse on the Payer Credential Rules sheet. A flag only: ordering and kit assignment don’t change.">Payer isn’t Besse-approved</span>`);
+  if (f.besseOn && f.besse === 'pending') L.push(`<span class="chip" title="${esc(f.m.payer)}: Besse approval is blank on the Payer Credential Rules sheet.">Besse approval pending</span>`);
+  if (f.unsure) L.push(`<span class="chip" title="${esc(f.payer)} matches ${esc(f.m.ambiguous.join(' and '))}, which disagree. Check which state the plan is from, or set the state in Settings › Clinic.">Check plan state</span>`);
+  return L.join(' ');
+}
+// Visit chip (Schedule, Today): only when the payer doesn't let that credential bill this visit.
+function payerVisitChip(f, key){ const v = f?.byKey.get(key); return v && v.ok === false ? `<span class="chip bad" title="${esc(v.why)}">${esc(v.cred)} can’t bill this ${esc(payerStep(v.step))}</span>` : ''; }
+// Admin to-do line: the first problem, its visit date, and how many more.
+function payerTodoText(f){ const b = f?.bad?.[0]; if (!b) return ''; return `${b.why}${b.a ? ` (${fmtD(b.a.date, 'dow')}${b.a.time != null ? ' ' + fmtT(b.a.time) : ''} with ${b.prov})` : ` (tracker provider ${b.prov})`}${f.bad.length > 1 ? ` · ${f.bad.length - 1} more` : ''}`; }
+// Patient page › Coverage: the rule group matched, its chips, then each problem once with the visits it applies to.
+function payerHTML(f){
+  if (!f) return '';
+  const name = `${esc(f.m.payer)}${norm(f.payer) !== norm(f.m.payer) ? ` <span class="small muted">(${esc(f.payer)})</span>` : ''}`;
+  const by = new Map(); for (const b of f.bad){ if (!by.has(b.why)) by.set(b.why, []); by.get(b.why).push(b); }
+  const where = L => L.map(b => b.a ? `${fmtD(b.a.date, 'dow')} with ${esc(b.prov)}` : `tracker provider ${esc(b.prov)}`).join(', ');
+  return `${name} ${payerChips(f)}${[...by].map(([why, L]) => `<div class="small"><span class="badText">${esc(why)}</span> <span class="muted">· ${where(L)}</span></div>`).join('')}`;
+}
+// ---------- Payer credential rules: end of the Node-tested block ----------
 
 // Spravato GS1 code — same layout the Inventory formulas use:
 // 01 + GTIN(14) | 21 + serial(12) | 17 + YYMMDD | 10 + lot
@@ -1400,8 +1470,9 @@ function OfficeStore(){
         for (const x of Object.values(found)){ x.b = x.t.getDataBodyRange(); x.b.load('rowCount,columnCount'); }
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
-        const pw = wss.items.find(w => w.name === PROF_SHEET), rw = wss.items.find(w => w.name === REMS_SHEET);
-        let hr = null, rr = null, br = null, pr = null, rmr = null;
+        const pw = wss.items.find(w => w.name === PROF_SHEET), rw = wss.items.find(w => w.name === REMS_SHEET), yw = wss.items.find(w => w.name.trim().toLowerCase() === PAYER_SHEET.toLowerCase());
+        let hr = null, rr = null, br = null, pr = null, rmr = null, yr = null;
+        if (yw){ yr = yw.getUsedRangeOrNullObject(true); yr.load('values'); }
         if (found.daily){ hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); }
         if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
         if (pw){ pr = pw.getRange('A1:E500'); pr.load('values'); }
@@ -1417,8 +1488,23 @@ function OfficeStore(){
         const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
         let vlog = []; const vw = wss.items.find(w => w.name === VLOG_SHEET);   // visit log: its own sync, it can be the biggest range here
         if (vw){ const vr = vw.getUsedRangeOrNullObject(true); vr.load('values'); await ctx.sync(); if (!vr.isNullObject) vlog = parseVlog(vr.values); }
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [], vlog };
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [], vlog, payerRows: yr && !yr.isNullObject ? yr.values : null };
       }));
+    },
+    // Payer Credential Rules (Settings › Import payer rules): replaces the sheet's contents with rows (PayerRules.toRows).
+    // A visible sheet of plain text cells, not a table, so people can edit a rule there; the panel reads it on every refresh.
+    async writePayerRules(rows){
+      if (!rows.length) return { rules: 0 };
+      return Excel.run(async ctx => {
+        const W = Math.max(...rows.map(r => r.length)), all = rows.map(r => Array.from({ length: W }, (_, i) => String(r[i] ?? '')));
+        let ws = ctx.workbook.worksheets.getItemOrNullObject(PAYER_SHEET); await ctx.sync();
+        if (ws.isNullObject) ws = ctx.workbook.worksheets.add(PAYER_SHEET);
+        else { const u = ws.getUsedRangeOrNullObject(true); await ctx.sync(); if (!u.isNullObject) u.clear(Excel.ClearApplyTo.contents); }
+        ws.visibility = Excel.SheetVisibility.visible;
+        for (let s0 = 0; s0 < all.length; s0 += CH){ const part = all.slice(s0, s0 + CH); const r = ws.getRange('A1').getOffsetRange(s0, 0).getResizedRange(part.length - 1, W - 1); r.numberFormat = part.map(() => Array(W).fill('@')); r.values = part; await ctx.sync(); }
+        ws.getRange('A1').getResizedRange(all.length - 1, W - 1).format.autofitColumns(); await ctx.sync();
+        return { rules: all.length - 1 };
+      });
     },
     // REMS uploads (Document Management report) → hidden "ESK REMS Uploads" sheet, upsert by Doc Nbr. Plain text cells, not a table.
     async upsertRems(rows){
@@ -1644,6 +1730,7 @@ function DemoStore(){
   const PT_H = ['MRN','Patient Name','Status','Rendering Provider','Auth Exp.','Tx Frequency','Tx Start Date','Protocol Exp Date','Order Status','# Doses On Hand','# Partial On Hand','Pharmacy ','Protocol mg','Last Treatment','Next Treatment','Scheduled Thru','Auth Start','Authorized Txs','Coverage Options','Insurance','PA Number','Last MADRS','Last WHO5','Scheduling Preferences ','Notes:','PCN Notes'];
   const AP_H = ['MRN','Patient','Date','Time','Event','Status','Rendering','Dose','Lookup Key'];
   const INV_F = new Set([6,7,8,9,10,13,14,18,23]); const PT_F = new Set([9,10,13,14,15]); const AP_F = new Set([7,8]);
+  const DEMO_PAYERS = ['Acme Health', 'Zenith Blue', 'Orbit Federal', 'Nimbus Care'];   // made up; the first three are on the demo Payer Credential Rules sheet
   const pts = [
     [900101,'ALDBEN','Active','BESSE',84,'1x per week',6,'Mon mornings'],[900102,'BROCAM','Active','GENOA',84,'1x per week',3,''],
     [900103,'CARDEL','Active','BESSE',84,'1x per 2 weeks',1,''],[900104,'DUNEMI','Pending Start','BESSE',56,'2x per week',0,'Tue/Thu'],
@@ -1709,7 +1796,7 @@ function DemoStore(){
     r[23] = typeof r[8] === 'number' ? (isNaN(a) ? '' : r[8] - a - d) : '';
   };
   inv.forEach(invCalc);
-  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A.'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+([20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)] ?? 30 + pts.indexOf(p)); if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = ['Kaiser','Cigna','Blue Shield','Medicare'][i % 4]; r[4] = T + 60 - i * 7; if (i === 6) r[21] = T - 5; if (i === 9) r[21] = T - 40; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
+  const ptVals = pts.map(p => { const r = Array(26).fill(''); r[0]=p[0]; r[1]=p[1]; r[2]=p[2]; r[3]=['Provider A','Provider B','Provider C','Provider A.'][pts.indexOf(p) % 4]; r[5]=p[5]; r[7]=T+([20,45,90,12,60,-3,33,80,25,70,5,50,40][pts.indexOf(p)] ?? 30 + pts.indexOf(p)); if (p[3] === 'GENOA') r[24] = 'R10' + String(71000 + pts.indexOf(p)) + '/1'; { const i = pts.indexOf(p); if (i % 4 !== 3) r[18] = i % 2 ? 'MD & NP' : 'MD Only'; if (i % 5 !== 4) r[19] = DEMO_PAYERS[i % 4]; r[4] = T + 60 - i * 7; if (i === 6) r[21] = T - 5; if (i === 9) r[21] = T - 40; } r[11]=p[3]; r[12]=p[4]; r[23]=p[7]; return r; });
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
@@ -1721,7 +1808,13 @@ function DemoStore(){
   const DC_F = new Set([0,3,4,5,6,7,8,9]); const dcVals = Array.from({ length: 40 }, () => Array(10).fill(''));
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
-  const docs = {};
+  const docs = { eskProvCred: { 'provider a': 'MD', 'provider b': 'NP', 'provider c': 'NP' } };
+  // Payer Credential Rules sheet: MADE-UP payers only (the real list lives in each workbook, never in this repo)
+  let payerRows = [['Payer', 'State', 'Credential', 'Besse Approved', 'NP Fully Approved', 'Esketamine First Treatment', 'Esketamine Start', 'Esketamine Observation', 'Match Names', 'Notes'],
+    ['Acme Health', '', 'MD', 'Yes', 'N/A', 'Yes', 'Yes', 'Yes', 'acme; acme health', ''], ['Acme Health', '', 'NP', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'acme; acme health', ''],
+    ['Zenith Blue CA', 'CA', 'MD', 'No', 'N/A', 'Yes', 'Yes', 'Yes', 'zenith; zenith blue', ''], ['Zenith Blue CA', 'CA', 'NP', 'No', 'No', 'No', 'No', 'No', 'zenith; zenith blue', ''],
+    ['Zenith Blue WA', 'WA', 'MD', 'No', 'N/A', 'Yes', 'Yes', 'Yes', 'zenith; zenith blue', ''], ['Zenith Blue WA', 'WA', 'NP', 'No', 'Yes', 'Yes', 'Yes', 'Yes', 'zenith; zenith blue', ''],
+    ['Orbit Federal', '', 'MD', '', 'N/A', 'Yes', 'Yes', 'Yes', 'orbit; orbit federal', 'Besse pending'], ['Orbit Federal', '', 'NP', '', 'No', 'No', 'No', 'Yes', 'orbit; orbit federal', 'NP may do observation only']];
   const rems = [], vlogDemo = [];
   { let n = 0; for (const a of apVals){ if (a[5] !== 'Kept' || a[2] >= T) continue; n++; if (n % 7 === 3) continue; const late = n % 9 === 4 ? 1 : 0, w = isoOf(a[2] + late) + ' 1' + (n % 6) + ':' + String(10 + n % 50).padStart(2, '0');
     rems.push([String(1550000 + n), 'REMS PT Monitoring Form', '', a[1], w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); }
@@ -1736,8 +1829,9 @@ function DemoStore(){
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: JSON.parse(JSON.stringify(ref)),
-        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), vlog: parseVlog([VLOG_COLS, ...vlogDemo]) };
+        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), vlog: parseVlog([VLOG_COLS, ...vlogDemo]), payerRows: payerRows.map(r => r.slice()) };
     },
+    async writePayerRules(rows){ payerRows = rows.map(r => r.map(String)); await new Promise(r => setTimeout(r, 150)); return { rules: rows.length - 1 }; },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
       if (row < 0) throw new Error('That row changed. Refresh and try again.');
@@ -1926,7 +2020,8 @@ const FREQ_WEEKS = 2;
 function seenDates(mrn, from, to){ const s = new Set(); for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && a.date >= from && a.date <= to) s.add(a.date); for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate >= from && k.adminDate <= to) s.add(k.adminDate); return s.size; }
 function firstSeen(mrn){ let m = null; for (const a of S.A) if (a.mrn === mrn && /kept/i.test(a.status) && (m == null || a.date < m)) m = a.date; for (const k of S.K) if (k.mrn === mrn && k.administered && k.adminDate != null && (m == null || k.adminDate < m)) m = k.adminDate; return m; }
 function adminModel(){
-  const T = todaySerial(), from = T - FREQ_WEEKS * 7, to = T - 1; const out = { proto: [], freq: [], mdnp: [], status: [] };
+  const T = todaySerial(), from = T - FREQ_WEEKS * 7, to = T - 1; const out = { proto: [], freq: [], mdnp: [], status: [], payer: [] };
+  for (const f of payerFlags().values()){ const p = S.byMrn.get(f.mrn); if (p && f.bad.length) out.payer.push({ p, f, text: payerTodoText(f) }); }   // payer: the visit's credential can't bill it (Payer Credential Rules)
   for (const p of curPatients()){
     const cur = /^(active|pending)/i.test(p.status);
     if (cur && (!p.protoExp || p.protoExp < T)) out.proto.push({ p, text: p.protoExp ? `Protocol expired ${fmtD(p.protoExp, 'full')}` : 'No protocol exp date' });
@@ -1940,7 +2035,7 @@ function adminModel(){
   }
   return out;
 }
-const ADMIN_KINDS = [['status', 'Reclassify status (Paused / Discontinued)', 'Overdue more than ' + OVERDUE_GRACE + ' days with nothing booked.'], ['proto', 'Update expired protocol dates', 'Active / Pending Start with an expired or missing Protocol Exp Date.'], ['freq', 'Verify frequency', `Not seen at their tracker frequency over the last ${FREQ_WEEKS} weeks. 2x per week (index) patients need an updated protocol.`], ['mdnp', 'Add MD/NP or rendering provider', 'Blank on the Master Patient Tracker.']];
+const ADMIN_KINDS = [['status', 'Reclassify status (Paused / Discontinued)', 'Overdue more than ' + OVERDUE_GRACE + ' days with nothing booked.'], ['payer', 'Check who bills the visit', 'The payer doesn’t let this credential bill the esketamine visit (Payer Credential Rules sheet).'],['proto', 'Update expired protocol dates', 'Active / Pending Start with an expired or missing Protocol Exp Date.'], ['freq', 'Verify frequency', `Not seen at their tracker frequency over the last ${FREQ_WEEKS} weeks. 2x per week (index) patients need an updated protocol.`], ['mdnp', 'Add MD/NP or rendering provider', 'Blank on the Master Patient Tracker.']];
 // One dialog for every admin fix: writes only the fields that changed to the patient's Master Patient Tracker row.
 const PT_FIX = [['status', 'Status', 'status'], ['txfrequency', 'Tx Frequency', 'treatmentfrequency'], ['coverageoptions', 'MD/NP', 'coverageoptions'], ['renderingprovider', 'Rendering Provider', 'renderingprovider'], ['protocolexpdate', 'Protocol Exp Date', null]];
 function openPtFix(mrn, focus){
@@ -1967,12 +2062,14 @@ async function ptFixSave(mrn){
 function adminHTML(){
   // Schedule task row "Admin to-do" (decision 8): protocol dates, frequency check, MD/NP or rendering provider, reclassify. Closed by default.
   const M = schModel(), a = M.a, n = M.nAdmin;
-  const focus = { status: 'status', proto: 'protocolexpdate', freq: 'txfrequency', mdnp: 'coverageoptions' };
-  const short = { status: 'reclassify', proto: 'protocol date', freq: 'frequency', mdnp: 'MD/NP' };
+  const focus = { status: 'status', proto: 'protocolexpdate', freq: 'txfrequency', mdnp: 'coverageoptions', payer: 'renderingprovider' };
+  const short = { status: 'reclassify', proto: 'protocol date', freq: 'frequency', mdnp: 'MD/NP', payer: 'billing credential' };
   const kinds = ADMIN_KINDS.filter(([k]) => a[k].length);
+  const fixBtn = (k, x) => k === 'payer' && x.f.bad[0].a ? `<button class="btn sm" data-act="vEdit" data-k="${esc(x.f.bad[0].a.key)}" title="Move the visit to another clinician">Reassign visit…</button>`
+    : `<button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${focus[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button>`;
   const body = kinds.map(([k, title, sub]) => `<div class="sgrp"><div class="sgh"><b>${esc(title)}</b><span>${a[k].length}</span></div><div class="small muted">${esc(sub)}</div>
     ${a[k].map(x => schItem(nm(x.p.mrn), `MRN ${esc(x.p.mrn)} · ${esc(x.p.status || 'no status')}${x.p.provider ? ' · ' + esc(x.p.provider) : ''}`, snzBtns(M.idA(k, x)),
-      `<div class="sl">${tag(k === 'status' || x.idx ? 'bad' : 'warn', x.text)}<span class="grow"></span><button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${focus[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button></div>`)).join('')}</div>`).join('');
+      `<div class="sl">${tag(k === 'status' || k === 'payer' || x.idx ? 'bad' : 'warn', x.text)}<span class="grow"></span>${fixBtn(k, x)}</div>`)).join('')}</div>`).join('');
   return taskRow({ t: n ? `Admin to-do · ${n}` : 'Admin to-do', d: n ? `${schPl(n, 'patient')} to clean up on the tracker: ${kinds.map(([k]) => `${a[k].length} ${short[k]}`).join(', ')}` : 'Nothing to clean up on the tracker',
     btn: n ? schFold('admin', 'Review') : '', done: !n, id: 'sch:admin', open: false, body });
 }
@@ -2849,7 +2946,7 @@ function weekHTML(){
       docRow = `<details class="schdoc" data-open="${esc(id)}" ${S.open?.[id] ? 'open' : ''}><summary>Paperwork ${ds.n}/${ds.total}</summary>${schDocsHTML(i)}</details>`; } }
     return `<tr class="${a.active ? '' : 'off'}"><td data-l="Time">${wk && S.sortBy !== 'time' ? `<b>${fmtD(a.date, 'dow')}</b> ` : ''}${fmtT(a.time)}${a.moved && a.origTime != null && a.origTime !== a.time ? `<span class="was">was ${fmtT(a.origTime)}</span>` : ''}</td>
       <td data-l="Patient"><button class="linkbtn pt" data-act="patient" data-m="${esc(a.mrn)}">${esc(nm(a.mrn))}</button><span class="mrn">${esc(a.mrn)}</span></td>
-      <td data-l="Visit"><span class="cv">${a.isStart ? tag('acc', 'Start') : a.isEFU ? 'Follow-up' : esc(a.event)}<span class="kd"><b>${r.inf.mg ?? '?'} mg</b> · ${PH_LABEL[r.inf.pharm]}</span><span class="clin">${a.rendering ? `<span class="pdot" style="background:${provColor(a.rendering)}" aria-hidden="true"></span>${esc(a.rendering)}` : 'Clinician not set'}${a.moved && a.origRendering && a.origRendering !== a.rendering ? ` (was ${esc(a.origRendering)})` : ''}</span></span></td>
+      <td data-l="Visit"><span class="cv">${a.isStart ? tag('acc', 'Start') : a.isEFU ? 'Follow-up' : esc(a.event)}<span class="kd"><b>${r.inf.mg ?? '?'} mg</b> · ${PH_LABEL[r.inf.pharm]}</span><span class="clin">${a.rendering ? `<span class="pdot" style="background:${provColor(a.rendering)}" aria-hidden="true"></span>${esc(a.rendering)}` : 'Clinician not set'}${a.moved && a.origRendering && a.origRendering !== a.rendering ? ` (was ${esc(a.origRendering)})` : ''}</span>${a.active && a.date >= T ? (() => { const pf = payerOf(a.mrn), c = pf ? [payerVisitChip(pf, a.key), payerChips(pf)].filter(Boolean).join(' ') : ''; return c ? `<span class="pyr">${c}</span>` : ''; })() : ''}</span></td>
       <td data-l="Medication">${tag(c, l)}${kd ? `<span class="kd">${kd}</span>` : ''}</td>
       <td data-l="Booked thru">${a.active ? tag(r.needsSched ? 'warn' : '', r.thru ? fmtD(r.thru) : 'none') : ''}</td>
       <td data-l="" class="acts"><div class="actw">${acts.join('')}</div>${docRow}</td></tr>`; };
@@ -3167,6 +3264,39 @@ async function benApply(){
   const plan = S.benUp; if (!plan || !plan.matched.length) return; closeModal();
   const now = nowText(), rows = plan.matched.map(x => benRowOut(x.row, x.p, now));
   if (await write('Writing benefits…', () => S.store.upsertBenefits(rows), `Benefits saved for ${rows.length} patient${rows.length === 1 ? '' : 's'} on the ${BEN_SHEET} tab.`)) S.benUp = null;
+}
+// ---------- payer credential rules: the flags (block above), cached per render, and Settings › Import payer rules ----------
+function payerFlags(){
+  const sig = [S.A, S.K, S.P, S.ben, S.provCred, S.payerRules, CFG.payerState, CFG.clinic, CFG.locName, todaySerial()];
+  if (S._pf && S._pf.sig.every((v, i) => v === sig[i])) return S._pf.m;
+  const m = payerModel({ rules: S.payerRules, P: S.P, A: S.A, K: S.K, ben: benOf, provCred: S.provCred, hint: payerHint(CFG, locName()), T: todaySerial() });
+  S._pf = { sig, m }; return m;
+}
+const payerOf = mrn => payerFlags().get(mrn) || null;
+const payerVisitBad = a => payerOf(a.mrn)?.byKey.get(a.key)?.ok === false ? payerOf(a.mrn).byKey.get(a.key) : null;
+async function readPayerFile(f){
+  const X = PR(); if (!X) return toast('bad', 'The payer rules code didn’t load. Check the connection and reopen the panel.');
+  let r = null;
+  try {
+    if (/\.csv$/i.test(f.name) || /csv/i.test(f.type)) r = X.read(parseCSV(await f.text()));
+    else {
+      if (!(await loadXLSX())) return toast('bad', 'The spreadsheet reader didn’t load. Check the connection and reopen the panel.');
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      for (const n of wb.SheetNames){ r = X.read(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' })); if (!r.error) break; }
+    }
+  } catch (e){ console.error(e); return toast('bad', 'That file couldn’t be read. Use the Payer Credential Rules file (CSV or xlsx).'); }
+  if (!r || r.error) return toast('bad', esc(r?.error || 'That file couldn’t be read.'));
+  if (!r.rules.length) return toast('bad', 'No rules in that file.');
+  S.payerUp = r.rules; const n = new Set(r.rules.map(x => x.payer)).size, had = S.payerRules?.length || 0;
+  openModal(`<h2>Import payer rules?</h2><div class="small muted">${esc(f.name)}</div>
+    <div class="msg info" style="margin-top:8px"><div><b>${r.rules.length} rules for ${n} payer${n === 1 ? '' : 's'}</b> (MD and NP rows; first treatment, start, observation, Besse).${r.skipped ? ` ${r.skipped} row${r.skipped === 1 ? '' : 's'} without MD or NP skipped.` : ''}</div></div>
+    <div class="small" style="margin-top:8px">Writes the “${esc(PAYER_SHEET)}” sheet${had ? `, replacing the ${had} rules there now` : ' (created now)'}. Edit a rule on that sheet any time; the panel reads it on refresh. Patients whose payer isn’t on the list show nothing.</div>
+    <div class="small muted" style="margin-top:6px">Besse approval is a flag only. Ordering and kit assignment don’t change.</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="payerApply">Import ${r.rules.length}</button></div>`);
+}
+async function payerApply(){
+  const rules = S.payerUp; if (!rules || !rules.length) return; closeModal();
+  if (await write('Writing payer rules…', () => S.store.writePayerRules(PR().toRows(rules)), `${rules.length} payer rules saved on the ${esc(PAYER_SHEET)} sheet.`)) S.payerUp = null;
 }
 // Most recent audit: today's in-app daily audit, or the latest date on the SN Audit tab.
 function lastAudit(){
@@ -4558,7 +4688,7 @@ const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'Rescue: ' + v.resc
 function tdRow(i, now, on){
   const a = i.a, key = a.key, v = visitGet(key);
   const r = { i, a, v, key, grp: 'wait', rank: 9, at: a.time ?? 0, tone: '', line: '' };
-  r.tags = [i.noKit && !i.adminKit && a.active ? tag('bad', 'No kit') : '', i.needsMadrs && a.active ? tag('bad', 'MADRS') : '', a.isStart ? tag('info', 'Start') : ''].filter(Boolean).slice(0, 2);
+  r.tags = [i.noKit && !i.adminKit && a.active ? tag('bad', 'No kit') : '', a.active && payerVisitBad(a) ? tag('bad', 'Billing') : '', i.needsMadrs && a.active ? tag('bad', 'MADRS') : '', a.isStart ? tag('info', 'Start') : ''].filter(Boolean).slice(0, 2);
   if (!a.active){ r.grp = 'off'; r.line = esc(a.hold ? 'Hold' : a.status || 'Not active'); return r; }
   if (v?.out){ r.grp = 'done'; r.at = v.out.at; r.line = `Discharged ${fmtT(v.out.at)}`; return r; }
   if (v?.start == null){ r.line = a.time == null ? 'No appointment time' : i.adminKit ? `Given, no room time · booked ${fmtT(a.time)}` : tdLive({ what: 'Expected', at: a.time, kind: 'arr' }); return r; }
@@ -4635,6 +4765,7 @@ function tdAlerts(i){
   const adj = S.A.find(x => x.mrn === a.mrn && x.active && x.key !== a.key && Math.abs(x.date - a.date) === 1);
   if (adj) add('b2b', 'bad', `<b>Back-to-back</b> with the visit on ${fmtD(adj.date, 'dow')}.`);
   { const ro = remsOf(a.key); if (ro && ro.status === 'missing') add(null, 'bad', '<b>No REMS monitoring form in the chart.</b> Upload it to REMS and the chart before you close, then import the report again.', '<button class="btn sm" data-act="upRems">Import DM report</button>'); }
+  { const pb = a.active && payerVisitBad(a); if (pb) add(null, 'bad', `<b>Billing:</b> ${esc(pb.why)}.`, `<button class="btn sm" data-act="vEdit" data-k="${esc(a.key)}">Reassign…</button>`); }   // Payer Credential Rules
   if (i.noKit && !i.adminKit && a.active) add(null, 'bad', `<b>No kit on hand</b> for this ${esc(PH_LABEL[i.inf.pharm] || '')} visit.`, `<button class="btn sm" data-act="goInv" data-v="${i.inf.pharm === 'BESSE' ? 'stock' : 'order'}">Open Meds</button>`);
   return L.length ? `<div class="talerts">${L.join('')}</div>` : '';
 }
@@ -4659,7 +4790,8 @@ function tdFacts(r){
   const proto = !p ? 'Not on the tracker' : i.needsProto ? tag('bad', p.protoExp ? (p.protoExp < T ? 'Expired ' : 'Expires ') + fmtD(p.protoExp) : 'No protocol date') : `Protocol through ${fmtD(p.protoExp)}`;
   const madrs = !p ? '' : i.needsMadrs ? `${tag('bad', 'MADRS due')} auth ${p.authExp < T ? 'expired' : 'expires'} ${fmtD(p.authExp)}` : `${p.authExp ? 'Auth through ' + fmtD(p.authExp) : 'No auth date'}${p.lastMadrs ? ' · last MADRS ' + fmtD(p.lastMadrs) : ''}`;
   const ben = benHTML(a.mrn);
-  const cov = `${p?.insurance ? esc(p.insurance) : ''}${p?.insurance && ben ? ' · ' : ''}${ben || (p?.insurance ? '' : '<span class="muted">No Sohar check on file</span>')}`;
+  const pf = payerOf(a.mrn), pc = pf ? [payerVisitChip(pf, a.key), payerChips(pf)].filter(Boolean).join(' ') : '';
+  const cov = `${p?.insurance ? esc(p.insurance) : ''}${p?.insurance && ben ? ' · ' : ''}${ben || (p?.insurance ? '' : '<span class="muted">No Sohar check on file</span>')}${pc ? ` ${pc}` : ''}`;
   return factsDL([['Clinician', clin], ['Medication', a.active ? tdMed(i, v) : ''], ['Consent & protocol', proto], ['MADRS / auth', madrs], ['Booked', tdBooked(i)], ['Coverage', cov]]);
 }
 // Right column once final vitals are due and the patient isn't discharged yet.
@@ -5140,6 +5272,10 @@ function ptNeedsAll(){
   for (const [k, tg, title] of [['status', 'Status', 'Reclassify status'], ['freq', 'Frequency', 'Verify frequency'], ['mdnp', 'MD/NP', 'Add MD/NP or rendering provider']])
     for (const x of am[k]){ const id = `adm|${k}|${x.p.mrn}`; if (hidden(id)) continue;
       add(x.p.mrn, { k, tone: k === 'status' || x.idx ? 'bad' : 'warn', tag: tg, t: title, d: esc(x.text), snz: id, btn: `<button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="${fixF[k]}">${k === 'status' ? 'Reclassify…' : k === 'freq' && x.idx ? 'Update protocol…' : 'Update…'}</button>` }); }
+  // Payer Credential Rules: a visit its credential can't bill (same dismiss id as Admin to-do), and Besse patients whose payer isn't Besse-approved (a flag only).
+  for (const x of am.payer){ const id = `adm|payer|${x.p.mrn}`; if (hidden(id)) continue; const b = x.f.bad[0];
+    add(x.p.mrn, { k: 'payer', tone: 'bad', tag: 'Billing', t: 'Check who bills the visit', d: esc(x.text), snz: id, btn: b.a ? `<button class="btn sm" data-act="vEdit" data-k="${esc(b.a.key)}">Reassign visit…</button>` : `<button class="btn sm" data-act="ptFix" data-m="${esc(x.p.mrn)}" data-f="renderingprovider">Update…</button>` }); }
+  for (const f of payerFlags().values()) if (f.besseOn && f.besse === 'not approved') add(f.mrn, { k: 'besse', tone: 'warn', tag: 'Besse', t: 'Payer isn’t Besse-approved', d: `${esc(f.m.payer)} on the ${esc(PAYER_SHEET)} sheet. A flag only: ordering doesn’t change.`, btn: '' });
   // Order meds: specialty pharmacy only, and only for visits that are booked (decision 11: never Besse, never an unscheduled visit).
   const am2 = actionModel(); const isPS = mrn => PS(S.byMrn.get(mrn)?.pharm);
   for (const r of am2.order){ const m = r.a.mrn; if (!isPS(m) || out.get(m)?.some(x => x.k === 'order')) continue;
@@ -5229,6 +5365,7 @@ function ptPageHTML(mrn){
     ['Insurance', p.insurance ? esc(p.insurance) : tag('warn', 'Insurance not set')],
     ['Authorization', p.authExp ? (p.authExp < T ? tag('bad', `Expired ${fmtD(p.authExp, 'full')}`) : `Through ${fmtD(p.authExp, 'full')}`) : tag('warn', 'Auth exp not set')],
     ['Sohar', o ? `${benHTML(mrn)}${more ? `<div class="small muted">${esc(more)}</div>` : ''}` : '<span class="muted">No Sohar check imported</span>'],
+    ...(payerOf(mrn) ? [['Payer rules', payerHTML(payerOf(mrn))]] : []),
   ]);
   const pd = p.protoExp ? `${p.protoExp < T ? 'Expired' : 'Expires'} ${fmtD(p.protoExp, 'full')}` : 'No protocol date on the tracker';
   const paper = [
@@ -5563,7 +5700,7 @@ PAGES.settings = {
       <div class="row" style="margin-top:12px"><button class="btn primary" data-act="settings">Open settings</button></div></div>`,
   badge: () => null,
 };
-const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter' };
+const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sPaySt: 'payerState', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter' };
 // The PAGES.settings stub above is the foundation's (kept byte-identical for protect.js); Object.assign below replaces it.
 // SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
 // the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
@@ -5627,6 +5764,7 @@ function settingsHTML(){
     <div class="set-grid">
       ${f('sClinic', 'Clinic code')}
       ${f('sLoc', 'Location name (audit sheet)', { ph: locName() })}
+      ${f('sPaySt', 'State (payer rules)', { ph: payerHint({ ...CFG, payerState: '' }, locName()) || 'CA', hint: 'Two letters. Picks the state’s rules when a payer has more than one (for example CA and WA). Blank: from the clinic.' })}
       ${f('sPm', 'Practice manager (default)', { list: 'dlPm2', wide: true })}
     </div>
     <h2 class="set-sec">Order emails</h2>
@@ -5661,7 +5799,9 @@ function settingsHTML(){
   </section>`;
   const imports = `<section class="card set-imports"><h3>Imports</h3>
     <div class="set-row"><button class="btn" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">Import Sohar benefits</button><span class="small muted grow">${S.ben?.size ? `${S.ben.size} patients imported so far.` : 'Nothing imported yet.'}</span></div>
-    <p class="set-hint">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN. You see a preview before anything is written.</p></section>`;
+    <p class="set-hint">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN. You see a preview before anything is written.</p>
+    <div class="set-row"><button class="btn" data-act="upPayer" title="Import the shared Payer Credential Rules file into the ${esc(PAYER_SHEET)} sheet">Import payer rules…</button><span class="small muted grow">${S.payerErr ? `<span class="warnText">The ${esc(PAYER_SHEET)} sheet can’t be read: ${esc(S.payerErr)}</span>` : S.payerRules ? `${S.payerRules.length} rules on the ${esc(PAYER_SHEET)} sheet.` : 'Not imported yet.'}</span></div>
+    <p class="set-hint">The Payer Credential Rules file (CSV or xlsx, in the shared OneDrive Add-In Manifests folder) → the ${esc(PAYER_SHEET)} sheet, which you can edit. Flags visits where the payer doesn’t let an NP (or MD) bill, and Besse patients whose payer isn’t Besse-approved.</p></section>`;
   const tb = Object.values(S.tables);
   const wb = `<section class="card set-wb"><h3>Workbook</h3><h2>Connected tables</h2>${tb.length ? factsDL(tb.map(x => [x.sheet, esc(x.name)])) : '<p class="muted small">None yet.</p>'}</section>`;
   const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
@@ -5708,6 +5848,8 @@ const ACT = {
   upAppt: () => $('#apptFile').click(),
   upBen: () => $('#benFile').click(),
   benApply: () => benApply(),
+  upPayer: () => $('#payerFile').click(),
+  payerApply: () => payerApply(),
   apptReplace: () => apptReplace(),
   apptCancel: el => setCancelled(el.dataset.k, true),
   apptUncancel: el => setCancelled(el.dataset.k, false),
@@ -5913,6 +6055,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'apptFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readApptFile(f); return; }
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
+  if (el.id === 'payerFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readPayerFile(f); return; }
   if (el.id === 'apptShrinkOk'){ const b = $('#apptGo'); if (b) b.disabled = !el.checked; return; }
   if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
   if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
@@ -6058,6 +6201,7 @@ async function reload1(quiet){
   try {
     const d = await S.store.load();
     S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles(); S.rems = d.rems || [];
+    { const X = PR(), r = X && d.payerRows ? X.read(d.payerRows) : null; S.payerRules = r?.rules || null; S.payerErr = r?.error || ''; S.payerSkipped = r?.skipped || 0; }   // no sheet → null: the payer flags stay off
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
@@ -6094,12 +6238,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], docs: Object.fromEntries(DOC_KEYS.map(k => [k, store.getDoc(k)])) };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], payerRows: d.payerRows || null, docs: Object.fromEntries(DOC_KEYS.map(k => [k, store.getDoc(k)])) };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [] };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], payerRows: d.payerRows || null };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -6114,6 +6258,7 @@ function RemoteStore(){
     add: (k, ch) => call('add', [k, ch]),
     addMany: (k, list) => call('addMany', [k, list]),
     upsertBenefits: rows => call('upsertBenefits', [rows]),
+    writePayerRules: rows => call('writePayerRules', [rows]),
     upsertRems: rows => call('upsertRems', [rows]),
     appendVisitLog: rows => call('appendVisitLog', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
@@ -6145,7 +6290,7 @@ function openFull(){
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
       const read = op === 'load' || op === 'freshDoc';
-      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog','writePayerRules'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
