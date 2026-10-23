@@ -635,6 +635,19 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bkey .bsw[data-k="soon"]{background:var(--warn-soft);box-shadow:inset 0 0 0 2px var(--warn)}
 .bkey .bsw[data-k="late"]{background:var(--bad-soft);box-shadow:inset 0 0 0 2px var(--bad)}
 .bkey .bsw[data-k="ready"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
+/* provider view (?view=bays): one page, no rail; another provider's bay is a quiet hatched "In use" */
+.app.prov{display:block}
+.pg-bays .pvbar,.pg-bays .pvpick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.pg-bays .pvbar .lbl,.pg-bays .pvpick .lbl{margin:0}
+.pg-bays .pvbar .fld,.pg-bays .pvpick .fld{width:auto;min-width:220px}
+.pg-bays .pvpick p{flex-basis:100%;margin:0}
+.bplan .bay[data-state="busy"]{background:repeating-linear-gradient(45deg,var(--surface2) 0 6px,transparent 6px 12px);--rc:var(--faint)}
+.bplan .btag[data-state="busy"] .n{color:var(--muted)}
+.bkey .bsw[data-k="busy"]{background:repeating-linear-gradient(45deg,var(--surface2) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 2px var(--faint)}
+.bpanel .pvits{display:grid;gap:6px}
+.bpanel .pvit{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}
+.bpanel .pvit .pl{font-weight:600;font-size:13px}
+.bpanel .lead.ready{color:var(--accent)}.bpanel .lead.late{color:var(--bad)}.bpanel .lead.soon{color:var(--warn)}
 .bmap .boff{margin:10px 0 0;font-size:13px;color:var(--muted)}
 .bmap .boff .btn.inline{color:var(--warn)}
 .pg-today .lead .tag{vertical-align:2px}
@@ -1231,7 +1244,7 @@ function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOS
 // One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
 // on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
@@ -2737,6 +2750,15 @@ function render(){
   const act = document.activeElement; const keepId = act && act.id; const keepVal = act && act.value; const selS = act?.selectionStart;
   const app = $('#app');
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
+  if (S.provView){   // provider view: one page, no rail, no name prompt
+    const T = todaySerial(), body = provPageHTML(); S._pvSig = body;
+    app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
+      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
+      <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
+        <div class="tools"><button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button></div></header>
+      <main id="main" class="pg-today pg-bays">${body}</main></div></div>`;
+    return;
+  }
   if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; S.view = 'settings'; S.firstRun = true; }   // first run: the Settings page asks for a name (live: after the first read, so saved profiles are known)
   if (!PAGES[S.view]) S.view = 'today';
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id));   // rail counts come from PAGES.<view>.badge()
@@ -3311,7 +3333,7 @@ function visitMerge(mine, base, fresh){
 // settings (two people saving at once) is filled back in from its latest row on the next load. Fills blanks only.
 // A patient's rows stay until their next appointment day comes, then the daily prune removes them.
 const VLOG_SHEET = 'ESK Visit Log', VLOG_COLS = ['Logged', 'Visit', 'MRN', 'Appt date', 'Event', 'Time', 'BP', 'HR', 'O2', 'Detail', 'By', 'Snapshot'];
-const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv'];
+const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc'];
 const vlogEmpty = x => x == null || x === '' || (typeof x === 'object' && !Object.keys(x).length);
 function vlogPick(v){ const o = {}; for (const f of VLOG_F) if (v && !vlogEmpty(v[f])) o[f] = v[f]; return JSON.parse(JSON.stringify(o)); }
 const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
@@ -3334,6 +3356,7 @@ function vlogEvents(p, c){
   if (PX.length > RX.length) add('PRN removed', { detail: `${PX.length - RX.length} removed` });
   if (J(p.out) !== J(c.out)) add(c.out ? 'Discharged' : 'Discharge undone', { time: hhmm(c.out?.at), by: c.out?.by || '' });
   if (J(p.mv) !== J(c.mv)) add(c.mv ? 'Moved' : 'Move undone', { time: hhmm(c.mv?.time), detail: c.mv?.prov || '', by: c.mv?.by || '' });
+  if (J(p.pc) !== J(c.pc)) add(c.pc ? 'Provider confirmed dose' : 'Provider confirmation cleared', { time: hhmm(c.pc?.at), detail: c.pc ? `kit …${c.pc.sn}` : '' });
   return E;
 }
 // Sheet rows for everything that changed from prev to cur (both eskVisit maps). Visits dropped by the 45-day cut aren't logged.
@@ -3807,8 +3830,9 @@ function openPrintable(html, title){
 // ---------- administer ----------
 function openAdmin(key){
   const it = todayModel(S.day).find(i => i.a.key === key); if (!it) return;
-  const kit = it.pulledKit || it.suggest || null;
-  S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, at: hhmm(nowMin()), msg: null };
+  const pc = visitGet(key)?.pc, pk = pc && S.K.find(k => k.id === pc.kit && !k.administered);   // the provider's confirmed kit and time come first
+  const kit = pk || it.pulledKit || it.suggest || null;
+  S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, at: hhmm(pc ? pc.at : nowMin()), msg: null };
   renderAdmin();
 }
 function renderAdmin(){
@@ -3823,6 +3847,8 @@ function renderAdmin(){
     if (k.recv && +S.adm.mg !== k.recv) warns.push(`Kit is ${k.recv} mg; you're recording ${S.adm.mg} mg. The Inventory will mark it Partial.`);
     if (it.inf.pharm && k.pharm !== it.inf.pharm) warns.push(`Patient is ${PH_LABEL[it.inf.pharm]}, kit is ${PH_LABEL[k.pharm]}.`);
   }
+  const pc = visitGet(it.a.key)?.pc;
+  if (pc && k && !String(k.serial || '').toUpperCase().endsWith(pc.sn)) warns.push(`The provider confirmed kit …${esc(pc.sn)}; this kit ends in …${esc(String(k.serial || '').slice(-4))}.`);
   if (!S.adm.tech) probs.push('Enter the treating technician.');
   if (!S.adm.sup) probs.push('Enter the supervising physician.');
   if (fromHHMM(S.adm.at) == null) probs.push('Enter the time the dose was given.');
@@ -3832,6 +3858,7 @@ function renderAdmin(){
   const { out } = changesFor('kits', obj);
   const cands = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn)))).sort((a, b) => ((b.mrn === it.a.mrn) - (a.mrn === it.a.mrn)) || fifo(a, b)).slice(0, 4);
   openModal(`<h2>Administer — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
+    ${pc ? `<div class="msg ok">Provider confirmed kit …${esc(pc.sn)}, given at ${fmtT(pc.at)}.</div>` : ''}
     <label class="lbl" for="admScan">Kit</label>
     <div class="scan"><input id="admScan" data-scan="admin" placeholder="Scan the kit to confirm" autocomplete="off"></div>
     ${k ? `<div class="item" style="margin-top:8px"><div class="line">${kitLine(k)}</div></div>` : ''}
@@ -4742,31 +4769,44 @@ function bayState(r){
   if (r.rank === 2) return { st: 'soon', s: r.i.adminKit ? 'No dose time' : 'Dose not given' };
   return vitGet(key, 'fin') ? { st: 'ready', s: 'Ready to discharge' } : { st: 'soon', s: 'Final vitals due' };
 }
-function bayMapModel(m){
-  const on = [...m.need, ...m.chair];
+// Provider view (prov = a canonical Rendering Provider): only that provider's patients are named. Anyone else's bay is "In use"
+// (curtain drawn, lantern lit, nothing else), their bookings aren't shown, and the tag shows initial vitals instead of the next step.
+const rowProv = r => canonProv(r.a.rendering || r.i.p?.provider || '');
+const vitTxt = x => [x.bp, x.hr && `HR ${x.hr}`, x.o2 && `O2 ${x.o2}`].filter(Boolean).join(' · ');
+function provBayS(r){
+  if (vitGet(r.key, 'fin')) return { st: 'ready', s: 'Ready to discharge' };
+  const x = vitGet(r.key, 'init'); return { s: x ? `Initial ${[x.bp, x.hr && `HR ${x.hr}`].filter(Boolean).join(' · ')}` : 'No initial vitals yet' };   // the tag has room for BP and HR; the panel shows O2
+}
+function bayMapModel(m, prov){
+  const mine = r => !prov || rowProv(r) === prov, on = [...m.need, ...m.chair];
   const bays = BAY_PLAN.bays.map(b => {
     const r = on.find(x => bayNo(x.v?.bay) === b.id);
-    if (r) return { ...b, row: r, ...bayState(r), title: nm(r.a.mrn) };
-    const res = m.wait.filter(x => x.a.time != null && bayNo(x.v?.bay) === b.id).sort((x, y) => x.a.time - y.a.time)[0] || null;
-    return { ...b, row: null, res, st: 'open', title: 'Open', s: res ? `${nm(res.a.mrn)} at ${fmtT(res.a.time)}` : 'Nobody booked' };
+    if (r && !mine(r)) return { ...b, row: null, res: null, busy: true, st: 'busy', title: 'In use', s: 'Another provider' };
+    if (r){ const bs = bayState(r); return { ...b, row: r, ...bs, ...(prov ? { ts: r.rank === 2 && r.v?.pc ? 'Dose confirmed, the tech records it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) }; }
+    const res = m.wait.filter(x => mine(x) && x.a.time != null && bayNo(x.v?.bay) === b.id).sort((x, y) => x.a.time - y.a.time)[0] || null;
+    return { ...b, row: null, res, st: 'open', title: 'Open', s: res ? `${nm(res.a.mrn)} at ${fmtT(res.a.time)}` : prov ? 'Open' : 'Nobody booked' };
   });
-  return { bays, off: on.filter(x => !bayNo(x.v?.bay)), used: bays.filter(b => b.row).length, late: bays.filter(b => b.st === 'late').length };
+  return { bays, off: on.filter(x => mine(x) && !bayNo(x.v?.bay)), used: bays.filter(b => b.row || b.busy).length, late: bays.filter(b => b.st === 'late').length };
 }
-function bayMapHTML(m, sel){
+function bayMapHTML(m, sel, prov){
   if (!m.act.length) return '';
-  const M = bayMapModel(m), W = BAY_PLAN.w, H = BAY_PLAN.h, pct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
+  const M = bayMapModel(m, prov), W = BAY_PLAN.w, H = BAY_PLAN.h, pct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
   const cur = bayPick(M, sel);
   const bay = b => { const r = b.row || b.res;
-    const lab = `Bay ${b.id}, ${b.row ? `${b.title}, ${b.s}` : `open${b.res ? `, ${b.s}` : ''}`}`;
+    const lab = `Bay ${b.id}, ${b.row ? `${b.title}, ${b.s}` : b.busy ? 'in use' : `open${b.res ? `, ${b.s}` : ''}`}`;
     return `<button class="bay" data-act="bSel" data-b="${b.id}"${r ? ` data-k="${esc(r.key)}"` : ''} data-state="${b.st}" aria-current="${cur?.id === b.id}" aria-label="${esc(lab)}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
   const tag = b => `<div class="btag" data-state="${b.st}" style="left:${pct(b.tag[0], W)};top:${pct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${b.id}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
   const chair = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
-  const used = id => !!M.bays.find(b => b.id === id)?.row;
+  const lit = b => !!(b.row || b.busy), used = id => lit(M.bays.find(b => b.id === id) || {});
   const curtain = c => `<g class="curtain"><path class="crail" d="${c.d}"/>${c.bays.some(used) ? `<path class="fabric" d="${c.d}"/>` : `<path class="bunch" d="${c.d}" pathLength="100"/>`}</g>`;
-  const lamp = b => `${b.row ? `<circle class="glow" cx="${b.lamp[0]}" cy="${b.lamp[1]}" r="20" fill="url(#bmGlow)"/>` : ''}<g class="lantern${b.row ? ' on' : ''}" transform="translate(${b.lamp[0]} ${b.lamp[1]})"><circle class="body" r="7.5"/><circle class="lens" r="4.75"/><circle class="touch" r="1.4"/></g>`;
-  const head = [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
-  const off = M.off.length ? `<p class="boff">Not on the map: ${M.off.map(r => `<button class="btn inline" data-act="tSel" data-k="${esc(r.key)}">${esc(nm(r.a.mrn))}${r.v?.bay ? ` (Bay ${esc(r.v.bay)})` : ' (no bay)'}</button>`).join(', ')}. <button class="btn inline" data-act="bays">Set bays</button></p>` : '';
-  return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
+  const lamp = b => `${lit(b) ? `<circle class="glow" cx="${b.lamp[0]}" cy="${b.lamp[1]}" r="20" fill="url(#bmGlow)"/>` : ''}<g class="lantern${lit(b) ? ' on' : ''}" transform="translate(${b.lamp[0]} ${b.lamp[1]})"><circle class="body" r="7.5"/><circle class="lens" r="4.75"/><circle class="touch" r="1.4"/></g>`;
+  const mine = M.bays.filter(b => b.row).length, ready = M.bays.filter(b => b.st === 'ready').length;
+  const head = prov ? [`${mine} of your patients in a bay`, ready ? `${ready} ready to discharge` : '', M.late ? `${M.late} overdue for vitals` : ''].filter(Boolean).join(' · ')
+    : [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
+  const off = !M.off.length ? '' : prov ? `<p class="boff">Roomed, no bay on the map: ${M.off.map(r => esc(nm(r.a.mrn))).join(', ')}.</p>`
+    : `<p class="boff">Not on the map: ${M.off.map(r => `<button class="btn inline" data-act="tSel" data-k="${esc(r.key)}">${esc(nm(r.a.mrn))}${r.v?.bay ? ` (Bay ${esc(r.v.bay)})` : ' (no bay)'}</button>`).join(', ')}. <button class="btn inline" data-act="bays">Set bays</button></p>`;
+  const key = prov ? '<li><span class="bsw" data-k="busy"></span>Another provider’s patient</li>' : '';
+  return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap || prov ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
     <div class="bwrap"><div class="bleft">
     <div class="bplan">
       <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
@@ -4784,11 +4824,11 @@ function bayMapHTML(m, sel){
       </svg>
       ${M.bays.map(tag).join('')}
     </div>
-    <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li></ul>
-    ${off}</div>${cur ? bayPanelHTML(cur) : ''}${bayNextHTML(m)}</div></details>`;
+    <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li>${key}</ul>
+    ${off}</div>${cur ? (prov ? bayProvPanelHTML(cur) : bayPanelHTML(cur)) : ''}${bayNextHTML(m, prov)}</div></details>`;
 }
 // Selected bay: the one tapped on the map (S.bSel), else the bay of the visit selected on Today, else the most urgent bay.
-const BAY_ORDER = { late: 0, soon: 1, ready: 2, track: 3, open: 4 };
+const BAY_ORDER = { late: 0, soon: 1, ready: 2, track: 3, open: 4, busy: 5 };
 function bayPick(M, sel){
   return M.bays.find(b => b.id === S.bSel) || (sel && M.bays.find(b => b.row?.key === sel.key))
     || M.bays.slice().sort((x, y) => BAY_ORDER[x.st] - BAY_ORDER[y.st] || +x.id - +y.id)[0] || null;
@@ -4807,15 +4847,67 @@ function bayPanelHTML(b){
   const meta = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, prov ? esc(prov) : ''].filter(Boolean).join(', ');
   return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div><div class="meta">${meta}</div></div>
       <button class="btn ghost mute sm" data-act="bayNote" data-k="${k}">Add note</button></div>
-    ${tdLead(r)}${v?.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}
+    ${tdLead(r)}${v?.pc && !i.adminKit ? `<div class="msg ok">Provider confirmed the dose at ${fmtT(v.pc.at)} · kit …${esc(v.pc.sn)}. Finish it in Administer.</div>` : ''}${v?.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}
     ${pri.html ? `<div class="tact">${pri.html}</div>` : ''}
     <div class="row"><button class="btn ghost" data-act="bayMove" data-k="${k}">Move to another bay</button></div></aside>`;
 }
-// Under the map: everyone not roomed yet, with the bay they're booked into.
-function bayNextHTML(m){
-  const L = m.wait.filter(r => r.a.active); if (!L.length) return '';
+// Provider view, beside the map: where their patient is, the three vitals, and the dose confirmation. No tech actions.
+function bayProvPanelHTML(b){
+  const B = `Bay ${esc(b.id)}`;
+  if (!b.row) return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div class="name">${B}<span class="bayno">${b.busy ? 'in use' : 'open'}</span></div></div>
+      <p class="body">${b.busy ? 'Another provider’s patient is in this bay.' : b.res ? `${esc(nm(b.res.a.mrn))} is booked here at ${fmtT(b.res.a.time)}.` : 'Nobody of yours is booked here.'}</p></aside>`;
+  const { i, a, v, key } = b.row, o = obsAt(v), kit = i.adminKit, pc = v?.pc;
+  const line = (lab, w, due) => { const x = vitGet(key, w);
+    return `<div class="pvit"><span class="pl">${lab}</span>${x ? `<span><b>${esc(vitTxt(x))}</b> <span class="muted">${fmtT(x.at)}${x.by ? ` · ${esc(x.by)}` : ''}</span></span>` : `<span class="muted">${due}</span>`}</div>`; };
+  const dose = kit ? `<div class="msg ok">Administered${o != null ? ` at ${fmtT(o)}` : ''} · kit …${esc(String(kit.serial || '').slice(-4))}${pc ? ' · you confirmed it' : ''}</div>`
+    : pc ? `<div class="msg ok">You confirmed the dose at ${fmtT(pc.at)} · kit …${esc(pc.sn)}. The tech finishes it in Administer.</div>`
+    : `<button class="btn primary lg" data-act="pvDose" data-k="${esc(key)}">Confirm dose</button>`;
+  return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div>
+      <div class="meta">${[esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, v?.start != null ? `roomed ${fmtT(v.start)}` : ''].filter(Boolean).join(', ')}</div></div></div>
+    <p class="lead ${b.st}">${esc(b.st === 'ready' ? 'Ready to discharge' : b.ts || b.s)}</p>
+    <div class="pvits">${line('Initial', 'init', 'Not recorded yet')}${line(`${CFG.vitalsMin || 40}-min`, 'mid', o == null ? 'After the dose' : `Due ${fmtT(v40At(v))}`)}${line('Final', 'fin', o == null ? 'After the dose' : `Due ${fmtT(disAt(o))}`)}</div>
+    ${dose}</aside>`;
+}
+// Under the map: everyone not roomed yet, with the bay they're booked into (provider view: only theirs, nothing to change).
+function bayNextHTML(m, prov){
+  const L = m.wait.filter(r => r.a.active && (!prov || rowProv(r) === prov)); if (!L.length) return '';
   return `<div class="bnext"><h3>Still to come</h3>${L.map(r => { const b = bayNo(r.v?.bay);
-    return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span><button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button></div>`; }).join('')}</div>`;
+    return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span>${prov ? '<span></span>' : `<button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button>`}</div>`; }).join('')}</div>`;
+}
+// Provider confirms the dose: the last 4 of the kit serial must match exactly one kit this patient can get (the tech's pull or
+// suggestion, their labeled kits, or Besse stock). Saves eskVisit[key].pc { at, sn, kit, ts } and, when no dose time is set yet,
+// the dose time (vitals timers start there). The tech still records the administration on the Inventory in Administer.
+function pvKits(it){
+  const L = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn))));
+  return [...new Set([it.pulledKit, it.suggest, ...L].filter(Boolean))];
+}
+function pvMatch(it, sn){
+  const q = String(sn || '').trim().toUpperCase(), end = k => String(k.serial || '').toUpperCase().endsWith(q);
+  if (!/^[A-Z0-9]{4}$/.test(q)) return { err: 'Enter the last 4 characters of the kit serial.' };
+  if (it.adminKit) return end(it.adminKit) ? { k: it.adminKit } : { err: `The tech recorded kit …${esc(String(it.adminKit.serial || '').slice(-4))}, which doesn’t match.` };
+  const L = pvKits(it).filter(end);
+  if (!L.length) return { err: `No kit for ${esc(nm(it.a.mrn))} ends in ${esc(q)}. Check the box, or ask the tech to scan it.` };
+  if (L.length > 1) return { err: `${L.length} kits end in ${esc(q)}. Ask the tech to scan it in Administer.` };
+  if (L[0].administered || L[0].expired || L[0].disposed) return { err: 'That kit is administered, expired or marked for disposal. Tell the tech.' };
+  return { k: L[0] };
+}
+function openPvDose(key){
+  const it = todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return;
+  S.pv = { key }; const b = bayNo(visitGet(key)?.bay);
+  openModal(`<h2>Confirm dose — ${esc(nm(it.a.mrn))}</h2><div class="muted small">${b ? `Bay ${esc(b)} · ` : ''}${it.inf.mg ?? '?'} mg · ${esc(PH_LABEL[it.inf.pharm] || '')}</div>
+    <div class="form2"><div><label class="lbl" for="pvSn">Last 4 of the kit serial</label><input id="pvSn" class="fld mono" maxlength="4" autocomplete="off" spellcheck="false"></div>
+      <div><label class="lbl" for="pvAt">Time given <span class="muted">(vitals timers start here)</span></label><input id="pvAt" class="fld" type="time" value="${hhmm(nowMin())}"></div></div>
+    <div id="pvMsg"></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="pvSave">Confirm and log</button></div>`);
+  setTimeout(() => $('#pvSn')?.focus(), 30);
+}
+async function pvSave(){
+  const key = S.pv?.key, it = key && todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return closeModal();
+  const sn = String($('#pvSn')?.value || '').trim().toUpperCase(), at = fromHHMM($('#pvAt')?.value), r = pvMatch(it, sn);
+  const err = r.err || (at == null ? 'Enter the time the dose was given.' : '');
+  if (err){ $('#pvMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
+  await visitSet(key, { pc: { at, sn, kit: r.k.id, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
+  closeModal(); render(); toast('ok', `Dose confirmed for ${nm(it.a.mrn)}. The tech finishes it in Administer.`);
 }
 // Pickers. bayMove: the bays this visit can go to (none with someone in the chair). bayFill: who to put in an open bay.
 function openBayMove(key){
@@ -4874,6 +4966,22 @@ TICKS.push(() => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) return;
   if (tdSig(tdModel()) !== S._tdSig) render();
 });
+// ---------- provider view (taskpane.html?view=bays, the "ESK Bays" add-in): the bay map for one provider's patients ----------
+// The provider picks their name once (CFG.prov, personal). No rail, no other pages; the only write is the dose confirmation.
+const provNames = m => [...new Set(m.items.filter(i => i.a.active).map(i => canonProv(i.a.rendering || i.p?.provider || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+function provPageHTML(){
+  const m = tdModel(), L = provNames(m), me = CFG.prov && L.includes(CFG.prov) ? CFG.prov : '';
+  const pick = `<label class="lbl" for="provSel">Provider</label><select id="provSel" class="fld"><option value="">Choose your name…</option>${L.map(p => `<option ${p === me ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
+  if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? 'Only your patients are shown on the map. This is remembered on this computer.' : 'Nobody is scheduled for ESK today.'}</p></div>`;
+  return `<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}`;
+}
+// Live: re-render when anything on the provider's map changes (the 20 s tick; workbook and co-author changes call reload → render).
+TICKS.push(() => {
+  if (!S.provView || !S.loaded || formBusy() || /INPUT|SELECT/.test(document.activeElement?.tagName || '')) return;
+  const h = provPageHTML(); if (h !== S._pvSig) render();
+});
+Object.assign(ACT_TODAY, { pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave() });
+document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
 // ===== page: schedule =====
@@ -5887,7 +5995,7 @@ const ACT = {
   },
   profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
   demo: () => { location.search = '?demo=1'; },
-  dlManifest: () => downloadManifest(),
+  dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
 Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_SETTINGS);
 document.addEventListener('click', e => {
@@ -6094,13 +6202,23 @@ function notInExcelHTML(){
       <li>Open the workbook in Excel on the web → <b>Home → Add-ins → More Add-ins → My Add-ins → Upload My Add-in</b>, and choose the file.</li>
       <li>An <b>ESK Tracker</b> button appears on the Home tab.</li></ol>
     <div class="row"><button class="btn primary" data-act="dlManifest">Download manifest</button><button class="btn" data-act="demo">Try the demo</button></div>
+    <h3>Providers: ESK Bays</h3>
+    <p class="small muted">A separate add-in that opens only the bay map, for one provider's patients. Install it the same way, in the same workbook.</p>
+    <div class="row"><button class="btn" data-act="dlManifest" data-prov="1">Download ESK Bays manifest</button></div>
     <div class="small muted" style="margin-top:10px">The add-in keeps patient data in the workbook. This site only serves the app’s code.</div></div></main>`;
 }
-function downloadManifest(){
+// prov: the "ESK Bays" provider add-in. Its own Id, names and button, opening taskpane.html?view=bays; installs beside ESK Tracker.
+const BAYS_ADDIN_ID = '6f3b9e2a-41c7-4d58-a0e3-8b17c5d29f64';
+function downloadManifest(prov){
   const base = location.href.replace(/[?#].*$/, '').replace(/[^/]*$/, ''); const host = new URL(base).origin;
   let x = MANIFEST.replaceAll('__BASE__', base.replace(/\/$/, '')).replaceAll('__HOST__', host);
   x = SSO_APP_ID ? x.replaceAll('__SSO_ID__', SSO_APP_ID).replaceAll('__HOSTNAME__', new URL(base).host) : x.replace(/\s*<WebApplicationInfo>[\s\S]*?<\/WebApplicationInfo>/, '');   // sign-on only once the app is registered
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type:'application/xml' })); a.download = 'esk-tracker-manifest.xml'; a.click();
+  if (prov) x = x.replace(/<Id>[^<]*<\/Id>/, `<Id>${BAYS_ADDIN_ID}</Id>`).replaceAll('/taskpane.html"', '/taskpane.html?view=bays"')
+    .replace('<DisplayName DefaultValue="ESK Tracker"/>', '<DisplayName DefaultValue="ESK Bays"/>').replace(/<Description DefaultValue="[^"]*"\/>/, '<Description DefaultValue="Live bay map of your ESK patients: initial vitals, ready to discharge, and dose confirmation."/>')
+    .replace('Office.AutoShowTaskpaneWithDocument', 'ESKBays.Pane').replaceAll('ESK.Group', 'ESKBays.Group').replaceAll('ESK.Open', 'ESKBays.Open')
+    .replace('"ESK Tracker is ready"', '"ESK Bays is ready"').replace('"Open ESK Tracker from the Home tab."', '"Open ESK Bays from the Home tab."')
+    .replace('id="Button.Label" DefaultValue="ESK Tracker"', 'id="Button.Label" DefaultValue="ESK Bays"').replace(/id="Button.Tooltip" DefaultValue="[^"]*"/, 'id="Button.Tooltip" DefaultValue="Open the bay map for your patients."');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type:'application/xml' })); a.download = prov ? 'esk-bays-manifest.xml' : 'esk-tracker-manifest.xml'; a.click();
 }
 const MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
@@ -6275,13 +6393,14 @@ function openFull(){
 
 (function boot(){
   const demo = /[?&]demo\b/.test(location.search);
+  S.provView = /[?&]view=bays\b/.test(location.search);   // the "ESK Bays" provider add-in
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
   const start = store => { S.store = store; useMsName(); return reload(true).then(() => store.watch?.(onWorkbookChange)); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
   if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded && !S.provView) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>
