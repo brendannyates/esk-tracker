@@ -3254,6 +3254,13 @@ async function prnSyncKit(key){
   await write(null, () => S.store.updateMany('kits', [{ r: k.r, snap: t.snap(k.r), changes: out }]));
 }
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
+// PRNs the provider indicated in ESK Bays (eskVisit[key].prnOrd) that no PCT has acknowledged yet.
+const prnPend = v => v?.out ? [] : (v?.prnOrd || []).filter(o => !o.ack);
+// Orders after a PRN save: acknowledged while a logged row carries its id (first save stamps by/time), open again if that row is removed.
+const prnAckOrders = (O, rescue, by, ts) => O.map(o => { const r = rescue.find(x => x.ord === o.id);
+  return { ...o, ack: r ? (o.ack ? { ...o.ack, time: r.time } : { by, time: r.time, ts }) : null }; });
+// A kit the provider marked administered in ESK Bays, waiting for the tech's name (Administer → Finish administration).
+const techDue = k => !!k && !String(k.tech ?? '').trim();
 function prnStart(key){ const v = visitGet(key) || {}; S.prn = { key, list: JSON.parse(JSON.stringify(v.rescue || [])), rk: JSON.parse(JSON.stringify(v.rechk || [])), msg: '' }; }
 // Vitals rechecks (e.g. BP too high): eskVisit[key].rechk = [{ bp, hr, o2, at 'HH:MM', why, by }], any number, each timestamped.
 const rkText = r => [r.bp && `BP ${r.bp}`, r.hr && `HR ${r.hr}`, r.o2 && `O2 ${r.o2}%`].filter(Boolean).join(' · ');
@@ -3286,14 +3293,18 @@ function prnHTML(){
 const prnDraw = () => { const b = $('#prnBox'); if (b) b.innerHTML = prnHTML(); const r = $('#rkBox'); if (r) r.innerHTML = rkHTML(); };
 // Clean list, or null (with S.prn.msg set) when a row is missing its dose or time.
 function prnClean(){
-  const L = (S.prn?.list || []).map(r => ({ med: String(r.med || '').trim(), dose: String(r.dose || '').trim(), time: r.time || '', reason: String(r.reason || '').trim() })).filter(r => r.med || r.dose || r.reason);
+  const L = (S.prn?.list || []).map(r => ({ med: String(r.med || '').trim(), dose: String(r.dose || '').trim(), time: r.time || '', reason: String(r.reason || '').trim(), ...(r.ord ? { ord: r.ord } : {}) })).filter(r => r.med || r.dose || r.reason);
   const bad = L.find(r => !r.med || !r.dose || !fromHHMM(r.time)); if (bad){ S.prn.msg = `Add the ${!bad.med ? 'medication name' : !bad.dose ? 'dose / route' : 'time given'} for ${esc(bad.med || 'the PRN')}, or remove it.`; prnDraw(); return null; }
   const noMg = L.find(r => prnTracked(r.med) && prnMg(r.dose) == null); if (noMg){ S.prn.msg = `Enter the ${esc(noMg.med)} dose in mg (e.g. 4 mg ODT), so the total goes on the Inventory.`; prnDraw(); return null; }
   return L;
 }
-function openPrn(key){
+// ord = a provider's PRN order being acknowledged: its row is added (time = now) and saving marks the order acknowledged.
+function openPrn(key, ord){
   const a = S.A.find(x => x.key === key); prnStart(key);
+  const o = ord && (visitGet(key)?.prnOrd || []).find(x => x.id === ord);
+  if (o && !S.prn.list.some(r => r.ord === o.id)) S.prn.list.push({ med: o.med, dose: o.dose, time: hhmm(nowMin()), reason: o.reason || '', ord: o.id });
   openModal(`<h2>Recheck vitals / PRN</h2><div class="small muted">${esc(nm(a?.mrn))} · MRN ${esc(a?.mrn)}. Saved with the visit; both go into the Tx report note.</div>
+    ${o ? `<div class="msg ok">${esc(o.by || 'The provider')} indicated ${esc(o.med)} ${esc(o.dose)}${o.reason ? ` for ${esc(o.reason)}` : ''} at ${fmtT(o.at)}. Check the time given, then Save to log it.</div>` : ''}
     <div class="lbl" style="margin-top:10px">Vitals rechecks <span class="muted">(time stamped)</span></div><div id="rkBox">${rkHTML()}</div>
     <div class="lbl" style="margin-top:12px">PRN given</div><div id="prnBox">${prnHTML()}</div>
     <div class="small muted" style="margin-top:8px">Log PRNs on the Medication Inventory Tracker too.</div>
@@ -3301,7 +3312,8 @@ function openPrn(key){
 }
 async function prnSave(key){
   const L = prnClean(); if (!L) return; const RK = rkClean(); if (!RK) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
-  await visitSet(key, { rescue: L, rechk: RK }); S.prn = null; render(); await prnSyncKit(key);
+  const O = visitGet(key)?.prnOrd, ack = O && prnAckOrders(O, L, CFG.me || '', Date.now());
+  await visitSet(key, { rescue: L, rechk: RK, ...(ack ? { prnOrd: ack } : {}) }); S.prn = null; render(); await prnSyncKit(key);
   const miss = prnMissingCols(L); if (miss.length) toast('warn', `No “${esc(miss[0])} Administered (mg)” column on the Inventory table, so the total wasn’t written there. Add the header inside the table.`);
   if (L.length > had){ const mi = (S.shared || {}).medInvUrl; toast('warn', `PRN saved. Log it on the Medication Inventory Tracker${mi ? `: <a href="${esc(mi)}" target="_blank" rel="noopener">open it ↗</a>` : '.'}`); }
 }
@@ -3319,12 +3331,21 @@ async function saveVisit(){
   finally { S._selfWriteAt = Date.now(); }   // the watcher ignores the change events from this write
 }
 // Someone else may have saved visits since this pane last read them. Visits this pane changed (vs base, the last read) keep
-// this pane's version; every other visit takes the file's. base follows the file too, so the visit log records only our changes.
+// this pane's version of the fields it changed and take the file's for the rest (the provider's ESK Bays pane and the PCT's pane
+// save the same visit); every other visit takes the file's. base follows the file too, so the visit log records only our changes.
 function visitMerge(mine, base, fresh){
   if (!fresh || typeof fresh !== 'object') return mine;
   const J = x => JSON.stringify(x ?? null);
   for (const k of new Set([...Object.keys(fresh), ...Object.keys(base), ...Object.keys(mine)])){
-    if (J(mine[k]) !== J(base[k])) continue;
+    if (J(mine[k]) !== J(base[k])){
+      const m = mine[k], b = base[k], f = fresh[k];
+      if (!m || !b || !f || typeof f !== 'object' || J(f) === J(b)) continue;
+      for (const x of new Set([...Object.keys(f), ...Object.keys(b), ...Object.keys(m)])){
+        if (J(m[x]) !== J(b[x])) continue;
+        if (f[x] === undefined){ delete m[x]; delete b[x]; } else { m[x] = JSON.parse(JSON.stringify(f[x])); b[x] = JSON.parse(JSON.stringify(f[x])); }
+      }
+      continue;
+    }
     if (fresh[k]){ mine[k] = fresh[k]; base[k] = JSON.parse(JSON.stringify(fresh[k])); } else { delete mine[k]; delete base[k]; }
   }
   return mine;
@@ -3335,7 +3356,7 @@ function visitMerge(mine, base, fresh){
 // settings (two people saving at once) is filled back in from its latest row on the next load. Fills blanks only.
 // A patient's rows stay until their next appointment day comes, then the daily prune removes them.
 const VLOG_SHEET = 'ESK Visit Log', VLOG_COLS = ['Logged', 'Visit', 'MRN', 'Appt date', 'Event', 'Time', 'BP', 'HR', 'O2', 'Detail', 'By', 'Snapshot'];
-const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc'];
+const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc', 'prnOrd'];
 const vlogEmpty = x => x == null || x === '' || (typeof x === 'object' && !Object.keys(x).length);
 function vlogPick(v){ const o = {}; for (const f of VLOG_F) if (v && !vlogEmpty(v[f])) o[f] = v[f]; return JSON.parse(JSON.stringify(o)); }
 const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
@@ -3358,7 +3379,12 @@ function vlogEvents(p, c){
   if (PX.length > RX.length) add('PRN removed', { detail: `${PX.length - RX.length} removed` });
   if (J(p.out) !== J(c.out)) add(c.out ? 'Discharged' : 'Discharge undone', { time: hhmm(c.out?.at), by: c.out?.by || '' });
   if (J(p.mv) !== J(c.mv)) add(c.mv ? 'Moved' : 'Move undone', { time: hhmm(c.mv?.time), detail: c.mv?.prov || '', by: c.mv?.by || '' });
-  if (J(p.pc) !== J(c.pc)) add(c.pc ? 'Provider confirmed dose' : 'Provider confirmation cleared', { time: hhmm(c.pc?.at), detail: c.pc ? `kit …${c.pc.sn}` : '' });
+  if (J(p.pc) !== J(c.pc)) add(c.pc ? 'Provider confirmed dose' : 'Provider confirmation cleared', { time: hhmm(c.pc?.at), detail: c.pc ? [`kit …${c.pc.sn}`, c.pc.lot && `lot ${c.pc.lot}`].filter(Boolean).join(' · ') : '', by: c.pc?.by || '' });
+  const PO = p.prnOrd || [], CO = c.prnOrd || [];
+  for (const o of CO){ const q = PO.find(x => x.id === o.id), d = [o.med, o.dose, o.reason && `(${o.reason})`].filter(Boolean).join(' ');
+    if (!q) add('PRN indicated', { time: hhmm(o.at), detail: d, by: o.by || '' });
+    if (o.ack && !q?.ack) add('PRN acknowledged', { time: o.ack.time || '', detail: d, by: o.ack.by || '' }); else if (!o.ack && q?.ack) add('PRN acknowledgement undone', { detail: d }); }
+  if (PO.some(x => !CO.some(o => o.id === x.id))) add('PRN order removed');
   return E;
 }
 // Sheet rows for everything that changed from prev to cur (both eskVisit maps). Visits dropped by the 45-day cut aren't logged.
@@ -3484,7 +3510,8 @@ function stepsHTML(i, v, pri){
   const L = [
     roomed ? { c: 'done', t: `Roomed${v.bay ? ' · Bay ' + esc(v.bay) : ''}`, m: init ? 'Initial ' + val(init, 'vit', 'init') : `<button class="linkbtn" data-act="vit" data-k="${k}" data-w="init">Add initial vitals</button>`, w: tm(v.start, 'vStart') }
       : { c: 'active', t: 'Room time + Initial vitals', m: a.time != null ? `Booked ${fmtT(a.time)}` : '', w: pri === 'vStart' ? '' : `<button class="btn sm" data-act="vStart" data-k="${k}">Room time + Initial vitals</button>` },
-    kit ? { c: 'done', t: 'Dose given', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · tracker and med logs updated`, w: obsAt(v) != null ? tm(obsAt(v), 'vEdit') : `<button class="btn sm" data-act="vEdit" data-k="${k}" title="The vitals timers run from the dose time">Add dose time</button>` }
+    kit && techDue(kit) ? { c: 'active', t: 'Sign the dose', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · given by ${esc(v?.pc?.by || 'the provider')}, add your name`, w: pri === 'admin' ? '' : `<button class="btn sm" data-act="admin" data-k="${k}">Finish administration</button>` }
+    : kit ? { c: 'done', t: 'Dose given', m: `${esc(kit.adminRaw ?? i.inf.mg)} mg · SN …${esc(String(kit.serial).slice(-5))} · tracker and med logs updated`, w: obsAt(v) != null ? tm(obsAt(v), 'vEdit') : `<button class="btn sm" data-act="vEdit" data-k="${k}" title="The vitals timers run from the dose time">Add dose time</button>` }
       : { c: roomed ? 'active' : 'upcoming', t: 'Give dose', m: SAFE(i.inf.pharm) + kitRowHTML(i), w: pri === 'admin' ? '' : `<button class="btn sm" data-act="admin" data-k="${k}">Administer</button>` },
     mid ? { c: 'done', t: `${CFG.vitalsMin}-min vitals`, m: val(mid, 'vit', 'mid'), w: mid.at != null ? tm(mid.at, 'vit', 'mid') : '' }
       : md ? { c: 'active ' + markCls('mid', md.at, now), t: `${CFG.vitalsMin}-min vitals`, m: '', w: `<button class="vdue" data-act="vit" data-k="${k}" data-w="mid" title="Record the ${esc(CFG.vitalsMin)}-min vitals">${dueChip(md, true)}</button>` }
@@ -3497,6 +3524,8 @@ function stepsHTML(i, v, pri){
   ];
   const rk = (v?.rechk || []).map(x => ({ c: 'done', t: 'Vitals recheck', m: `<button class="linkbtn vv" data-act="prnOpen" data-k="${k}" title="Edit">${esc(rkText(x))}</button>${x.why ? ` <span>${esc(x.why)}</span>` : ''}`, w: `<button class="linkbtn tm" data-act="prnOpen" data-k="${k}" title="Edit">${fmtT(fromHHMM(x.at))}</button>` }));
   if (rk.length) L.splice(L.length - 1, 0, ...rk);
+  const po = prnPend(v).map(o => ({ c: 'active', t: `PRN indicated: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.by || 'Provider')} at ${fmtT(o.at)}${o.reason ? ' · ' + esc(o.reason) : ''}</span>`, w: pri === 'prnAck' ? '' : `<button class="btn sm" data-act="prnAck" data-k="${k}" data-o="${esc(o.id)}">Acknowledge</button>` }));
+  if (po.length) L.splice(L.length - 1, 0, ...po);
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
 }
 // Bottom of the appointment card. Today: timeline + steps; once discharged only the discharge time shows (timeline folds away).
@@ -3832,7 +3861,13 @@ function openPrintable(html, title){
 // ---------- administer ----------
 function openAdmin(key){
   const it = todayModel(S.day).find(i => i.a.key === key); if (!it) return;
-  const pc = visitGet(key)?.pc, pk = pc && S.K.find(k => k.id === pc.kit && !k.administered);   // the provider's confirmed kit and time come first
+  const pc = visitGet(key)?.pc;
+  if (techDue(it.adminKit)){   // the provider marked it administered in ESK Bays: same kit, the tech adds their name (Finish administration)
+    const k = it.adminKit, o = obsAt(visitGet(key));
+    S.adm = { key, kitId: k.id, fin: true, mg: k.admin || it.inf.mg || k.recv || 84, tech: CFG.me, sup: k.sup || CFG.sup, at: hhmm(pc ? pc.at : o ?? nowMin()), msg: null };
+    return renderAdmin();
+  }
+  const pk = pc && S.K.find(k => k.id === pc.kit && !k.administered);   // the provider's confirmed kit and time come first
   const kit = pk || it.pulledKit || it.suggest || null;
   S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, at: hhmm(pc ? pc.at : nowMin()), msg: null };
   renderAdmin();
@@ -3842,7 +3877,7 @@ function renderAdmin(){
   const k = S.K.find(x => x.id === S.adm.kitId) || null; const probs = [], warns = [];
   if (!k) probs.push('Scan or choose the kit being used.');
   else {
-    if (k.administered) probs.push(`Serial ${esc(k.serial)} is already administered.`);
+    if (k.administered && !(S.adm.fin && k.id === it.adminKit?.id)) probs.push(`Serial ${esc(k.serial)} is already administered.`);
     if (k.disposed) probs.push('This kit is marked for disposal.');
     if (k.expired) probs.push(`This kit is expired (use by ${fmtD(k.expDate, 'full')}).`);
     if (k.mrn && k.mrn !== it.a.mrn) probs.push(`This kit is labeled for ${esc(nm(k.mrn))} (MRN ${esc(k.mrn)}).${k.pharm === 'BESSE' ? ' Re-assign it first if it should go to this patient.' : ''}`);
@@ -3859,12 +3894,13 @@ function renderAdmin(){
   if (k && !k.comments) obj.comments = nm(it.a.mrn);
   const { out } = changesFor('kits', obj);
   const cands = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn)))).sort((a, b) => ((b.mrn === it.a.mrn) - (a.mrn === it.a.mrn)) || fifo(a, b)).slice(0, 4);
-  openModal(`<h2>Administer — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
-    ${pc ? `<div class="msg ok">Provider confirmed kit …${esc(pc.sn)}, given at ${fmtT(pc.at)}.</div>` : ''}
+  const fin = S.adm.fin && k?.id === it.adminKit?.id;
+  openModal(`<h2>${fin ? 'Finish administration' : 'Administer'} — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
+    ${pc ? `<div class="msg ok">${esc(pc.by || 'Provider')} confirmed kit …${esc(pc.sn)}${pc.lot ? ` · lot ${esc(pc.lot)}` : ''}, given at ${fmtT(pc.at)}.${fin ? ' Add your name as treating technician to finish it.' : ''}</div>` : ''}
     <label class="lbl" for="admScan">Kit</label>
-    <div class="scan"><input id="admScan" data-scan="admin" placeholder="Scan the kit to confirm" autocomplete="off"></div>
+    ${fin ? '' : `<div class="scan"><input id="admScan" data-scan="admin" placeholder="Scan the kit to confirm" autocomplete="off"></div>`}
     ${k ? `<div class="item" style="margin-top:8px"><div class="line">${kitLine(k)}</div></div>` : ''}
-    ${cands.length ? `<div class="small muted" style="margin-top:8px">Or pick (oldest first):</div><div class="row small" style="margin-top:4px">${cands.map(x => `<button class="btn sm ${x.id === S.adm.kitId ? 'primary' : ''}" data-act="admKit" data-id="${esc(x.id)}" style="flex:0 0 auto">…${esc(x.serial.slice(-5))} · rec ${fmtD(x.received)}</button>`).join('')}</div>` : ''}
+    ${cands.length && !fin ? `<div class="small muted" style="margin-top:8px">Or pick (oldest first):</div><div class="row small" style="margin-top:4px">${cands.map(x => `<button class="btn sm ${x.id === S.adm.kitId ? 'primary' : ''}" data-act="admKit" data-id="${esc(x.id)}" style="flex:0 0 auto">…${esc(x.serial.slice(-5))} · rec ${fmtD(x.received)}</button>`).join('')}</div>` : ''}
     <div class="form2">
       <div><label class="lbl" for="admMg">Administered (mg)</label><select id="admMg" class="fld" data-adm="mg">${[56, 84, 28, 70, 14].map(v => `<option ${+S.adm.mg === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div><label class="lbl">Date administered</label><input class="fld ro" value="${fmtD(S.day, 'full')}" readonly></div>
@@ -3875,7 +3911,7 @@ function renderAdmin(){
     ${datalist('dlTech', distinct('kits', 'treatingtechnician'))}${datalist('dlSup', distinct('kits', 'supervisingphysician'))}
     ${probs.map(p => `<div class="msg bad">${p}</div>`).join('')}${warns.map(p => `<div class="msg warn">${p}</div>`).join('')}${msgHTML(S.adm.msg)}
     ${k ? `<div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>` : ''}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="admSave" ${probs.length ? 'disabled' : ''}>Record administration</button></div>`);
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="admSave" ${probs.length ? 'disabled' : ''}>${fin ? 'Finish administration' : 'Record administration'}</button></div>`);
   if (!k) setTimeout(() => $('#admScan')?.focus(), 30);
 }
 async function adminSave(){
@@ -4606,12 +4642,14 @@ function tdRow(i, now, on){
   if (v?.start == null){ r.line = a.time == null ? 'No appointment time' : i.adminKit ? `Given, no room time · booked ${fmtT(a.time)}` : tdLive({ what: 'Expected', at: a.time, kind: 'arr' }); return r; }
   if (!on.has(key)){ r.grp = 'done'; r.lost = true; r.at = v.start; r.line = 'Not discharged in the tracker'; return r; }
   const o = obsAt(v), mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = o == null ? Infinity : v40At(v) - now, fd = finalDue(v);
-  const late = !mid && d40 < 0, soon = !mid && d40 >= 0 && d40 <= TD_SOON, noDose = !i.adminKit || o == null;
-  r.grp = late || soon || noDose || fd ? 'need' : 'chair';
-  r.rank = late ? 0 : soon ? 1 : noDose ? 2 : fd ? 3 : 4;
-  r.tone = late ? 'late' : soon || r.rank === 2 ? 'soon' : 'ok';
+  const po = prnPend(v)[0], sign = techDue(i.adminKit);
+  const late = !mid && d40 < 0, soon = !mid && d40 >= 0 && d40 <= TD_SOON, noDose = !i.adminKit || o == null || sign;
+  r.grp = late || soon || noDose || fd || po ? 'need' : 'chair';
+  r.rank = late ? 0 : soon ? 1 : noDose ? 2 : fd || po ? 3 : 4;
+  r.tone = late ? 'late' : soon || r.rank === 2 || po ? 'soon' : 'ok';
   const nx = o == null ? null : !mid ? tdM40(v) : !fin ? tdFin(v) : null; r.at = o == null ? v.start : nx ? nx.at : disAt(o);
-  r.line = late || soon ? tdLive(tdM40(v)) : noDose ? `Roomed ${fmtT(v.start)} · ${i.adminKit ? 'dose time not recorded' : 'dose not recorded'}` : nx ? tdLive(nx) : 'Ready to discharge';
+  r.line = late || soon ? tdLive(tdM40(v)) : po ? `PRN ordered: ${esc(po.med)} ${esc(po.dose)}` : noDose ? `Roomed ${fmtT(v.start)} · ${sign ? 'sign the dose' : i.adminKit ? 'dose time not recorded' : 'dose not recorded'}` : nx ? tdLive(nx) : 'Ready to discharge';
+  if (po) r.tags = [tag('warn', 'PRN ordered'), ...r.tags].slice(0, 2);
   return r;
 }
 // Today's groups. On site = roomed, not discharged, at most 60 min past final vitals due, one per bay (the most recently roomed).
@@ -4636,7 +4674,9 @@ function tdPrimary(r){
   if (!v || v.start == null) return { act: 'vStart', html: b('vStart', 'Room time + Initial vitals') };
   const mid = vitGet(key, 'mid'), d40 = obsAt(v) == null ? Infinity : v40At(v) - nowMin(), fd = finalDue(v), lab = `Record ${esc(CFG.vitalsMin)}-min vitals`;
   if (!mid && d40 <= TD_SOON && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"', d40 < 0 ? 'late' : '') };
+  const po = prnPend(v)[0]; if (po) return { act: 'prnAck', html: b('prnAck', `Acknowledge ${esc(po.med)}`, ` data-o="${esc(po.id)}"`) };
   if (!i.adminKit) return { act: 'admin', html: b('admin', 'Administer') };
+  if (techDue(i.adminKit)) return { act: 'admin', html: b('admin', 'Finish administration') };
   if (obsAt(v) == null) return { act: 'vEdit', html: b('vEdit', 'Add dose time') };
   if (!mid && !fd) return { act: 'vit', html: b('vit', lab, ' data-w="mid"') };
   return { act: 'vOut', html: txBtn(key, v, true) };
@@ -4651,6 +4691,8 @@ function tdLead(r){
   const mid = vitGet(key, 'mid'), fin = vitGet(key, 'fin'), d40 = obsAt(v) == null ? Infinity : v40At(v) - nowMin(), fd = finalDue(v), rx = tdRescue(v);
   if (r.lost) return P('', `Not discharged in the tracker.${obsAt(v) != null ? ` Final vitals were due ${fmtT(disAt(obsAt(v)))}.` : ''} ${rx}`);
   if (!mid && d40 <= TD_SOON && !fd) return P(d40 < 0 ? 'late' : 'soon', `${tdLive(tdM40(v))} ${rx}`);
+  const po = prnPend(v)[0]; if (po) return P('soon', `<b>${esc(po.by || 'The provider')} indicated ${esc(po.med)} ${esc(po.dose)}</b>${po.reason ? ` for ${esc(po.reason)}` : ''} at ${fmtT(po.at)}. Acknowledge it to log the administration. ${rx}`);
+  if (techDue(i.adminKit)) return P('soon', `${esc(v.pc?.by || 'The provider')} recorded the dose${v.pc ? ` at ${fmtT(v.pc.at)}` : ''}. Add your name in Finish administration. ${rx}`);
   if (!i.adminKit) return P('soon', `Roomed ${fmtT(v.start)}${v.bay ? ' in Bay ' + esc(v.bay) : ''}. Dose not recorded yet. ${rx}`);
   if (obsAt(v) == null) return P('soon', `Dose given, but no dose time. Add it so the ${esc(CFG.vitalsMin)}-min and final vitals timers can run. ${rx}`);
   if (!mid && !fd) return P('', `${tdLive(tdM40(v))} ${rx}`);
@@ -4765,11 +4807,12 @@ const BAY_PLAN = { w: 808, h: 392, bays: [
     { d: 'M600 54C606 130 592 200 600 262C606 312 610 338 608 364', bays: ['4', '5'] }, { d: 'M424 244C470 246 516 236 554 208', bays: ['4'] }] };
 const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, ''); return BAY_PLAN.bays.some(x => x.id === s) ? s : null; };
 function bayState(r){
-  const { v, key } = r;
+  const { v, key } = r, po = prnPend(v)[0];
+  if (po && r.rank !== 0) return { st: 'soon', s: `PRN ordered · ${po.med}` };
   if (r.grp === 'chair') return { st: 'track', s: obsAt(v) == null ? `Roomed ${fmtT(v.start)}` : vitGet(key, 'mid') ? `Final vitals ${fmtT(disAt(obsAt(v)))}` : `Vitals ${fmtT(v40At(v))}` };
   if (r.rank === 0) return { st: 'late', s: `Vitals overdue · ${fmtT(v40At(v))}` };
   if (r.rank === 1) return { st: 'soon', s: `Vitals due ${fmtT(v40At(v))}` };
-  if (r.rank === 2) return { st: 'soon', s: r.i.adminKit ? 'No dose time' : 'Dose not given' };
+  if (r.rank === 2) return { st: 'soon', s: techDue(r.i.adminKit) ? 'Tech to sign the dose' : r.i.adminKit ? 'No dose time' : 'Dose not given' };
   return vitGet(key, 'fin') ? { st: 'ready', s: 'Ready to discharge' } : { st: 'soon', s: 'Final vitals due' };
 }
 // Provider view (prov = a canonical Rendering Provider): only that provider's patients are named. Anyone else's bay is "In use"
@@ -4785,7 +4828,7 @@ function bayMapModel(m, prov){
   const bays = BAY_PLAN.bays.map(b => {
     const r = on.find(x => bayNo(x.v?.bay) === b.id);
     if (r && !mine(r)) return { ...b, row: null, res: null, busy: true, st: 'busy', title: 'In use', s: 'Another provider' };
-    if (r){ const bs = bayState(r); return { ...b, row: r, ...bs, ...(prov ? { ts: r.rank === 2 && r.v?.pc ? 'Dose confirmed, the tech records it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) }; }
+    if (r){ const bs = bayState(r); return { ...b, row: r, ...bs, ...(prov ? { ts: prnPend(r.v).length ? 'PRN waiting for the PCT' : r.rank === 2 && r.v?.pc ? 'Administered, the tech signs it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) }; }
     const res = m.wait.filter(x => mine(x) && x.a.time != null && bayNo(x.v?.bay) === b.id).sort((x, y) => x.a.time - y.a.time)[0] || null;
     return { ...b, row: null, res, st: 'open', title: 'Open', s: res ? `${nm(res.a.mrn)} at ${fmtT(res.a.time)}` : prov ? 'Open' : 'Nobody booked' };
   });
@@ -4850,7 +4893,7 @@ function bayPanelHTML(b){
   const meta = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, prov ? esc(prov) : ''].filter(Boolean).join(', ');
   return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div><div class="meta">${meta}</div></div>
       <button class="btn ghost mute sm" data-act="bayNote" data-k="${k}">Add note</button></div>
-    ${tdLead(r)}${v?.pc && !i.adminKit ? `<div class="msg ok">Provider confirmed the dose at ${fmtT(v.pc.at)} · kit …${esc(v.pc.sn)}. Finish it in Administer.</div>` : ''}${v?.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}
+    ${tdLead(r)}${v?.pc && (!i.adminKit || techDue(i.adminKit)) ? `<div class="msg ok">${esc(v.pc.by || 'Provider')} confirmed the dose at ${fmtT(v.pc.at)} · kit …${esc(v.pc.sn)}${v.pc.lot ? ` · lot ${esc(v.pc.lot)}` : ''}. ${i.adminKit ? 'Add your name in Finish administration.' : 'Finish it in Administer.'}</div>` : ''}${v?.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}
     ${pri.html ? `<div class="tact">${pri.html}</div>` : ''}
     <div class="row"><button class="btn ghost" data-act="bayMove" data-k="${k}">Move to another bay</button></div></aside>`;
 }
@@ -4862,14 +4905,18 @@ function bayProvPanelHTML(b){
   const { i, a, v, key } = b.row, o = obsAt(v), kit = i.adminKit, pc = v?.pc;
   const line = (lab, w, due) => { const x = vitGet(key, w);
     return `<div class="pvit"><span class="pl">${lab}</span>${x ? `<span><b>${esc(vitTxt(x))}</b> <span class="muted">${fmtT(x.at)}${x.by ? ` · ${esc(x.by)}` : ''}</span></span>` : `<span class="muted">${due}</span>`}</div>`; };
-  const dose = kit ? `<div class="msg ok">Administered${o != null ? ` at ${fmtT(o)}` : ''} · kit …${esc(String(kit.serial || '').slice(-4))}${pc ? ' · you confirmed it' : ''}</div>`
+  const sn4 = kit && esc(String(kit.serial || '').slice(-4));
+  const dose = kit && techDue(kit) ? `<div class="msg ok">Administered${o != null ? ` at ${fmtT(o)}` : ''} · kit …${sn4}${pc?.lot ? ` · lot ${esc(pc.lot)}` : ''}. The tech adds their name to finish it.</div>`
+    : kit ? `<div class="msg ok">Administered${o != null ? ` at ${fmtT(o)}` : ''} · kit …${sn4}${pc ? ' · you confirmed it' : ''}${kit.tech ? ` · ${esc(kit.tech)}` : ''}</div>`
     : pc ? `<div class="msg ok">You confirmed the dose at ${fmtT(pc.at)} · kit …${esc(pc.sn)}. The tech finishes it in Administer.</div>`
     : `<button class="btn primary lg" data-act="pvDose" data-k="${esc(key)}">Confirm dose</button>`;
+  const ord = (v?.prnOrd || []).map(x => `<div class="pvit"><span class="pl">PRN</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}${x.ack ? `given ${x.ack.time ? fmtT(fromHHMM(x.ack.time)) : ''}${x.ack.by ? ' by ' + esc(x.ack.by) : ''}` : `ordered ${fmtT(x.at)} · waiting for the PCT`}</span></span></div>`).join('');
+  const prn = v?.start != null && !v?.out ? `<div class="pvits">${ord}</div><div class="row"><button class="btn ghost" data-act="pvPrn" data-k="${esc(key)}">Indicate PRN</button></div>` : ord ? `<div class="pvits">${ord}</div>` : '';
   return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div>
       <div class="meta">${[esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, v?.start != null ? `roomed ${fmtT(v.start)}` : ''].filter(Boolean).join(', ')}</div></div></div>
     <p class="lead ${b.st}">${esc(b.st === 'ready' ? 'Ready to discharge' : b.ts || b.s)}</p>
-    <div class="pvits">${line('Initial', 'init', 'Not recorded yet')}${line(`${CFG.vitalsMin || 40}-min`, 'mid', o == null ? 'After the dose' : `Due ${fmtT(v40At(v))}`)}${line('Final', 'fin', o == null ? 'After the dose' : `Due ${fmtT(disAt(o))}`)}</div>
-    ${dose}</aside>`;
+    <div class="pvits">${line('Initial', 'init', 'Not recorded yet')}${line(`${CFG.vitalsMin || 40}-min`, 'mid', o == null ? 'After the dose' : `Due ${fmtT(v40At(v))}`)}${line('Final', 'fin', o == null ? 'After the dose' : `Due ${fmtT(disAt(o))}`)}${(v?.rechk || []).map(x => `<div class="pvit"><span class="pl">Recheck</span><span><b>${esc(rkText(x))}</b> <span class="muted">${x.at ? fmtT(fromHHMM(x.at)) : ''}${x.why ? ' · ' + esc(x.why) : ''}</span></span></div>`).join('')}</div>
+    ${dose}${prn}</aside>`;
 }
 // Under the map: everyone not roomed yet, with the bay they're booked into (provider view: only theirs, nothing to change).
 function bayNextHTML(m, prov){
@@ -4878,39 +4925,77 @@ function bayNextHTML(m, prov){
     return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span>${prov ? '<span></span>' : `<button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button>`}</div>`; }).join('')}</div>`;
 }
 // Provider confirms the dose: the last 4 of the kit serial must match exactly one kit this patient can get (the tech's pull or
-// suggestion, their labeled kits, or Besse stock). Saves eskVisit[key].pc { at, sn, kit, ts } and, when no dose time is set yet,
-// the dose time (vitals timers start there). The tech still records the administration on the Inventory in Administer.
+// suggestion, their labeled kits, or Besse stock), and the lot number (at least its last 4) must match that kit's lot.
+// Writes the Inventory row as administered (mg, date, supervising physician = the provider) with Treating Technician left blank,
+// and saves eskVisit[key].pc { at, sn, lot, kit, by, ts } plus the dose time when none is set (vitals timers start there).
+// The tech finishes it in Administer, which writes their name into the row.
 function pvKits(it){
   const L = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn))));
   return [...new Set([it.pulledKit, it.suggest, ...L].filter(Boolean))];
 }
-function pvMatch(it, sn){
+function pvMatch(it, sn, lot){
   const q = String(sn || '').trim().toUpperCase(), end = k => String(k.serial || '').toUpperCase().endsWith(q);
+  const ql = String(lot || '').trim().toUpperCase(), lotOk = k => String(k.lot ?? '').trim().toUpperCase().endsWith(ql);
   if (!/^[A-Z0-9]{4}$/.test(q)) return { err: 'Enter the last 4 characters of the kit serial.' };
-  if (it.adminKit) return end(it.adminKit) ? { k: it.adminKit } : { err: `The tech recorded kit …${esc(String(it.adminKit.serial || '').slice(-4))}, which doesn’t match.` };
+  if (!/^[A-Z0-9-]{4,}$/.test(ql)) return { err: 'Enter the lot number (at least its last 4 characters).' };
+  const lotErr = k => !String(k.lot ?? '').trim() ? { err: 'This kit has no lot number on the Inventory. Ask the tech to check the row.' } : lotOk(k) ? null : { err: `The lot doesn’t match kit …${esc(q)}. Check the box.` };
+  if (it.adminKit) return !end(it.adminKit) ? { err: `The tech recorded kit …${esc(String(it.adminKit.serial || '').slice(-4))}, which doesn’t match.` } : lotErr(it.adminKit) || { k: it.adminKit };
   const L = pvKits(it).filter(end);
   if (!L.length) return { err: `No kit for ${esc(nm(it.a.mrn))} ends in ${esc(q)}. Check the box, or ask the tech to scan it.` };
   if (L.length > 1) return { err: `${L.length} kits end in ${esc(q)}. Ask the tech to scan it in Administer.` };
   if (L[0].administered || L[0].expired || L[0].disposed) return { err: 'That kit is administered, expired or marked for disposal. Tell the tech.' };
-  return { k: L[0] };
+  return lotErr(L[0]) || { k: L[0] };
 }
 function openPvDose(key){
   const it = todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return;
   S.pv = { key }; const b = bayNo(visitGet(key)?.bay);
   openModal(`<h2>Confirm dose — ${esc(nm(it.a.mrn))}</h2><div class="muted small">${b ? `Bay ${esc(b)} · ` : ''}${it.inf.mg ?? '?'} mg · ${esc(PH_LABEL[it.inf.pharm] || '')}</div>
     <div class="form2"><div><label class="lbl" for="pvSn">Last 4 of the kit serial</label><input id="pvSn" class="fld mono" maxlength="4" autocomplete="off" spellcheck="false"></div>
+      <div><label class="lbl" for="pvLot">Lot number <span class="muted">(or its last 4)</span></label><input id="pvLot" class="fld mono" maxlength="20" autocomplete="off" spellcheck="false"></div>
       <div><label class="lbl" for="pvAt">Time given <span class="muted">(vitals timers start here)</span></label><input id="pvAt" class="fld" type="time" value="${hhmm(nowMin())}"></div></div>
+    <p class="small muted">This marks the kit administered on the Inventory, with you as supervising physician. The tech adds their name to finish it.</p>
     <div id="pvMsg"></div>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="pvSave">Confirm and log</button></div>`);
   setTimeout(() => $('#pvSn')?.focus(), 30);
 }
 async function pvSave(){
   const key = S.pv?.key, it = key && todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return closeModal();
-  const sn = String($('#pvSn')?.value || '').trim().toUpperCase(), at = fromHHMM($('#pvAt')?.value), r = pvMatch(it, sn);
+  const sn = String($('#pvSn')?.value || '').trim().toUpperCase(), lot = String($('#pvLot')?.value || '').trim().toUpperCase(), at = fromHHMM($('#pvAt')?.value), r = pvMatch(it, sn, lot);
   const err = r.err || (at == null ? 'Enter the time the dose was given.' : '');
   if (err){ $('#pvMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
-  await visitSet(key, { pc: { at, sn, kit: r.k.id, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
-  closeModal(); render(); toast('ok', `Dose confirmed for ${nm(it.a.mrn)}. The tech finishes it in Administer.`);
+  const k = r.k;
+  if (!k.administered){   // Inventory row: administered, no Treating Technician yet (Administer → Finish administration adds it)
+    const obj = { administeredmg: +(it.inf.mg || k.recv), dateadministered: { date: todaySerial() }, supervisingphysician: CFG.prov, ...prnTotals(visitGet(key)?.rescue) };
+    if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
+    const { out } = changesFor('kits', obj);
+    closeModal();
+    const ok = await write('Recording the dose…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Administered for ${nm(it.a.mrn)}. The tech adds their name to finish it.`);
+    if (!ok) return;
+  } else closeModal();
+  await visitSet(key, { pc: { at, sn, lot: String(k.lot ?? lot).trim(), kit: k.id, by: CFG.prov, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
+  render(); if (k.administered) toast('ok', `Dose confirmed for ${nm(it.a.mrn)}.`);
+}
+// Provider indicates a PRN: eskVisit[key].prnOrd = [{ id, med, dose, reason, by, at, ts, ack }]. It is not given until the PCT
+// acknowledges it on Today, which opens the PRN entry with that row filled in; saving logs it in eskVisit[key].rescue (row.ord = id)
+// and sets ack { by, time, ts }.
+function openPvPrn(key){
+  const a = S.A.find(x => x.key === key); if (!a) return; S.pv = { key };
+  openModal(`<h2>Indicate PRN — ${esc(nm(a.mrn))}</h2><div class="muted small">The PCT acknowledges it and logs the administration.</div>
+    <div class="form2"><div><label class="lbl" for="pvMed">Medication</label><select id="pvMed" class="fld">${RESCUE.map(m => `<option>${esc(m)}</option>`).join('')}<option value="">Other…</option></select></div>
+      <div><label class="lbl" for="pvMedO">Other medication</label><input id="pvMedO" class="fld" autocomplete="off" placeholder="Only for Other"></div>
+      <div><label class="lbl" for="pvRxDose">Dose / route</label><input id="pvRxDose" class="fld" autocomplete="off" placeholder="e.g. 4 mg ODT"></div>
+      <div><label class="lbl" for="pvRxWhy">Reason</label><input id="pvRxWhy" class="fld" autocomplete="off" placeholder="e.g. nausea, BP"></div></div>
+    <div id="pvMsg"></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="pvPrnSave">Send to the PCT</button></div>`);
+  setTimeout(() => $('#pvRxDose')?.focus(), 30);
+}
+async function pvPrnSave(){
+  const key = S.pv?.key; if (!key) return closeModal();
+  const med = String($('#pvMed')?.value || $('#pvMedO')?.value || '').trim(), dose = String($('#pvRxDose')?.value || '').trim(), reason = String($('#pvRxWhy')?.value || '').trim();
+  const err = !med ? 'Enter the medication.' : !dose ? 'Enter the dose and route.' : prnTracked(med) && prnMg(dose) == null ? `Enter the ${esc(med)} dose in mg (e.g. 4 mg ODT).` : '';
+  if (err){ $('#pvMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
+  const L = [...(visitGet(key)?.prnOrd || []), { id: 'o' + Date.now().toString(36), med, dose, reason, by: CFG.prov, at: nowMin(), ts: Date.now(), ack: null }];
+  closeModal(); await visitSet(key, { prnOrd: L }); render(); toast('ok', `${esc(med)} sent to the PCT.`);
 }
 // Pickers. bayMove: the bays this visit can go to (none with someone in the chair). bayFill: who to put in an open bay.
 function openBayMove(key){
@@ -4983,7 +5068,7 @@ TICKS.push(() => {
   if (!S.provView || !S.loaded || formBusy() || /INPUT|SELECT/.test(document.activeElement?.tagName || '')) return;
   const h = provPageHTML(); if (h !== S._pvSig) render();
 });
-Object.assign(ACT_TODAY, { pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave() });
+Object.assign(ACT_TODAY, { pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
 document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
@@ -6140,7 +6225,18 @@ async function sendAlert(a){ const snd = SOUNDS.includes(a.sound) ? await findSo
 // pre = the heads-up CFG.vitAhead minutes before; it doesn't stay on screen.
 function vitAlert(id, d, v, pre){
   if (!CFG.vitNotify || S.full) return;   // S.full: the full-screen view is open and alerts (through the panel if it has the window)
-  const a = { title: pre ? `${d.what} in ${Math.max(1, d.at - nowMin())} min · ${fmtT(d.at)}` : `${d.what} due · ${fmtT(d.at)}`, body: v?.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: !pre };
+  alertOut({ title: pre ? `${d.what} in ${Math.max(1, d.at - nowMin())} min · ${fmtT(d.at)}` : `${d.what} due · ${fmtT(d.at)}`, body: v?.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: !pre });
+}
+// A PRN the provider indicated in ESK Bays: a toast in every tech pane, plus the pop-up and sound when vitals alerts are on.
+// Like the vitals pop-up, no patient name, only the medication and bay.
+TICKS.push(() => {
+  if (S.provView || S.full || !S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
+  for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue;
+    for (const o of prnPend(v)){ const id = key + 'prn' + o.id; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);
+      const a = S.A.find(x => x.key === key); toast('warn', `<b>PRN indicated: ${esc(o.med)} ${esc(o.dose)}</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}. Acknowledge it on Today.`);
+      if (CFG.vitNotify) alertOut({ title: `PRN indicated · ${o.med}`, body: v.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: true }); } }
+});
+function alertOut(a){
   if (alertsWinOk()) return sendAlert(a);
   if (S.mode === 'dialog' && S.alertsOn) return S.store.relayAlert?.(a);
   playSound();
