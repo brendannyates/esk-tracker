@@ -54,5 +54,13 @@ t('selected bay: tapped bay, else the Today visit, else most urgent; panel besid
   C.S.bSel = '1'; h = C.bayMapHTML(m, null); assert(/Nobody is booked here yet/.test(h) && /data-mode="seat">Seat a patient here/.test(h), 'empty bay: seat a patient'); C.S.bSel = null;
   assert(/Still to come/.test(h) && /Bay 5<\/span><button[^>]*data-k="w">Change bay/.test(h) && /No bay yet<\/span><button[^>]*data-k="n">Choose a bay/.test(h), 'still to come with change / choose');
 });
+t('curtains draw for occupied bays they screen; lanterns lit only where someone is in the chair', () => {
+  const w = row('w', '5', 'wait', 9); w.v = { bay: '5' };
+  const h = C.bayMapHTML({ act: [1], need: [row('a', '2', 'need', 0)], chair: [], wait: [w] }, null);
+  const cur = [...h.matchAll(/<g class="curtain">.*?<\/g>/g)].map(x => /class="fabric"/.test(x[0]) ? 'drawn' : 'bunched');
+  assert.deepStrictEqual(cur, ['drawn', 'drawn', 'bunched', 'bunched'], 'bay 2 draws tracks 1-2 and 2-3; a booking alone draws nothing');
+  assert.strictEqual((h.match(/class="lantern on"/g) || []).length, 1); assert.strictEqual((h.match(/class="lantern"/g) || []).length, 4);
+  assert(/class="lantern on" transform="translate\(150 84\)"/.test(h) && /class="glow" cx="150" cy="84"/.test(h), 'bay 2 lantern lit with its glow');
+});
 t('no visits today: no map', () => assert.strictEqual(C.bayMapHTML({ act: [], need: [], chair: [], wait: [] }), ''));
 console.log(n + ' passed');
