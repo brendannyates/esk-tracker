@@ -5,13 +5,16 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'taskpane.html'), 'utf8').replace(/\r\n/g, '\n');
 const a = src.indexOf('// ---------- bay map:'), b = src.indexOf("document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap'");
 assert(a > 0 && b > a, 'bay map block markers');
+const pa = src.indexOf('// PRNs the provider indicated'), pb = src.indexOf('function prnStart(');   // prnPend, prnAckOrders, techDue
+assert(pa > 0 && pb > pa, 'PRN helper markers');
 const C = { fin: new Set(), vit: {} }; vm.createContext(C);
 vm.runInContext(`const obsAt = v => v?.adm ?? null, v40At = v => v.adm + 40, disAt = o => o + 100, fmtT = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 const S = {}, tdType = () => 'Follow-up', tdLead = r => '<p class="lead">lead ' + r.key + '</p>', trackHTML = () => '<div class="track"></div>', stepsHTML = () => '<ol class="steps"></ol>';
 const tdPrimary = r => ({ act: 'vit', html: '<button data-act="vit" data-k="' + r.key + '">Record</button>' });
 const vitGet = (k, w) => (vit[k] || {})[w] || (w === 'fin' ? (fin.has(k) ? { bp: '120/80', at: 700 } : null) : w === 'mid' ? (k.endsWith('m') ? { bp: '130/80', at: 650 } : null) : null);
 const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true };
-` + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits });', C);
+const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = r => [r.bp && 'BP ' + r.bp, r.hr && 'HR ' + r.hr].filter(Boolean).join(' · ');
+` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAckOrders, techDue });', C);
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const row = (key, bay, grp, rank, extra = {}) => ({ key, grp, rank, a: { mrn: key.toUpperCase(), time: 600, active: true }, i: { adminKit: {}, inf: { mg: 84 } }, v: { start: 600, adm: 605, bay }, ...extra });
 
@@ -75,7 +78,11 @@ t('provider view: only their patients named; other bays "In use"; tag shows init
   assert.strictEqual(by['4'].st, 'ready'); assert.strictEqual(by['4'].s, 'Ready to discharge');
   assert.strictEqual(by['5'].s, 'No initial vitals yet');
   const pc = mine('pc', '1', 'need', 2); pc.v.pc = { at: 605, sn: '1234' };
-  assert.strictEqual(C.bayMapModel({ ...m, need: [pc] }, 'Dr A').bays[0].ts, 'Dose confirmed, the tech records it');
+  assert.strictEqual(C.bayMapModel({ ...m, need: [pc] }, 'Dr A').bays[0].ts, 'Administered, the tech signs it');
+  pc.v.prnOrd = [{ id: 'o1', med: 'Zofran', dose: '4 mg ODT', at: 610, ack: null }];
+  assert.strictEqual(C.bayMapModel({ ...m, need: [pc] }, 'Dr A').bays[0].ts, 'PRN waiting for the PCT');
+  assert.strictEqual(C.bayState(pc).s, 'PRN ordered · Zofran', 'tech map shows the open PRN');
+  pc.v.prnOrd[0].ack = { by: 'T', time: '10:12' }; assert.notStrictEqual(C.bayState(pc).s, 'PRN ordered · Zofran', 'acknowledged: gone');
   assert.strictEqual(by['1'].res, null, 'another provider’s booking is not shown'); assert.strictEqual(by['1'].s, 'Open');
   const h = C.bayMapHTML(m, null, 'Dr A');
   assert(!/OB\b/.test(h) && !/WO\b/.test(h), 'no names of other providers’ patients anywhere');
@@ -91,22 +98,49 @@ t('provider panel: vitals lines, then Confirm dose / confirmed / administered', 
   assert(/Initial<\/span><span><b>132\/84 · HR 80<\/b>/.test(h) && /40-min<\/span><span class="muted">Due 10:45/.test(h) && /Final<\/span><span class="muted">Due 11:45/.test(h));
   assert(/<p class="lead soon">Vitals due 10:45/.test(h) && /data-act="pvDose" data-k="pa">Confirm dose/.test(h));
   r.v.pc = { at: 605, sn: '1234' }; h = C.bayProvPanelHTML(b); assert(/You confirmed the dose at 10:05 · kit …1234/.test(h) && !/pvDose/.test(h));
-  r.i.adminKit = { serial: 'ABC1234' }; h = C.bayProvPanelHTML(b); assert(/Administered at 10:05 · kit …1234 · you confirmed it/.test(h));
+  r.v.pc.lot = 'LOT9876';
+  r.i.adminKit = { serial: 'ABC1234' }; h = C.bayProvPanelHTML(b); assert(/Administered at 10:05 · kit …1234 · lot LOT9876. The tech adds their name to finish it./.test(h), 'provider wrote it; no tech yet');
+  r.i.adminKit.tech = 'Pat T'; h = C.bayProvPanelHTML(b); assert(/Administered at 10:05 · kit …1234 · you confirmed it · Pat T/.test(h));
+  assert(/data-act="pvPrn" data-k="pa">Indicate PRN/.test(h), 'roomed, not discharged: can indicate a PRN');
+  r.v.prnOrd = [{ id: 'o1', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', at: 620, ack: null }, { id: 'o2', med: 'Nifedipine', dose: '10 mg PO', at: 625, ack: { by: 'Pat T', time: '10:30' } }];
+  r.v.rechk = [{ bp: '150/95', at: '10:50', why: 'after nifedipine' }];
+  h = C.bayProvPanelHTML(b);
+  assert(/<b>Zofran 4 mg ODT<\/b> <span class="muted">nausea · ordered 10:20 · waiting for the PCT/.test(h));
+  assert(/<b>Nifedipine 10 mg PO<\/b> <span class="muted">given 10:30 by Pat T/.test(h));
+  assert(/Recheck<\/span><span><b>BP 150\/95<\/b> <span class="muted">10:50 · after nifedipine/.test(h), 'rechecks show to the provider');
+  r.v.out = { at: 720 }; h = C.bayProvPanelHTML(b); assert(!/pvPrn/.test(h) && /Zofran/.test(h), 'discharged: list only');
+  delete r.v.out; delete r.v.prnOrd; delete r.v.rechk;
   h = C.bayProvPanelHTML({ id: '3', row: null, busy: true }); assert(/in use/.test(h) && /Another provider’s patient/.test(h) && !/pvDose/.test(h));
   delete C.vit.pa;
 });
-t('dose confirmation: last 4 must match exactly one kit this patient can get', () => {
-  C.S.K = [{ id: 'k1', serial: 'SN0001234', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k2', serial: 'SN0005678', available: true, pharm: 'BESSE', mrn: 'P' },
-    { id: 'k3', serial: 'SN9995678', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k4', serial: 'SN0004321', available: true, pharm: 'BESSE', mrn: 'Q' }, { id: 'k5', serial: 'SN0009999', available: false, pharm: 'BESSE', mrn: '' }];
+t('dose confirmation: last 4 of the serial must match exactly one kit this patient can get, and the lot must match it', () => {
+  C.S.K = [{ id: 'k1', serial: 'SN0001234', lot: 'AB12345', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k2', serial: 'SN0005678', lot: 'X1', available: true, pharm: 'BESSE', mrn: 'P' },
+    { id: 'k3', serial: 'SN9995678', lot: 'X1', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k4', serial: 'SN0004321', lot: 'X1', available: true, pharm: 'BESSE', mrn: 'Q' }, { id: 'k5', serial: 'SN0009999', lot: 'X1', available: false, pharm: 'BESSE', mrn: '' },
+    { id: 'k6', serial: 'SN0002468', lot: '', available: true, pharm: 'BESSE', mrn: 'P' }];
   const it = { a: { mrn: 'P' }, inf: { pharm: 'BESSE' }, adminKit: null, pulledKit: null, suggest: null };
-  assert.strictEqual(C.pvMatch(it, '1234').k.id, 'k1'); assert.strictEqual(C.pvMatch(it, ' 1234 ').k.id, 'k1');
-  assert(/2 kits end in 5678/.test(C.pvMatch(it, '5678').err), 'ambiguous');
-  assert(/No kit for P ends in 4321/.test(C.pvMatch(it, '4321').err), 'labeled for someone else');
-  assert(/No kit/.test(C.pvMatch(it, '9999').err), 'not available'); assert(/last 4/.test(C.pvMatch(it, '12').err));
+  assert.strictEqual(C.pvMatch(it, '1234', 'AB12345').k.id, 'k1', 'full lot'); assert.strictEqual(C.pvMatch(it, ' 1234 ', '2345').k.id, 'k1', 'last 4 of the lot');
+  assert.strictEqual(C.pvMatch(it, '1234', 'ab12345').k.id, 'k1', 'lot case does not matter');
+  assert(/lot doesn’t match kit …1234/.test(C.pvMatch(it, '1234', '9999').err), 'wrong lot');
+  assert(/Enter the lot number/.test(C.pvMatch(it, '1234', '').err) && /Enter the lot number/.test(C.pvMatch(it, '1234', '345').err), 'lot required, 4+');
+  assert(/no lot number on the Inventory/.test(C.pvMatch(it, '2468', 'ABCD').err), 'kit row with no lot');
+  assert(/2 kits end in 5678/.test(C.pvMatch(it, '5678', 'AAAA').err), 'ambiguous');
+  assert(/No kit for P ends in 4321/.test(C.pvMatch(it, '4321', 'AAAA').err), 'labeled for someone else');
+  assert(/No kit/.test(C.pvMatch(it, '9999', 'AAAA').err), 'not available'); assert(/last 4/.test(C.pvMatch(it, '12', 'AAAA').err));
   const gen = { a: { mrn: 'P' }, inf: { pharm: 'GENOA' }, adminKit: null, pulledKit: null, suggest: null };
-  assert(/No kit/.test(C.pvMatch(gen, '1234').err), 'specialty patient: Besse stock does not count');
-  assert(/doesn’t match/.test(C.pvMatch({ ...it, adminKit: { serial: 'SN0001111' } }, '1234').err));
+  assert(/No kit/.test(C.pvMatch(gen, '1234', 'AB12345').err), 'specialty patient: Besse stock does not count');
+  assert(/doesn’t match/.test(C.pvMatch({ ...it, adminKit: { serial: 'SN0001111', lot: 'AB12345' } }, '1234', '2345').err));
+  assert.strictEqual(C.pvMatch({ ...it, adminKit: C.S.K[0] }, '1234', '2345').k.id, 'k1', 'tech already recorded it: still checks serial and lot');
   C.S.K = [];
+});
+t('PRN orders: open until a logged PRN row carries the order id; removing that row reopens it', () => {
+  const O = [{ id: 'o1', med: 'Zofran', dose: '4 mg', ack: null }, { id: 'o2', med: 'Nifedipine', dose: '10 mg', ack: null }];
+  assert.strictEqual(C.prnPend({ prnOrd: O }).length, 2); assert.strictEqual(C.prnPend({ prnOrd: O, out: { at: 700 } }).length, 0, 'discharged: nothing pending');
+  let A = C.prnAckOrders(O, [{ med: 'Zofran', dose: '4 mg', time: '10:15', ord: 'o1' }, { med: 'Captopril', dose: '25 mg', time: '10:16' }], 'Pat T', 1);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(A[0].ack)), { by: 'Pat T', time: '10:15', ts: 1 }); assert.strictEqual(A[1].ack, null);
+  A = C.prnAckOrders(A, [{ med: 'Zofran', dose: '4 mg', time: '10:20', ord: 'o1' }], 'Sam U', 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(A[0].ack)), { by: 'Pat T', time: '10:20', ts: 1 }, 'edited time follows; who acknowledged stays');
+  assert.strictEqual(C.prnAckOrders(A, [], 'Sam U', 3)[0].ack, null, 'row removed: open again');
+  assert.strictEqual(C.techDue({ tech: '' }), true); assert.strictEqual(C.techDue({ tech: 'Pat T' }), false); assert.strictEqual(C.techDue(null), false);
 });
 t('no visits today: no map', () => assert.strictEqual(C.bayMapHTML({ act: [], need: [], chair: [], wait: [] }), ''));
 console.log(n + ' passed');

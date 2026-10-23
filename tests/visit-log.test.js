@@ -35,6 +35,18 @@ t('rechecks, PRN, discharge, move and clears', () => {
   assert.strictEqual(evs(R), 'Room time cleared,Vitals recheck,PRN,Discharged,Moved');
   assert.strictEqual(R[1][9], 'after nifedipine'); assert.strictEqual(R[2][9], 'Nifedipine 10 mg (BP)'); assert.strictEqual(R[3][10], 'Tech B');
 });
+t('provider dose confirmation and PRN orders: indicated, acknowledged, undone', () => {
+  const o = { id: 'o1', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', by: 'Provider A', at: 620, ack: null };
+  const p = { [K]: { start: 600 } }, c = { [K]: { start: 600, pc: { at: 605, sn: '1234', lot: 'AB12', by: 'Provider A' }, prnOrd: [o] } };
+  let R = C.vlogRows(p, c, when, 'Me', D - 45);
+  assert.strictEqual(evs(R), 'Provider confirmed dose,PRN indicated');
+  assert.strictEqual(R[0][9], 'kit …1234 · lot AB12'); assert.strictEqual(R[0][10], 'Provider A');
+  assert.strictEqual(R[1].slice(5, 11).join('|'), '10:20||||Zofran 4 mg ODT (nausea)|Provider A');
+  const d = JSON.parse(JSON.stringify(c)); d[K].prnOrd[0].ack = { by: 'Tech A', time: '10:24', ts: 1 };
+  R = C.vlogRows(c, d, when, 'Me', D - 45); assert.strictEqual(evs(R), 'PRN acknowledged'); assert.strictEqual(R[0][5] + '|' + R[0][10], '10:24|Tech A');
+  assert.strictEqual(evs(C.vlogRows(d, c, when, 'Me', D - 45)), 'PRN acknowledgement undone');
+  assert.deepStrictEqual(JSON.parse(R[0][11]).prnOrd[0].ack.by, 'Tech A', 'orders are in the snapshot, so a lost visit gets them back');
+});
 t('visits dropped by the 45-day cut are not logged as removed', () => {
   const old = `900101|${D - 60}|600`;
   assert.strictEqual(C.vlogRows({ [old]: { start: 600 } }, {}, when, 'Me', D - 45).length, 0);

@@ -50,7 +50,17 @@ const K1 = '900101|46316|600', K2 = '900102|46316|660';
   assert.strictEqual(out[K1].vit.fin.bp, '118/76', 'other pane\'s vitals kept'); assert.strictEqual(out[K2].start, 660, 'my new visit kept');
   assert.deepStrictEqual(base[K1], fresh[K1], 'base follows the file, so the visit log only records my change');
   const m2 = { [K1]: { start: 605 } }, b2 = { [K1]: { start: 600 } };
-  assert.strictEqual(b.C.visitMerge(m2, b2, { [K1]: { start: 600, bay: '3' } })[K1].start, 605, 'a visit I changed keeps my version');
+  const o2 = b.C.visitMerge(m2, b2, { [K1]: { start: 600, bay: '3' } });
+  assert.strictEqual(o2[K1].start, 605, 'a visit I changed keeps my change'); assert.strictEqual(o2[K1].bay, '3', '…and takes the fields someone else changed');
+  assert.deepStrictEqual(b2[K1], { start: 600, bay: '3' }, 'base takes their field only, so the log records my change alone');
+  // the provider (ESK Bays) indicates a PRN while the PCT records 40-min vitals on the same visit
+  const bv = { [K1]: { start: 600, adm: 605, vit: { init: { bp: '120/80' } } } };
+  const pct = JSON.parse(JSON.stringify(bv)); pct[K1].vit.mid = { bp: '130/82' };
+  const file = JSON.parse(JSON.stringify(bv)); file[K1].prnOrd = [{ id: 'o1', med: 'Zofran', ack: null }];
+  const o4 = b.C.visitMerge(pct, bv, file)[K1];
+  assert.strictEqual(o4.vit.mid.bp, '130/82', 'PCT vitals kept'); assert.strictEqual(o4.prnOrd[0].id, 'o1', 'provider PRN kept');
+  const m5 = { [K1]: { start: 605, bay: '2' } }, b5 = { [K1]: { start: 600, bay: '2' } };
+  assert.strictEqual('bay' in b.C.visitMerge(m5, b5, { [K1]: { start: 600 } })[K1], false, 'a field someone else cleared stays cleared');
   const m3 = { [K1]: { start: 600 } }, b3 = { [K1]: { start: 600 } };
   assert.strictEqual(b.C.visitMerge(m3, b3, {})[K1], undefined, 'a visit someone else cleared stays cleared');
   assert.strictEqual(b.C.visitMerge(m3, b3, null), m3, 'no file copy: unchanged');
