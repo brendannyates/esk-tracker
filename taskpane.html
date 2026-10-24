@@ -637,6 +637,10 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bkey .bsw[data-k="ready"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
 /* provider view (?view=bays): one page, no rail; another provider's bay is a quiet hatched "In use" */
 .app.prov{display:block}
+.app.prov .btn.ico{width:44px;min-width:44px;padding:0;justify-content:center}
+.app.prov .btn.ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.app.prov .btn.ico.on{color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.pg-bays .pvtip{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:0 0 14px}.pg-bays .pvtip .btn{white-space:nowrap;flex:0 0 auto}
 .pg-bays .pvbar,.pg-bays .pvpick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pg-bays .pvbar .lbl,.pg-bays .pvpick .lbl{margin:0}
 .pg-bays .pvbar .fld,.pg-bays .pvpick .fld{width:auto;min-width:220px}
@@ -1244,7 +1248,7 @@ function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOS
 // One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
 // on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov'];
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov', 'pvSound', 'pvTipOff'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
@@ -2753,12 +2757,21 @@ function render(){
   const app = $('#app');
   if (!S.loaded){ app.innerHTML = S.loadErr ? setupErrorHTML() : `<div class="empty"><div class="spin" style="margin:30px auto 10px"></div>Reading the workbook…</div>`; return; }
   if (S.provView){   // provider view: one page, no rail, no name prompt
-    const T = todaySerial(), body = provPageHTML(); S._pvSig = body;
+    const T = todaySerial();
+    if (S.full){   // the pane only relays saves while ESK Bays is open full screen or in its own window
+      app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page"><main id="main" class="pg-full pg-bays"><div class="card"><h3>ESK Bays is open ${S.fullPop ? 'in its own window' : 'full screen'}</h3>
+        <p class="small muted">Keep this panel and this Excel tab open. The bay map saves through them.</p>${pvTipHTML()}
+        <div class="row" style="margin-top:10px"><button class="btn primary" data-act="${S.fullPop ? 'popOut' : 'full'}">Bring it back</button></div></div></main></div></div>`;
+      return;
+    }
+    const body = provPageHTML(); S._pvSig = body; pvEvents();
+    const tools = [S.mode === 'pane' && S.canFull ? '<button class="btn" data-act="full" title="Open full screen over Excel">Full screen</button><button class="btn" data-act="popOut" title="Open ESK Bays in its own browser window">Pop out</button>' : '',
+      S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
     app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
       <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
-        <div class="tools"><button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button></div></header>
-      <main id="main" class="pg-today pg-bays">${body}</main></div></div>`;
+        <div class="tools">${tools}</div></header>
+      <main id="main" class="pg-today pg-bays">${S.mode === 'pane' && S.canFull && !CFG.pvTipOff ? pvTipHTML(true) : ''}${body}</main></div></div>`;
     return;
   }
   if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; S.view = 'settings'; S.firstRun = true; }   // first run: the Settings page asks for a name (live: after the first read, so saved profiles are known)
@@ -5063,9 +5076,55 @@ function provPageHTML(){
   if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? 'Only your patients are shown on the map. This is remembered on this computer.' : 'Nobody is scheduled for ESK today.'}</p></div>`;
   return `<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}`;
 }
+// The pane's tip: pin the Excel tab, then pop ESK Bays out. The window saves through the pane, so the tab has to stay open.
+const pvTipHTML = close => `<div class="msg info pvtip"><span><b>Tip:</b> pin this Excel tab in your browser (right-click the tab, then <b>Pin tab</b>) so it stays open, then use <b>Pop out</b> to put ESK Bays in its own window. The window saves through this tab.</span>${close ? '<button class="btn ghost sm" data-act="pvTipOff">Got it</button>' : ''}</div>`;
+// Sun / moon (light or dark, personal CFG.theme) and the bell (sounds for this provider's patients, personal CFG.pvSound).
+const isDark = () => CFG.theme ? CFG.theme === 'dark' : !!window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+const PV_IC = {
+  sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0"/></svg>',
+  mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/></svg>' };
+const pvIconsHTML = () => `<button class="btn ico" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button>`
+  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals, vitals, rechecks, PRNs given, ready to discharge. Click to turn off.' : 'Sound off. Click to hear arrivals, vitals, rechecks, PRNs given and ready to discharge.'}">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button>`;
+// What happened to this provider's patients since the last look: roomed, each vitals set, rechecks, PRNs given, discharged, overdue.
+// The first look (or a new provider name) only takes stock. New ones: a toast; with the bell on, the sound and, where the browser
+// allows it (the popped-out window), a pop-up with the bay and event only, no patient name.
+function pvEventMap(m, prov){
+  const out = new Map(), lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals: ready to discharge' };
+  for (const r of [...m.need, ...m.chair, ...m.done]){
+    if (r.lost || rowProv(r) !== prov) continue;
+    const v = r.v || {}, ev = { b: bayNo(v.bay) ? `Bay ${bayNo(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '') => out.set(r.key + '|' + id, { ...ev, what, detail });
+    if (v.start != null) add('room', 'Roomed');
+    for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w); if (x) add('v' + w, lab[w], vitTxt(x)); }
+    (v.rechk || []).forEach((x, i) => add('rk' + i, 'Vitals recheck', [rkText(x), x.why].filter(Boolean).join(' · ')));
+    for (const o of v.prnOrd || []) if (o.ack) add('pa' + o.id, `${o.med} given`, o.ack.by ? 'by ' + o.ack.by : '');
+    if (v.out) add('out', 'Discharged');
+    if (r.rank === 0) add('late', 'Vitals overdue');
+  }
+  return out;
+}
+function pvEvents(){
+  if (!CFG.prov || S.full || !S.loaded) return;
+  const now = pvEventMap(tdModel(), CFG.prov);
+  if (!S._pvSeen || S._pvSeenFor !== CFG.prov){ S._pvSeen = new Set(now.keys()); S._pvSeenFor = CFG.prov; return; }
+  const fresh = [...now].filter(([id]) => !S._pvSeen.has(id)); if (!fresh.length) return;
+  for (const [id] of fresh) S._pvSeen.add(id);
+  toast(fresh.some(([, e]) => /overdue/.test(e.what)) ? 'warn' : 'ok', fresh.slice(0, 3).map(([, e]) => `<div><b>${esc(e.n)}</b> · ${esc(e.b)}: ${esc(e.what)}${e.detail ? ' · ' + esc(e.detail) : ''}</div>`).join('') + (fresh.length > 3 ? `<div>and ${fresh.length - 3} more</div>` : ''));   // one toast (a new one replaces the last)
+  if (!CFG.pvSound) return;
+  playSound();
+  if (notifyPerm() === 'granted') for (const [id, e] of fresh.slice(0, 3)) try { new Notification(`${e.b} · ${e.what}`, { body: e.detail || 'ESK Bays', tag: 'eskb-' + id, icon: 'assets/icon-80.png' }); } catch {}
+}
+Object.assign(ACT_TODAY, {
+  pvTheme: () => { CFG.theme = isDark() ? 'light' : 'dark'; saveLocal(); render(); },
+  pvSound: async () => { CFG.pvSound = !CFG.pvSound; saveLocal(); render(); if (CFG.pvSound){ playSound(); if (window.top === window && notifyPerm() === 'default') try { await Notification.requestPermission(); } catch {} toast('ok', 'Sound on for your patients.'); } },   // pop-ups only where the browser can ask: the popped-out window
+  pvTipOff: () => { CFG.pvTipOff = true; saveLocal(); render(); },
+});
 // Live: re-render when anything on the provider's map changes (the 20 s tick; workbook and co-author changes call reload → render).
 TICKS.push(() => {
-  if (!S.provView || !S.loaded || formBusy() || /INPUT|SELECT/.test(document.activeElement?.tagName || '')) return;
+  if (!S.provView || !S.loaded || S.full) return;
+  pvEvents();   // also for changes the page doesn't show (a recheck in a bay that isn't selected)
+  if (formBusy() || /INPUT|SELECT/.test(document.activeElement?.tagName || '')) return;
   const h = provPageHTML(); if (h !== S._pvSig) render();
 });
 Object.assign(ACT_TODAY, { pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
@@ -5941,6 +6000,7 @@ const ACT = {
   baysPrint: async () => { await baysSave(); closeModal(); render(); openPrintable(vitalsDoc(S.day), `Vitals Tracker · ${fmtD(S.day, 'full')}`); },
   printFrame: () => { try { $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); } catch { toast('warn', 'The browser blocked printing from the panel. Open Full screen and print from there.'); } },
   full: () => openFull(),
+  popOut: () => openFull(true),
   exitFull: () => { if (S.store.close) S.store.close(); },
   admKit: el => { S.adm.kitId = el.dataset.id; renderAdmin(); },
   admSave: adminSave,
@@ -6465,13 +6525,16 @@ function RemoteStore(){
   };
 }
 let DLG = null;
-// Full screen floats over the Excel page (an in-page Office dialog); there is no separate-window option.
-function openFull(){
-  if (DLG) return;
-  const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog';
-  Office.context.ui.displayDialogAsync(url, { height: 96, width: 96, displayInIframe: true }, res => {
-    if (res.status !== Office.AsyncResultStatus.Succeeded){ toast('bad', 'Couldn’t open full screen: ' + esc(res.error?.message || '')); return; }
-    DLG = res.value; S.full = true; render();
+// Full screen floats over the Excel page (an in-page Office dialog). Only ESK Bays can also pop out (pop: the same dialog as its own
+// browser window, so a provider can keep it beside other work); the ESK Tracker itself has no separate-window option.
+// Asked again while one is open (it may be hidden behind other windows): close it and open a fresh one.
+function openFull(pop){
+  pop = !!pop && S.provView;
+  if (DLG){ try { DLG.close(); } catch {} DLG = null; S.full = false; }
+  const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog' + (S.provView ? '&view=bays' : '');
+  Office.context.ui.displayDialogAsync(url, pop ? { height: 80, width: 50, displayInIframe: false } : { height: 96, width: 96, displayInIframe: true }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded){ toast('bad', (pop ? 'Couldn’t pop out ESK Bays. Allow pop-ups for this site (icon at the right end of the address bar), then try again. ' : 'Couldn’t open full screen: ') + esc(res.error?.message || '')); return; }
+    DLG = res.value; S.full = true; S.fullPop = pop; render();
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
