@@ -47,6 +47,15 @@ t('provider dose confirmation and PRN orders: indicated, acknowledged, undone', 
   assert.strictEqual(evs(C.vlogRows(d, c, when, 'Me', D - 45)), 'PRN acknowledgement undone');
   assert.deepStrictEqual(JSON.parse(R[0][11]).prnOrd[0].ack.by, 'Tech A', 'orders are in the snapshot, so a lost visit gets them back');
 });
+t('PRN request from the PCT: requested, approved, declined', () => {
+  const r = { id: 'r1', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', by: 'Provider A', at: 620, req: { by: 'Tech A', at: 620 }, ok: null, no: null, ack: null };
+  const p = { [K]: { start: 600 } }, c = { [K]: { start: 600, prnOrd: [r] } };
+  let R = C.vlogRows(p, c, when, 'Me', D - 45); assert.strictEqual(evs(R), 'PRN requested'); assert.strictEqual(R[0][10], 'Tech A');
+  const d = JSON.parse(JSON.stringify(c)); d[K].prnOrd[0].ok = { by: 'Provider A', at: 622 };
+  R = C.vlogRows(c, d, when, 'Me', D - 45); assert.strictEqual(evs(R), 'PRN approved'); assert.strictEqual(R[0][5] + '|' + R[0][10], '10:22|Provider A');
+  const e = JSON.parse(JSON.stringify(c)); e[K].prnOrd[0].no = { by: 'Provider A', at: 623, why: 'recheck first' };
+  R = C.vlogRows(c, e, when, 'Me', D - 45); assert.strictEqual(evs(R), 'PRN declined'); assert(/recheck first/.test(R[0][9]));
+});
 t('visits dropped by the 45-day cut are not logged as removed', () => {
   const old = `900101|${D - 60}|600`;
   assert.strictEqual(C.vlogRows({ [old]: { start: 600 } }, {}, when, 'Me', D - 45).length, 0);
