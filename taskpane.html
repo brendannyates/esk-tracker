@@ -409,6 +409,8 @@ details.fold>summary h2::after{content:"▸";margin-left:auto;color:var(--muted)
 .sheet h2{margin:0 0 6px;font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
 #cfloat{position:fixed;inset:0;z-index:25;background:var(--scrim);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:2vh 2vw}
 #cfloat iframe{width:min(920px,100%);height:100%;border:0;border-radius:16px;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+#cfloat.bm iframe{width:100%;background:var(--bg)}
+.bmprev{margin:12px 0 4px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:calc(100% - 24px);max-width:520px}
 #toast .msg{margin:0;box-shadow:var(--shadow),0 4px 16px rgba(0,0,0,.12);pointer-events:auto;width:100%}
 #busy{position:fixed;inset:0;background:var(--wash);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);z-index:40;display:flex;gap:10px;align-items:center;justify-content:center;font-weight:500}
@@ -571,6 +573,9 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bplan{position:relative;aspect-ratio:808/392;container-type:inline-size;margin-top:4px}
 .bplan svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible;pointer-events:none}
 .bplan .wall{stroke:var(--ink);stroke-width:8;fill:none;stroke-linecap:square}
+.bplan .wall.thin{stroke-width:4.5}
+.bplan .window .wf{stroke:var(--ink);stroke-width:8;fill:none}
+.bplan .window .wg{stroke:var(--surface);stroke-width:4;fill:none}
 .bplan{--lamp:#FFD38A;--lamp-edge:#C98A2B;--glow:#FFC56B;--glow-a:.75}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bplan{--lamp-edge:#E9B150;--glow:#FFB547;--glow-a:.6}}
 :root[data-theme="dark"] .bplan{--lamp-edge:#E9B150;--glow:#FFB547;--glow-a:.6}
@@ -589,6 +594,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bplan .seat{fill:var(--surface);stroke:var(--muted);stroke-width:1.75}
 .bplan .back,.bplan .arm{fill:var(--surface2);stroke:var(--muted);stroke-width:1.5}
 .bplan .room{position:absolute;transform:translate(-50%,-50%);font-size:clamp(10px,1.6cqw,12.5px);font-weight:600;color:var(--muted);white-space:nowrap}
+.bplan .room.small{font-weight:500;font-size:clamp(9px,1.3cqw,11px)}
 .bplan .bay{position:absolute;aspect-ratio:1;border-radius:50%;--rw:2px;--rc:var(--surface2);background:var(--surface3);box-shadow:inset 0 0 0 var(--rw) var(--rc);transition:box-shadow .2s,background .2s,filter .2s}
 .bplan .bay[data-state="open"]{background:transparent;box-shadow:none;border:2px dashed var(--faint)}
 .bplan .bay[data-state="track"]{background:var(--surface2);--rc:var(--faint);--rw:2.5px}
@@ -1109,6 +1115,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 <input type="file" id="apptFile" accept=".xls,.xlsx,.csv" hidden>
 <input type="file" id="benFile" accept=".csv,.xlsx,.xls" hidden>
 <input type="file" id="remsFile" accept=".xls,.xlsx,.csv" hidden>
+<input type="file" id="bpFile" accept=".json,application/json" hidden>
 <div id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" aria-live="polite"></div>
 <div id="busy" hidden><div class="spin"></div><span id="busyText">Working…</span></div>
@@ -3822,8 +3829,8 @@ function openBays(){
   const draw = () => { const bad = bayClashes(day);
     openModal(`<h2>Plan bays · ${DAYNAME[dowOf(day)]} ${fmtD(day, 'full')}</h2><div class="small muted">Saved with the workbook and printed in the Bay # column. Initial vitals are at the appointment time; 2nd vitals ${esc(CFG.vitalsMin)} min after the dose; final vitals ${esc(CFG.disAfter)} min after that.</div>
       <div class="tw" style="margin-top:8px"><table class="t"><thead><tr><th>Time</th><th>Patient</th><th style="width:110px">Bay #</th><th></th></tr></thead><tbody>
-      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td>${day === todaySerial() ? `<button class="linkbtn" data-act="goCard" data-k="${esc(i.a.key)}" title="Open on Today">${esc(nm(i.a.mrn))}</button>` : `<b>${esc(nm(i.a.mrn))}</b>`} <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
-      </tbody></table></div>
+      ${rows.map(i => `<tr><td>${fmtT(i.a.time)}</td><td>${day === todaySerial() ? `<button class="linkbtn" data-act="goCard" data-k="${esc(i.a.key)}" title="Open on Today">${esc(nm(i.a.mrn))}</button>` : `<b>${esc(nm(i.a.mrn))}</b>`} <span class="muted small">${esc(i.a.mrn)}</span></td><td><input class="fld" data-bay="${esc(i.a.key)}" list="dlBayIds" value="${esc(visitGet(i.a.key)?.bay || '')}" style="min-height:32px;padding:4px 8px"></td><td data-clash="${esc(i.a.key)}">${bad.has(i.a.key) ? `<span class="chip warn">Same bay within ${(+CFG.vitalsMin || 40) + (+CFG.disAfter || 60)} min</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No appointments.</td></tr>'}
+      </tbody></table></div>${datalist('dlBayIds', bayPlan().bays.map(b => b.id))}
       <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" data-act="baysSave">Save</button><button class="btn primary" data-act="baysPrint">Save &amp; print Vitals Tracker</button></div>`, true); };
   S.baysDraw = draw; draw();
 }
@@ -5016,17 +5023,103 @@ function tdSub(m){
   return [`${m.need.length + m.chair.length} in chair`, over ? `<strong>${over} overdue for vitals</strong>` : '', `${m.wait.length} not roomed yet`].filter(Boolean).join(', ')
     + ` · ${given}/${n} given · ${docd}/${n} documented${remsToday().imported && remsToday().opps.length ? ` · ${remsToday().tot.missing ? `<strong>${remsToday().tot.missing} REMS form${remsToday().tot.missing > 1 ? 's' : ''} not in chart</strong>` : 'REMS forms in chart'}` : ''}${check ? ` · ${check} kit${check > 1 ? 's' : ''} to confirm` : ''}${noKit ? ` · ${noKit} with no kit` : ''}`;
 }
-// ---------- bay map: the two ESK treatment rooms, one rug per bay, coloured by what that bay needs ----------
-// Geometry is traced from the clinic drawing in an 808 × 392 box (bay centre, radius, tag position, side-table lantern).
-// Bays match the Bay # saved on the visit ("4", "Bay 4"); anything else is listed under the map.
-// Each curtain track lists the bays it screens: drawn while any of them has someone in the chair, bunched at its wall anchor otherwise.
-const BAY_PLAN = { w: 808, h: 392, bays: [
-  { id: '1', cx: 118, cy: 298, r: 58, tag: [176, 300], lamp: [72, 253] }, { id: '2', cx: 118, cy: 128, r: 60, tag: [158, 180], lamp: [150, 84] },
-  { id: '3', cx: 345, cy: 150, r: 55, tag: [332, 206], lamp: [322, 88] }, { id: '4', cx: 500, cy: 140, r: 58, tag: [572, 170], lamp: [527, 90] },
-  { id: '5', cx: 695, cy: 150, r: 58, tag: [684, 230], lamp: [655, 90] }],
+// ---------- bay map: the clinic's treatment rooms, one rug per bay, coloured by what that bay needs ----------
+// The floor plan is the clinic's own map (Settings › Bay map, drawn in the Bay Map Builder, saved for everyone as eskShared.bayPlan),
+// else the built-in drawing of the two ESK rooms. Bays match the Bay # saved on the visit ("4", "Bay 4", "2a"); anything else is
+// listed under the map. Each curtain track lists the bays it screens: drawn while any of them has someone in the chair, bunched otherwise.
+// ==== bay plan: shared with bay-map-builder/render.js and esk-tracker src/taskpane.html. Keep both copies identical. ====
+// A bay map file (schema "mhs-bay-map", v 1) is drawn in its own w × h box. Paths are SVG path data in that box; bay ids are
+// the Bay # the tracker saves on a visit ("4", "2A"). bpCheck() is the only way a plan gets drawn or saved: it returns a clean
+// copy holding just what the renderer reads (plus the builder's own edit model, untouched), or an error to show.
+const BP_SCHEMA = 'mhs-bay-map';
+const bpEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const bpPct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
+const BP_D = /^\s*[Mm][MLHVCSQTAZmlhvcsqtaz0-9eE.,\s+-]*$/;
+const BP_MAX = { bays: 40, curtains: 80, walls: 400, doors: 120, windows: 120, tables: 400, chairs: 200, rooms: 60 };
+function bpCheck(x){
+  const fail = err => ({ err });
+  if (!x || typeof x !== 'object' || x.schema !== BP_SCHEMA || x.v !== 1) return fail('This isn’t a bay map file.');
+  let size = 0; try { size = JSON.stringify(x).length; } catch { return fail('The map file can’t be read.'); }
+  if (size > 400000) return fail('The map file is too large.');
+  const num = n => typeof n === 'number' && isFinite(n) && Math.abs(n) <= 20000;
+  const pt = p => Array.isArray(p) && p.length === 2 && p.every(num);
+  const okD = s => typeof s === 'string' && s.length <= 20000 && BP_D.test(s);
+  const str = (s, n) => typeof s === 'string' ? s.slice(0, n) : '';
+  if (!num(x.w) || !num(x.h) || x.w < 100 || x.h < 60 || x.w > 6000 || x.h > 6000) return fail('The map size is missing or out of range.');
+  const L = {};
+  for (const k in BP_MAX){ const a = x[k] == null ? [] : x[k];
+    if (!Array.isArray(a)) return fail(`The ${k} list is malformed.`);
+    if (a.length > BP_MAX[k]) return fail(`The map has more than ${BP_MAX[k]} ${k}.`); L[k] = a; }
+  if (!L.bays.length) return fail('The map has no bays.');
+  const ids = new Map(), bays = [];
+  for (const b of L.bays){ const id = String(b?.id ?? '').trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,7}$/.test(id) || /^bay/i.test(id)) return fail(`Bay number “${id}” can’t be used. Use up to 8 letters or digits, like 4 or 2A.`);
+    if (ids.has(id.toLowerCase())) return fail(`Bay ${id} is on the map twice.`);
+    if (!num(b.cx) || !num(b.cy) || !num(b.r) || b.r < 10 || b.r > 400 || !pt(b.tag) || (b.lamp != null && !pt(b.lamp))) return fail(`Bay ${id} has a bad position or size.`);
+    ids.set(id.toLowerCase(), id); bays.push({ id, cx: b.cx, cy: b.cy, r: b.r, tag: [b.tag[0], b.tag[1]], lamp: b.lamp ? [b.lamp[0], b.lamp[1]] : null }); }
+  const curtains = [], walls = [], doors = [], windows = [], tables = [], chairs = [], rooms = [];
+  for (const c of L.curtains){ if (!okD(c?.d) || !Array.isArray(c.bays)) return fail('A curtain track is malformed.');
+    curtains.push({ d: c.d, bays: [...new Set(c.bays.map(b => ids.get(String(b).trim().toLowerCase())).filter(Boolean))] }); }
+  for (const w of L.walls){ if (!okD(w?.d)) return fail('A wall is malformed.'); walls.push(w.thin ? { d: w.d, thin: true } : { d: w.d }); }
+  for (const [k, out] of [['doors', doors], ['windows', windows]]) for (const o of L[k]){ if (!okD(o?.d)) return fail(`A ${k.slice(0, -1)} is malformed.`); out.push({ d: o.d }); }
+  for (const t of L.tables){
+    if (t?.c){ if (!Array.isArray(t.c) || t.c.length !== 3 || !t.c.every(num) || t.c[2] <= 0) return fail('A table is malformed.'); tables.push({ c: [...t.c] }); continue; }
+    if (!Array.isArray(t?.rect) || t.rect.length < 4 || t.rect.length > 5 || !t.rect.every(num) || t.rect[2] <= 0 || t.rect[3] <= 0 || (t.a != null && !num(t.a))) return fail('A table or counter is malformed.');
+    tables.push(t.a ? { rect: [...t.rect], a: t.a } : { rect: [...t.rect] }); }
+  for (const c of L.chairs){ if (!Array.isArray(c) || c.length !== 3 || !c.every(num)) return fail('A chair is malformed.'); chairs.push([...c]); }
+  for (const r of L.rooms){ const t = str(r?.t, 40).trim(); if (!t || !num(r.x) || !num(r.y)) return fail('A room label is malformed.'); rooms.push(r.small ? { t, x: r.x, y: r.y, small: true } : { t, x: r.x, y: r.y }); }
+  const plan = { schema: BP_SCHEMA, v: 1, name: str(x.name, 60), clinic: str(x.clinic, 20), savedAt: str(x.savedAt, 40), savedBy: str(x.savedBy, 80),
+    w: x.w, h: x.h, bays, curtains, walls, doors, windows, tables, chairs, rooms };
+  if (x.edit && typeof x.edit === 'object' && !Array.isArray(x.edit)) plan.edit = x.edit;
+  return { plan };
+}
+function bpChair(x, y, a){
+  return `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
+}
+function bpTable(t){
+  if (t.c) return `<circle cx="${t.c[0]}" cy="${t.c[1]}" r="${t.c[2]}"/>`;
+  const [x, y, w, h, rx = 0] = t.rect;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}"${t.a ? ` transform="rotate(${t.a} ${x + w / 2} ${y + h / 2})"` : ''}/>`;
+}
+// Under the rugs: curtain tracks (drawn while used(bayId) is true for any bay they screen, else bunched at their first point), doors, walls, windows.
+function bpUnder(P, used){
+  const curtain = c => `<g class="curtain"><path class="crail" d="${c.d}"/>${c.bays.some(used) ? `<path class="fabric" d="${c.d}"/>` : `<path class="bunch" d="${c.d}" pathLength="100"/>`}</g>`;
+  const paths = L => L.map(x => `<path d="${x.d}"/>`).join(''), thin = P.walls.filter(w => w.thin);
+  return `${P.curtains.map(curtain).join('')}
+        <g class="door">${paths(P.doors)}</g>
+        <g class="wall">${paths(P.walls.filter(w => !w.thin))}</g>${thin.length ? `<g class="wall thin">${paths(thin)}</g>` : ''}${P.windows.length ? `<g class="window">${P.windows.map(x => `<path class="wf" d="${x.d}"/><path class="wg" d="${x.d}"/>`).join('')}</g>` : ''}`;
+}
+// Over the rugs: tables and fixtures, chairs, then each bay's lantern (bays = the plan's bays or a model copy of them; lit(bay) = someone is in it).
+function bpOver(P, bays, lit){
+  const lamp = b => !b.lamp ? '' : `${lit(b) ? `<circle class="glow" cx="${b.lamp[0]}" cy="${b.lamp[1]}" r="20" fill="url(#bmGlow)"/>` : ''}<g class="lantern${lit(b) ? ' on' : ''}" transform="translate(${b.lamp[0]} ${b.lamp[1]})"><circle class="body" r="7.5"/><circle class="lens" r="4.75"/><circle class="touch" r="1.4"/></g>`;
+  return `<g class="table">${P.tables.map(bpTable).join('')}</g>
+        ${P.chairs.map(c => bpChair(c[0], c[1], c[2])).join('')}
+        <defs><radialGradient id="bmGlow"><stop offset="0" stop-color="var(--glow)" stop-opacity="var(--glow-a)"/><stop offset="1" stop-color="var(--glow)" stop-opacity="0"/></radialGradient></defs>
+        ${bays.map(lamp).join('')}`;
+}
+const bpRooms = P => P.rooms.map(r => `<div class="room${r.small ? ' small' : ''}" style="left:${bpPct(r.x, P.w)};top:${bpPct(r.y, P.h)}">${bpEsc(r.t)}</div>`).join('');
+// The built-in map: the two ESK treatment rooms traced from the clinic drawing (808 × 392), used until a clinic saves its own.
+const BP_DEFAULT = { schema: BP_SCHEMA, v: 1, name: 'ESK rooms (built-in)', clinic: '', savedAt: '', savedBy: '', w: 808, h: 392,
+  bays: [{ id: '1', cx: 118, cy: 298, r: 58, tag: [176, 300], lamp: [72, 253] }, { id: '2', cx: 118, cy: 128, r: 60, tag: [158, 180], lamp: [150, 84] },
+    { id: '3', cx: 345, cy: 150, r: 55, tag: [332, 206], lamp: [322, 88] }, { id: '4', cx: 500, cy: 140, r: 58, tag: [572, 170], lamp: [527, 90] },
+    { id: '5', cx: 695, cy: 150, r: 58, tag: [684, 230], lamp: [655, 90] }],
   curtains: [{ d: 'M30 207H158C202 207 226 242 226 292L226 364', bays: ['1', '2'] }, { d: 'M204 54C212 122 236 192 268 232C282 240 296 241 316 241L410 241', bays: ['2', '3'] },
-    { d: 'M600 54C606 130 592 200 600 262C606 312 610 338 608 364', bays: ['4', '5'] }, { d: 'M424 244C470 246 516 236 554 208', bays: ['4'] }] };
-const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, ''); return BAY_PLAN.bays.some(x => x.id === s) ? s : null; };
+    { d: 'M600 54C606 130 592 200 600 262C606 312 610 338 608 364', bays: ['4', '5'] }, { d: 'M424 244C470 246 516 236 554 208', bays: ['4'] }],
+  walls: [{ d: 'M22 50H800V372H490M440 372H376M328 372H22V50' }, { d: 'M418 50V372' }],
+  doors: [{ d: 'M376 372V324A48 48 0 0 0 328 372' }, { d: 'M440 372V324A50 50 0 0 1 490 372' }], windows: [],
+  tables: [{ c: [72, 253, 24] }, { c: [150, 84, 26] }, { c: [62, 162, 22] }, { c: [322, 88, 26] }, { rect: [252, 80, 40, 40, 8] }, { c: [527, 90, 22] }, { c: [450, 185, 25] }, { c: [655, 90, 27] }, { c: [770, 272, 20] }],
+  chairs: [[74, 300, -80], [96, 108, -40], [358, 122, 35], [472, 108, -35], [722, 126, 30]],
+  rooms: [{ t: 'ESK Room 1', x: 219.776, y: 25.872 }, { t: 'ESK Room 2', x: 611.656, y: 25.872 }] };
+// ==== end bay plan ====
+// The map in use: the saved one when bpCheck passes (checked again only when the stored object changes), else the built-in.
+// err = why a saved map was turned down, for Settings.
+let _bp = { src: null, plan: BP_DEFAULT, err: '' };
+function bayPlan(){
+  const x = S.shared?.bayPlan || null;
+  if (x !== _bp.src){ let c = {}; try { c = x ? bpCheck(x) : {}; } catch { c = { err: 'The map file can’t be read.' }; } _bp = { src: x, plan: c.plan || BP_DEFAULT, err: c.err || '' }; }
+  return _bp.plan;
+}
+const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, '').toLowerCase(); return (s && bayPlan().bays.find(x => x.id.toLowerCase() === s)?.id) || null; };
 function bayState(r){
   const { v, key } = r, po = prnPend(v)[0];
   if (po && r.rank !== 0) return { st: 'soon', s: `PRN ordered · ${po.med}` };
@@ -5048,7 +5141,7 @@ function provBayS(r){
 const bayUntil = v => v?.out ? null : obsAt(v) != null ? disAt(obsAt(v)) : v?.start != null ? disAt(v.start) : null;
 function bayMapModel(m, prov){
   const mine = r => !prov || rowProv(r) === prov, on = [...m.need, ...m.chair];
-  const bays = BAY_PLAN.bays.map(b => {
+  const bays = bayPlan().bays.map(b => {
     const r = on.find(x => bayNo(x.v?.bay) === b.id);
     if (r && !mine(r)){ const u = bayUntil(r.v);
       return { ...b, row: null, res: null, busy: true, until: u, st: 'busy', title: 'Another provider', s: u == null ? 'In use' : u <= nowMin() ? 'In use · discharge due' : `In use until ~${fmtT(u)}` }; }
@@ -5060,16 +5153,10 @@ function bayMapModel(m, prov){
 }
 function bayMapHTML(m, sel, prov){
   if (!m.act.length) return '';
-  const M = bayMapModel(m, prov), W = BAY_PLAN.w, H = BAY_PLAN.h, pct = (n, of) => `${(n / of * 100).toFixed(3)}%`;
-  const cur = bayPick(M, sel);
-  const bay = b => { const r = b.row || b.res;
+  const M = bayMapModel(m, prov), cur = bayPick(M, sel);
+  const bay = (b, pos) => { const r = b.row || b.res;
     const lab = `Bay ${b.id}, ${b.row ? `${b.title}, ${b.s}` : b.busy ? b.s.toLowerCase() : `open${b.res ? `, ${b.s}` : ''}`}`;
-    return `<button class="bay" data-act="bSel" data-b="${b.id}"${r ? ` data-k="${esc(r.key)}"` : ''} data-state="${b.st}" aria-current="${cur?.id === b.id}" aria-label="${esc(lab)}" style="left:${pct(b.cx - b.r, W)};top:${pct(b.cy - b.r, H)};width:${pct(2 * b.r, W)}"></button>`; };
-  const tag = b => `<div class="btag" data-state="${b.st}" style="left:${pct(b.tag[0], W)};top:${pct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${b.id}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
-  const chair = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})"><rect class="seat" x="-26" y="-30" width="52" height="60" rx="10"/><rect class="back" x="-26" y="-30" width="52" height="18" rx="9"/><rect class="arm" x="-26" y="-9" width="9" height="34" rx="4"/><rect class="arm" x="17" y="-9" width="9" height="34" rx="4"/></g>`;
-  const lit = b => !!(b.row || b.busy), used = id => lit(M.bays.find(b => b.id === id) || {});
-  const curtain = c => `<g class="curtain"><path class="crail" d="${c.d}"/>${c.bays.some(used) ? `<path class="fabric" d="${c.d}"/>` : `<path class="bunch" d="${c.d}" pathLength="100"/>`}</g>`;
-  const lamp = b => `${lit(b) ? `<circle class="glow" cx="${b.lamp[0]}" cy="${b.lamp[1]}" r="20" fill="url(#bmGlow)"/>` : ''}<g class="lantern${lit(b) ? ' on' : ''}" transform="translate(${b.lamp[0]} ${b.lamp[1]})"><circle class="body" r="7.5"/><circle class="lens" r="4.75"/><circle class="touch" r="1.4"/></g>`;
+    return `<button class="bay" data-act="bSel" data-b="${esc(b.id)}"${r ? ` data-k="${esc(r.key)}"` : ''} data-state="${b.st}" aria-current="${cur?.id === b.id}" aria-label="${esc(lab)}" style="${pos}"></button>`; };
   const mine = M.bays.filter(b => b.row).length, ready = M.bays.filter(b => b.st === 'ready').length;
   const head = prov ? [`${mine} of your patients in a bay`, ready ? `${ready} ready to discharge` : '', M.late ? `${M.late} overdue for vitals` : ''].filter(Boolean).join(' · ')
     : [`${M.used} of ${M.bays.length} bays in use`, M.late ? `${M.late} overdue` : ''].filter(Boolean).join(' · ');
@@ -5078,30 +5165,33 @@ function bayMapHTML(m, sel, prov){
   const key = prov ? '<li><span class="bsw" data-k="busy"></span>Another provider’s patient</li>' : '';
   return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap || prov ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
     <div class="bwrap"><div class="bleft">
-    <div class="bplan">
-      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
-        ${BAY_PLAN.curtains.map(curtain).join('')}
-        <g class="door"><path d="M376 372V324A48 48 0 0 0 328 372"/><path d="M440 372V324A50 50 0 0 1 490 372"/></g>
-        <g class="wall"><path d="M22 50H800V372H490M440 372H376M328 372H22V50"/><path d="M418 50V372"/></g>
-      </svg>
-      <div class="room" style="left:27.2%;top:6.6%">ESK Room 1</div><div class="room" style="left:75.7%;top:6.6%">ESK Room 2</div>
-      ${M.bays.map(bay).join('')}
-      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
-        <g class="table"><circle cx="72" cy="253" r="24"/><circle cx="150" cy="84" r="26"/><circle cx="62" cy="162" r="22"/><circle cx="322" cy="88" r="26"/><rect x="252" y="80" width="40" height="40" rx="8"/><circle cx="527" cy="90" r="22"/><circle cx="450" cy="185" r="25"/><circle cx="655" cy="90" r="27"/><circle cx="770" cy="272" r="20"/></g>
-        ${chair(74, 300, -80)}${chair(96, 108, -40)}${chair(358, 122, 35)}${chair(472, 108, -35)}${chair(722, 126, 30)}
-        <defs><radialGradient id="bmGlow"><stop offset="0" stop-color="var(--glow)" stop-opacity="var(--glow-a)"/><stop offset="1" stop-color="var(--glow)" stop-opacity="0"/></radialGradient></defs>
-        ${M.bays.map(lamp).join('')}
-      </svg>
-      ${M.bays.map(tag).join('')}
-    </div>
+    ${bplanHTML(bayPlan(), M.bays, bay)}
     <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li>${key}</ul>
     ${off}</div>${cur ? (prov ? bayProvPanelHTML(cur) : bayPanelHTML(cur)) : ''}${bayNextHTML(m, prov)}</div></details>`;
+}
+// The floor plan of map P: curtains, doors and walls; room names; a rug per bay (bay(b, style) draws it); tables, chairs and
+// lanterns; then the tags. bays = P's bays with their state (st, title, s, row/busy light the lantern and draw the curtains).
+function bplanHTML(P, bays, bay){
+  const W = P.w, H = P.h, lit = b => !!(b.row || b.busy), used = id => lit(bays.find(b => b.id === id) || {});
+  const pos = b => `left:${bpPct(b.cx - b.r, W)};top:${bpPct(b.cy - b.r, H)};width:${bpPct(2 * b.r, W)}`;
+  const tag = b => `<div class="btag" data-state="${b.st}" style="left:${bpPct(b.tag[0], W)};top:${bpPct(b.tag[1], H)}" aria-hidden="true"><div class="n"><span class="num">${esc(b.id)}</span>${esc(b.title)}</div><div class="s"><span class="dot"></span><span class="tx">${esc(b.s)}</span></div></div>`;
+  return `<div class="bplan" style="aspect-ratio:${W}/${H}">
+      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+        ${bpUnder(P, used)}
+      </svg>
+      ${bpRooms(P)}
+      ${bays.map(b => bay(b, pos(b))).join('')}
+      <svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+        ${bpOver(P, bays, lit)}
+      </svg>
+      ${bays.map(tag).join('')}
+    </div>`;
 }
 // Selected bay: the one tapped on the map (S.bSel), else the bay of the visit selected on Today, else the most urgent bay.
 const BAY_ORDER = { late: 0, soon: 1, ready: 2, track: 3, open: 4, busy: 5 };
 function bayPick(M, sel){
   return M.bays.find(b => b.id === S.bSel) || (sel && M.bays.find(b => b.row?.key === sel.key))
-    || M.bays.slice().sort((x, y) => BAY_ORDER[x.st] - BAY_ORDER[y.st] || +x.id - +y.id)[0] || null;
+    || M.bays.slice().sort((x, y) => BAY_ORDER[x.st] - BAY_ORDER[y.st] || String(x.id).localeCompare(String(y.id), undefined, { numeric: true }))[0] || null;
 }
 // Beside the map: the visit in the selected bay (lead, timeline, steps, the one next step), or what an open bay is waiting for.
 function bayPanelHTML(b){
@@ -5261,6 +5351,93 @@ async function bayPut(key, b, mode){
   closeModal(); if (b) S.bSel = b; await saveVisit();
   if (mode === 'seat') return openStart(key);
   render(); toast('ok', b ? `Bay ${esc(b)} saved.` : 'Bay cleared.');
+}
+// ----- Settings › Bay map: which floor plan everyone sees, loaded from a file or the Bay Map Builder -----
+const BAY_BUILDER_URL = 'https://brendannyates.github.io/bay-map-builder/?from=esk';
+// The Bay # of each of today's visits (without "Bay"), as the current map's id when it matches, else as typed.
+function bpToday(){
+  try { return [...new Set(todayModel(todaySerial()).filter(i => i.a.active).map(i => { const s = String(visitGet(i.a.key)?.bay ?? '').trim().replace(/^bay\s*/i, ''); return s && (bayNo(s) || s); }).filter(Boolean))]; }
+  catch { return []; }
+}
+// Today's bays that map P doesn't have: those visits would drop under the map until someone changes their bay. Plain text.
+function bpLost(P){
+  const ids = new Set(P.bays.map(b => b.id.toLowerCase())), L = bpToday().filter(s => !ids.has(s.toLowerCase()));
+  return !L.length ? '' : `Today’s visits use ${L.length > 1 ? 'bays' : 'Bay'} ${L.join(', ')}, which ${L.length > 1 ? 'aren’t' : 'isn’t'} on this map. Those visits show under the map until their bay is changed.`;
+}
+// Save map P for everyone (null = back to the built-in), stamped with who saved it and when. Returns { ok } or { err }.
+async function bpSave(P){
+  let plan = null;
+  if (P){ const c = bpCheck({ ...P, savedBy: CFG.me || '', savedAt: new Date().toISOString() }); if (c.err) return { err: c.err }; plan = c.plan; }
+  const sh = { ...(S.shared || {}) }; if (plan) sh.bayPlan = plan; else delete sh.bayPlan;
+  try { if (await S.store.setDoc('eskShared', sh) === false) throw new Error(); } catch (e){ return { err: e?.message || 'The workbook didn’t save the map. Try again.' }; }
+  S.shared = sh; render(); return { ok: true };
+}
+// Settings › For everyone: the map in use and the ways to change it.
+function bayMapSetHTML(){
+  const P = bayPlan(), own = P !== BP_DEFAULT, n = P.bays.length, at = own && P.savedAt ? new Date(P.savedAt) : null;
+  const when = at && !isNaN(at) ? at.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const by = own && (P.savedBy || when) ? `saved${P.savedBy ? ` by ${esc(P.savedBy)}` : ''}${when ? ` ${when}` : ''}` : '';
+  const sum = own ? [esc(P.name || 'Clinic map'), `${n} bay${n === 1 ? '' : 's'}`, by].filter(Boolean).join(' · ') : `Built-in (${n} bays)`;
+  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} Load the file again, or fix it in the Bay Map Builder.</div>` : ''}
+    <div class="set-row"><button class="btn" data-act="bmEdit">Edit in the Bay Map Builder</button><button class="btn ghost" data-act="bmFile">Load a map file…</button><button class="btn ghost" data-act="bmDown">Download this map</button>${own || _bp.err ? '<button class="btn ghost" data-act="bmReset">Use the built-in map</button>' : ''}</div>
+    <div class="set-hint">The floor plan on Today and in ESK Bays. Draw your rooms, doors and bays in the Bay Map Builder, then save it here.</div>`;
+}
+// A map drawn with every bay open: the preview before a map is saved.
+const bpOpenHTML = P => bplanHTML(P, P.bays.map(b => ({ ...b, st: 'open', title: 'Open', s: 'Nobody booked' })), (b, pos) => `<div class="bay" data-state="open" style="${pos}"></div>`);
+function bpPreview(P){
+  const n = P.bays.length, lost = bpLost(P); S.bpNew = P;
+  openModal(`<h2>Use this bay map?</h2><div class="small muted">${esc(P.name || 'Bay map')} · ${n} bay${n === 1 ? '' : 's'}${P.clinic ? ` · ${esc(P.clinic)}` : ''}. Everyone who opens this workbook sees it on Today and in ESK Bays.</div>
+    <div class="bmprev">${bpOpenHTML(P)}</div>${lost ? `<div class="msg warn">${esc(lost)}</div>` : ''}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bmSave">Save</button></div>`, true);
+}
+// Load a map file: anything bpCheck turns down never gets as far as the preview.
+async function bpReadFile(f){
+  if (f.size > 2e6) return toast('bad', 'That file is too large to be a bay map.');
+  let x; try { x = JSON.parse(await f.text()); } catch { return toast('bad', 'That file isn’t a bay map. Choose the .json file the Bay Map Builder downloaded.'); }
+  const c = bpCheck(x); if (c.err) return toast('bad', esc(c.err));
+  bpPreview(c.plan);
+}
+function bpDownload(){
+  const P = bayPlan(), name = String(P.name || 'ESK rooms').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'ESK rooms';
+  const ok = downloadText(`Bay map - ${name}.json`, JSON.stringify(P, null, 2), 'application/json');
+  toast(ok ? 'ok' : 'warn', ok ? 'Map file downloaded.' : 'The download was blocked here. Open Full screen and try again.');
+}
+function bpResetAsk(){
+  openModal(`<h2>Use the built-in map?</h2><p class="muted">The two ESK rooms with bays 1 to 5 come back for everyone in this workbook. Download this map first if you may want it again.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bmResetGo">Use the built-in map</button></div>`);
+}
+// What the builder sends (bmReady, bmSave, bmClose) and our answers. send(obj) answers it; close() shuts it.
+async function bmHandle(m, send, close){
+  if (m?.ev === 'bmReady') return send({ ev: 'bmLoad', plan: bayPlan() !== BP_DEFAULT ? bayPlan() : null, bays: bpToday() });
+  if (m?.ev === 'bmClose') return close();
+  if (m?.ev !== 'bmSave') return;
+  const c = bpCheck(m.plan); if (c.err) return send({ ev: 'bmSaved', ok: false, err: c.err });
+  const warn = bpLost(c.plan), r = await bpSave(c.plan);
+  if (r.err) return send({ ev: 'bmSaved', ok: false, err: r.err });
+  send({ ev: 'bmSaved', ok: true, ...(warn ? { warn } : {}) }); toast('ok', 'Bay map saved for everyone in this workbook.');
+}
+// Edit in the Bay Map Builder. It floats over the page like the consent form: an Office dialog from the task pane; from full screen
+// or the demo (one Office dialog at a time) a blurred overlay with the builder in a frame. Same messages either way (bmHandle).
+function openBayBuilder(){
+  const url = BAY_BUILDER_URL, origin = new URL(url).origin;
+  const viaFrame = () => {
+    if ($('#cfloat')) return;
+    const ov = document.createElement('div'); ov.id = 'cfloat'; ov.className = 'bm'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Bay Map Builder');
+    ov.innerHTML = `<iframe title="Bay Map Builder" src="${url}"></iframe>`; document.body.appendChild(ov);
+    const fr = ov.querySelector('iframe'); let ready = false;
+    const done = () => { clearTimeout(t); window.removeEventListener('message', onMsg); document.removeEventListener('keydown', onKey); ov.remove(); };
+    const onKey = e => { if (e.key === 'Escape') done(); }; document.addEventListener('keydown', onKey);
+    const onMsg = e => { if (e.source !== fr.contentWindow || e.origin !== origin) return; if (e.data?.ev === 'bmReady') ready = true; bmHandle(e.data, o => fr.contentWindow.postMessage(o, origin), done); };
+    window.addEventListener('message', onMsg);
+    const t = setTimeout(() => { if (!ready){ done(); toast('bad', 'The Bay Map Builder didn’t open. Check the connection and try again, or use Load a map file.'); } }, 20000);
+  };
+  if (S.mode !== 'pane' || !window.Office?.context?.ui?.displayDialogAsync) return viaFrame();
+  Office.context.ui.displayDialogAsync(url, { height: 96, width: 96, displayInIframe: true }, res => {
+    if (res.status !== Office.AsyncResultStatus.Succeeded) return viaFrame();   // e.g. the full-screen view is already open
+    const dlg = res.value, close = () => { try { dlg.close(); } catch {} };
+    const rx = makeRx(m => bmHandle(m, o => sendChunks(s => dlg.messageChild(s), o), close));
+    dlg.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
+  });
 }
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap' && !!CFG.bayMap !== d.open){ CFG.bayMap = d.open; saveLocal(); } }, true);
 const ACT_TODAY = {
@@ -6222,6 +6399,7 @@ function settingsHTML(){
     </div>
     ${live ? `<label class="check"><input type="checkbox" id="sAuto" ${on('sAuto', S.store.getDoc('Office.AutoShowTaskpaneWithDocument'))}><span class="l">Open this panel automatically whenever this workbook opens<small>For anyone with the add-in</small></span></label>` : ''}
     ${factsDL([['Templates & chairs', `${c.chairs ? `${c.chairs} chair${c.chairs === 1 ? '' : 's'}, ${chairWk} visits a week` : 'Chairs not set'} · ${tmplWk ? `${tmplWk} template slots a week` : 'no templates yet'} <button class="linkbtn" data-act="capEdit">Edit…</button>`]])}
+    ${bayMapSetHTML()}
   </section>`;
   const imports = `<section class="card set-imports"><h3>Imports</h3>
     <div class="set-row"><button class="btn" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">Import Sohar benefits</button><span class="small muted grow">${S.ben?.size ? `${S.ben.size} patients imported so far.` : 'Nothing imported yet.'}</span></div>
@@ -6565,6 +6743,12 @@ const ACT = {
   mpApply: () => openMpApply(),
   mpWrite: () => mpWrite(),
   capEdit: () => openCap(),
+  bmEdit: () => openBayBuilder(),
+  bmFile: () => $('#bpFile').click(),
+  bmDown: () => bpDownload(),
+  bmReset: () => bpResetAsk(),
+  bmResetGo: async () => { closeModal(); const r = await bpSave(null); toast(r.err ? 'bad' : 'ok', r.err ? esc(r.err) : 'The built-in bay map is back.'); },
+  bmSave: async () => { const P = S.bpNew; S.bpNew = null; closeModal(); if (!P) return; const r = await bpSave(P); toast(r.err ? 'bad' : 'ok', r.err ? esc(r.err) : 'Bay map saved for everyone in this workbook.'); },
   capSave: () => capSave(),
   accExport: () => openAccExport(),
   accXlsx: () => accXlsx(),
@@ -6690,6 +6874,7 @@ document.addEventListener('change', e => {
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
   if (el.id === 'apptShrinkOk'){ const b = $('#apptGo'); if (b) b.disabled = !el.checked; return; }
   if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
+  if (el.id === 'bpFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) bpReadFile(f); return; }
   if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
   if (el.dataset.expv && S.exp){ S.exp[el.dataset.expv] = el.value; S.expDraw(); }
