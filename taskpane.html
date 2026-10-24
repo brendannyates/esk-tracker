@@ -623,7 +623,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bplan .btag[data-state="late"] .dot{background:var(--bad)} .bplan .btag[data-state="late"] .s{color:var(--bad);font-weight:600}
 .bplan .btag[data-state="open"] .n{color:var(--muted)}
 .bplan .btag .tx{overflow:hidden;text-overflow:ellipsis}
-@container (max-width:560px){.bplan .btag .tx{display:none}.bplan .btag .s{margin-top:1px}}
+@container (max-width:560px){.bplan .btag{display:flex;align-items:center;gap:4px;max-width:19cqw}.bplan .btag .n{min-width:0}.bplan .btag .s{order:-1;flex:none;margin-top:0}.bplan .btag .tx{display:none}}
 .pg-today .bmap{container:bmap / inline-size}
 .bwrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);grid-template-areas:"map panel" "next panel";gap:0 18px;align-items:start}
 .bwrap>.bleft{grid-area:map}.bwrap>.bpanel{grid-area:panel}.bwrap>.bnext{grid-area:next}
@@ -5120,6 +5120,9 @@ function bayPlan(){
   return _bp.plan;
 }
 const bayNo = b => { const s = String(b ?? '').trim().replace(/^bay\s*/i, '').toLowerCase(); return (s && bayPlan().bays.find(x => x.id.toLowerCase() === s)?.id) || null; };
+// Where the patient is, for anything people read (alarms, feeds, lists): the map's id, else the bay as typed, so a bay that
+// isn't on the map still shows. Matching against the map uses bayNo.
+const bayLabel = b => bayNo(b) || String(b ?? '').trim().replace(/^bay\s*/i, '');
 function bayState(r){
   const { v, key } = r, po = prnPend(v)[0];
   if (po && r.rank !== 0) return { st: 'soon', s: `PRN ordered · ${po.med}` };
@@ -5237,7 +5240,7 @@ function bayProvPanelHTML(b){
 // Under the map: everyone not roomed yet, with the bay they're booked into (provider view: only theirs, nothing to change).
 function bayNextHTML(m, prov){
   const L = m.wait.filter(r => r.a.active && (!prov || rowProv(r) === prov)); if (!L.length) return '';
-  return `<div class="bnext"><h3>Still to come</h3>${L.map(r => { const b = bayNo(r.v?.bay);
+  return `<div class="bnext"><h3>Still to come</h3>${L.map(r => { const b = bayLabel(r.v?.bay);
     return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span>${prov ? '<span></span>' : `<button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button>`}</div>`; }).join('')}</div>`;
 }
 // Provider confirms the dose: the last 4 of the kit serial must match exactly one kit this patient can get (the tech's pull or
@@ -5265,7 +5268,7 @@ function pvMatch(it, sn, lot){
 }
 function openPvDose(key){
   const it = todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return;
-  S.pv = { key }; const b = bayNo(visitGet(key)?.bay);
+  S.pv = { key }; const b = bayLabel(visitGet(key)?.bay);
   openModal(`<h2>Confirm dose — ${esc(nm(it.a.mrn))}</h2><div class="muted small">${b ? `Bay ${esc(b)} · ` : ''}${it.inf.mg ?? '?'} mg · ${esc(PH_LABEL[it.inf.pharm] || '')}</div>
     <div class="form2"><div><label class="lbl" for="pvSn">Last 4 of the kit serial</label><input id="pvSn" class="fld mono" maxlength="4" autocomplete="off" spellcheck="false"></div>
       <div><label class="lbl" for="pvLot">Lot number <span class="muted">(or its last 4)</span></label><input id="pvLot" class="fld mono" maxlength="20" autocomplete="off" spellcheck="false"></div>
@@ -5373,12 +5376,14 @@ async function bpSave(P){
   S.shared = sh; render(); return { ok: true };
 }
 // Settings › For everyone: the map in use and the ways to change it.
+// The edit model of a saved map bpCheck turned down, if it has one: the builder can usually open and fix it.
+function bpBroken(){ bayPlan(); const e = _bp.err && S.shared?.bayPlan?.edit; return e && typeof e === 'object' && !Array.isArray(e) ? e : null; }
 function bayMapSetHTML(){
   const P = bayPlan(), own = P !== BP_DEFAULT, n = P.bays.length, at = own && P.savedAt ? new Date(P.savedAt) : null;
   const when = at && !isNaN(at) ? at.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const by = own && (P.savedBy || when) ? `saved${P.savedBy ? ` by ${esc(P.savedBy)}` : ''}${when ? ` ${when}` : ''}` : '';
   const sum = own ? [esc(P.name || 'Clinic map'), `${n} bay${n === 1 ? '' : 's'}`, by].filter(Boolean).join(' · ') : `Built-in (${n} bays)`;
-  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} Load the file again, or fix it in the Bay Map Builder.</div>` : ''}
+  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} ${bpBroken() ? 'Open it in the Bay Map Builder to fix it, or load the file again.' : 'Load the file again.'}</div>` : ''}
     <div class="set-row"><button class="btn" data-act="bmEdit">Edit in the Bay Map Builder</button><button class="btn ghost" data-act="bmFile">Load a map file…</button><button class="btn ghost" data-act="bmDown">Download this map</button>${own || _bp.err ? '<button class="btn ghost" data-act="bmReset">Use the built-in map</button>' : ''}</div>
     <div class="set-hint">The floor plan on Today and in ESK Bays. Draw your rooms, doors and bays in the Bay Map Builder, then save it here.</div>`;
 }
@@ -5397,7 +5402,13 @@ async function bpReadFile(f){
   const c = bpCheck(x); if (c.err) return toast('bad', esc(c.err));
   bpPreview(c.plan);
 }
+// A turned-down saved map downloads as it's stored, so the clinic's work isn't lost; otherwise the map in use.
 function bpDownload(){
+  bayPlan(); const raw = _bp.err ? S.shared?.bayPlan : null;
+  if (raw){ let txt = ''; try { txt = JSON.stringify(raw, null, 2); } catch {}
+    if (!txt) return toast('bad', 'The saved map can’t be downloaded.');
+    const ok = downloadText(`Bay map - ${String(raw.name || 'saved map').replace(/[\\/:*?"<>|]+/g, '-').trim().slice(0, 60) || 'saved map'} (can’t be used).json`, txt, 'application/json');
+    return toast(ok ? 'ok' : 'warn', ok ? 'The saved map downloaded as it is. It can’t be used until it’s fixed.' : 'The download was blocked here. Open Full screen and try again.'); }
   const P = bayPlan(), name = String(P.name || 'ESK rooms').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'ESK rooms';
   const ok = downloadText(`Bay map - ${name}.json`, JSON.stringify(P, null, 2), 'application/json');
   toast(ok ? 'ok' : 'warn', ok ? 'Map file downloaded.' : 'The download was blocked here. Open Full screen and try again.');
@@ -5408,7 +5419,8 @@ function bpResetAsk(){
 }
 // What the builder sends (bmReady, bmSave, bmClose) and our answers. send(obj) answers it; close() shuts it.
 async function bmHandle(m, send, close){
-  if (m?.ev === 'bmReady') return send({ ev: 'bmLoad', plan: bayPlan() !== BP_DEFAULT ? bayPlan() : null, bays: bpToday() });
+  if (m?.ev === 'bmReady'){ const P = bayPlan(), e = bpBroken();   // a turned-down map goes as its edit model so it can be fixed
+    return send({ ev: 'bmLoad', plan: P !== BP_DEFAULT ? P : e ? { schema: BP_SCHEMA, v: 1, edit: e } : null, bays: bpToday() }); }
   if (m?.ev === 'bmClose') return close();
   if (m?.ev !== 'bmSave') return;
   const c = bpCheck(m.plan); if (c.err) return send({ ev: 'bmSaved', ok: false, err: c.err });
@@ -5501,7 +5513,7 @@ function pvEventMap(m, prov){
   const out = new Map(), lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals' };
   for (const r of [...m.need, ...m.chair, ...m.done]){
     if (r.lost || rowProv(r) !== prov) continue;
-    const v = r.v || {}, ev = { b: bayNo(v.bay) ? `Bay ${bayNo(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '', kind = '') => out.set(r.key + '|' + id, { ...ev, what, detail, kind });
+    const v = r.v || {}, ev = { b: bayLabel(v.bay) ? `Bay ${bayLabel(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '', kind = '') => out.set(r.key + '|' + id, { ...ev, what, detail, kind });
     if (v.start != null) add('room', 'Arrived (roomed)');
     for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w), o = vitOut(x); if (o.length && !vitEm(x)) add('v' + w + '|' + o.join(), `${lab[w]} out of range`, o.join(' · '), 'vit'); }
     (v.rechk || []).forEach((x, i) => { const o = vitOut(x); if (o.length && !vitEm(x)) add('rk' + i + '|' + o.join(), 'Recheck out of range', [o.join(' · '), x.why].filter(Boolean).join(' · '), 'vit'); });
@@ -5556,7 +5568,7 @@ function emActive(){
 function emBannerHTML(){
   const L = emActive(); if (!L.length) return '';
   return L.map(e => { const who = e.acks.map(x => x.by).filter(Boolean);
-    return `<div class="em-alarm${e.open ? ' open' : ''}" role="alert"><div class="em-t"><b>EMERGENCY · ${esc(e.reading)}</b> · ${esc(nm(e.a.mrn))}${bayNo(e.v.bay) ? ' · Bay ' + esc(bayNo(e.v.bay)) : ''} · ${esc(e.what)}${e.at != null ? ' ' + fmtT(e.at) : ''}</div>
+    return `<div class="em-alarm${e.open ? ' open' : ''}" role="alert"><div class="em-t"><b>EMERGENCY · ${esc(e.reading)}</b> · ${esc(nm(e.a.mrn))}${bayLabel(e.v.bay) ? ' · Bay ' + esc(bayLabel(e.v.bay)) : ''} · ${esc(e.what)}${e.at != null ? ' ' + fmtT(e.at) : ''}</div>
       <div class="em-s">${who.length ? 'Responding: ' + esc(who.join(', ')) : 'Nobody has responded yet.'}</div>
       ${e.open ? `<button class="btn lg" data-act="emAck" data-k="${esc(e.key)}" data-r="${esc(e.rid)}">${S.provView ? 'I’m responding' : 'Responding'}</button>` : ''}</div>`; }).join('');
 }
@@ -5573,7 +5585,7 @@ setInterval(() => {
   if (Date.now() - (S._emAt || 0) < EM_REPEAT) return; S._emAt = Date.now();
   S._emPop = S._emPop || new Set(); const id = e => 'em|' + e.key + e.rid, fresh = open.filter(e => !S._emPop.has(id(e)));
   if (!fresh.length) return playSound('boom');   // repeat: the sound only
-  for (const e of fresh){ S._emPop.add(id(e)); alertOut({ title: `EMERGENCY · ${e.reading}`, body: bayNo(e.v.bay) ? `Bay ${bayNo(e.v.bay)}` : 'ESK', tag: 'esk-' + id(e), sound: 'boom', sticky: true }); }
+  for (const e of fresh){ S._emPop.add(id(e)); alertOut({ title: `EMERGENCY · ${e.reading}`, body: bayLabel(e.v.bay) ? `Bay ${bayLabel(e.v.bay)}` : 'ESK', tag: 'esk-' + id(e), sound: 'boom', sticky: true }); }
 }, 5000);
 function pvHealthHTML(){
   const last = Math.max(S.polledAt || 0, S.loadedAt || 0), old = S.store?.live && !S.store.remote && last && Date.now() - last > PV_STALE;

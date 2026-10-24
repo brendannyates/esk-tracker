@@ -20,8 +20,8 @@ const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, C
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = () => '';
 const todaySerial = () => 1, todayModel = () => today.map(([key, bay]) => ({ a: { key, active: true }, bay })), visitGet = k => ({ bay: today.find(x => x[0] === k)?.[1] });
-const render = () => {}, toast = (k, h) => toasts.push([k, h]);
-` + s.slice(fa, fb) + s.slice(pa, pb) + s.slice(a, b) + '\nObject.assign(globalThis, { S, bayMapHTML, bayMapModel, bayPick, bayNo, ' + (s.includes('function bayPlan(') ? 'bayPlan, bpCheck, BP_DEFAULT, bayMapSetHTML, bmHandle, bpLost, bpOpenHTML, BP_MAX' : 'bayState') + ' });', C);
+const render = () => {}, toast = (k, h) => toasts.push([k, h]), downloads = [], downloadText = (n, t) => (downloads.push([n, t]), true);
+` + s.slice(fa, fb) + s.slice(pa, pb) + s.slice(a, b) + '\nObject.assign(globalThis, { S, bayMapHTML, bayMapModel, bayPick, bayNo, ' + (s.includes('function bayPlan(') ? 'bayPlan, bpCheck, BP_DEFAULT, bayMapSetHTML, bmHandle, bpLost, bpOpenHTML, BP_MAX, bayLabel, bayNextHTML, bpDownload, downloads' : 'bayState') + ' });', C);
   return C;
 }
 const N = load(src);
@@ -119,6 +119,42 @@ await t('builder messages: bmReady gets the map and today’s bays; bmSave check
   assert.deepStrictEqual(out[3].bays, ['4', '7']);
   N.S.store.setDoc = async () => false; await N.bmHandle({ ev: 'bmSave', plan: plan() }, send, close); assert(out[4].ok === false && /didn’t save/.test(out[4].err));
   await N.bmHandle({ ev: 'bmClose' }, send, close); await N.bmHandle({ ev: 'other' }, send, close); assert.strictEqual(closed, 1); assert.strictEqual(out.length, 5);
+});
+await t('a bay that isn’t on the map still shows where the patient is: emergency banner and alert, provider feed, Still to come', () => {
+  N.S.shared = { bayPlan: plan() };
+  assert.strictEqual(N.bayNo('5'), null); assert.strictEqual(N.bayLabel('5'), '5'); assert.strictEqual(N.bayLabel(' Bay 5 '), '5');
+  assert.strictEqual(N.bayLabel('bay 2b'), '2B'); assert.strictEqual(N.bayLabel(''), ''); assert.strictEqual(N.bayLabel(undefined), '');
+  const fa = src.indexOf('function emBannerHTML(){'), fb = src.indexOf('\n}\n', fa) + 3; assert(fa > 0);
+  vm.runInContext('const emActive = () => emList;' + src.slice(fa, fb) + '\nglobalThis.emBannerHTML = emBannerHTML;', N);
+  N.emList = [{ key: 'k|1', rid: 'r1', reading: '182/124', what: 'Initial vitals', at: 610, open: true, acks: [], a: { mrn: 'ZZTEST' }, v: { bay: '5' } }];
+  const h = N.emBannerHTML(); assert(h.includes('EMERGENCY · 182/124</b> · ZZTEST · Bay 5 · Initial vitals'), h);
+  N.emList[0].v = {}; assert(!/Bay/.test(N.emBannerHTML()), 'no bay typed: none shown');
+  assert(src.includes("body: bayLabel(e.v.bay) ? `Bay ${bayLabel(e.v.bay)}` : 'ESK'"), 'emergency pop-up body');
+  assert(src.includes("ev = { b: bayLabel(v.bay) ? `Bay ${bayLabel(v.bay)}` : 'No bay'"), 'provider event feed');
+  const w = N.bayNextHTML(mk(row('w', '5', 'wait', 9)));
+  assert(w.includes('<span class="where">Bay 5</span>') && w.includes('>Change bay</button>'), w);
+});
+await t('a turned-down saved map: the builder gets its edit model, Download keeps the stored file, Settings says what works', async () => {
+  const edit = { v: 1, name: 'Clinic A rooms', items: [{ id: 'b1', k: 'bay', no: 'A', x: 100, y: 150, r: 58 }] };
+  N.S.shared = { bayPlan: { ...plan(), walls: [{ d: '<svg onload=x>' }], edit } }; N.today = [];
+  const out = [], send = o => out.push(JSON.parse(JSON.stringify(o)));
+  await N.bmHandle({ ev: 'bmReady' }, send, () => {});
+  assert.deepStrictEqual(out[0], { ev: 'bmLoad', plan: { schema: 'mhs-bay-map', v: 1, edit }, bays: [] });
+  assert(/Open it in the Bay Map Builder to fix it, or load the file again\./.test(N.bayMapSetHTML()));
+  N.downloads.length = 0; N.toasts.length = 0; N.bpDownload();
+  const [fn, txt] = N.downloads[0]; assert.strictEqual(fn, 'Bay map - Clinic A rooms (can’t be used).json');
+  assert.deepStrictEqual(JSON.parse(txt), JSON.parse(JSON.stringify(N.S.shared.bayPlan)), 'the stored map, as it is');
+  assert(/downloaded as it is/.test(N.toasts.at(-1)[1]));
+  N.S.shared = { bayPlan: { ...plan(), name: 'a/b', walls: [{ d: 'x' }], edit: [1] } }; out.length = 0;
+  await N.bmHandle({ ev: 'bmReady' }, send, () => {}); assert.strictEqual(out[0].plan, null, 'no usable edit model: the builder starts from the built-in');
+  const h = N.bayMapSetHTML(); assert(/Load the file again\.<\/div>/.test(h) && !/Bay Map Builder to fix/.test(h));
+  N.downloads.length = 0; N.bpDownload(); assert.strictEqual(N.downloads[0][0], 'Bay map - a-b (can’t be used).json');
+  N.S.shared = {}; N.downloads.length = 0; N.bpDownload(); assert.strictEqual(N.downloads[0][0], 'Bay map - ESK rooms (built-in).json', 'no saved map: the built-in');
+});
+await t('narrow maps: tags are one line no wider than 0.19 of the map, the size the builder plans for', () => {
+  const r = /@container \(max-width:560px\)\{([^\n]*)\}\n/.exec(src)?.[1] || '';
+  assert(/\.bplan \.btag\{display:flex;align-items:center;[^}]*max-width:19cqw\}/.test(r), r);
+  assert(/\.bplan \.btag \.s\{order:-1;[^}]*margin-top:0\}/.test(r) && /\.bplan \.btag \.tx\{display:none\}/.test(r), 'the dot moves in front of the number; the status text hides');
 });
 console.log(n + ' passed');
 })().catch(e => { console.error(e); process.exit(1); });
