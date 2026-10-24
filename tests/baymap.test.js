@@ -12,9 +12,9 @@ vm.runInContext(`const obsAt = v => v?.adm ?? null, v40At = v => v.adm + 40, dis
 const nowMin = () => now, S = {}, tdType = () => 'Follow-up', tdLead = r => '<p class="lead">lead ' + r.key + '</p>', trackHTML = () => '<div class="track"></div>', stepsHTML = () => '<ol class="steps"></ol>';
 const tdPrimary = r => ({ act: 'vit', html: '<button data-act="vit" data-k="' + r.key + '">Record</button>' });
 const vitGet = (k, w) => (vit[k] || {})[w] || (w === 'fin' ? (fin.has(k) ? { bp: '120/80', at: 700 } : null) : w === 'mid' ? (k.endsWith('m') ? { bp: '130/80', at: 650 } : null) : null);
-const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true, vitSysMax: 140, vitDiaMax: 90, vitHrMax: 110, vitHrMin: 50, vitO2Min: 92 };
+const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true, vitSysMax: 140, vitDiaMax: 90, vitHrMax: 110, vitHrMin: 50, vitO2Min: 92, vitEmSys: 180, vitEmDia: 120, vitalsMin: 40 };
 const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = r => [r.bp && 'BP ' + r.bp, r.hr && 'HR ' + r.hr].filter(Boolean).join(' · ');
-` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAsk, prnAckOrders, techDue, bayUntil, vitOut });', C);
+` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAsk, prnAckOrders, techDue, bayUntil, vitOut, vitEm, emReadings });', C);
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const row = (key, bay, grp, rank, extra = {}) => ({ key, grp, rank, a: { mrn: key.toUpperCase(), time: 600, active: true }, i: { adminKit: {}, inf: { mg: 84 } }, v: { start: 600, adm: 605, bay }, ...extra });
 
@@ -173,6 +173,13 @@ t('provider panel: a PCT request shows Approve / Decline; the tag asks for appro
   assert(/asked by Pat T at 10:20/.test(h) && /data-act="pvOk" data-k="pq" data-o="r1">Approve/.test(h) && /data-act="pvNo"/.test(h));
   p.v.prnOrd[0].no = { by: 'Dr A', at: 622, why: 'recheck first' }; h = C.bayProvPanelHTML({ id: '2', row: p, st: 'soon', s: '' });
   assert(/declined: recheck first/.test(h) && !/pvOk/.test(h));
+});
+t('emergency BP: at or above 180 systolic or 120 diastolic; each reading and value is its own alarm', () => {
+  assert.strictEqual(C.vitEm({ bp: '179/119' }), ''); assert.strictEqual(C.vitEm({ bp: '180/100' }), 'BP 180/100'); assert.strictEqual(C.vitEm({ bp: '150/120' }), 'BP 150/120');
+  assert.strictEqual(C.vitEm({ bp: '' }), ''); assert.strictEqual(C.vitEm(null), '');
+  const L = C.emReadings('k', { vit: { init: { bp: '132/84', at: 600 }, mid: { bp: '186/112', at: 645 } }, rechk: [{ bp: '170/100', at: '10:50' }, { bp: '182/121', at: '11:00' }] });
+  assert.deepStrictEqual([...L.map(e => e.rid + ' ' + e.reading)], ['mid|186/112 BP 186/112', 'rk1|182/121 BP 182/121']);
+  assert.strictEqual(L[1].at, 660, 'recheck time read from HH:MM');
 });
 t('no visits today: no map', () => assert.strictEqual(C.bayMapHTML({ act: [], need: [], chair: [], wait: [] }), ''));
 console.log(n + ' passed');
