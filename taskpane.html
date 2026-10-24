@@ -1670,6 +1670,7 @@ function OfficeStore(){
     async freshDoc(key){ await refreshDocs(); return this.getDoc(key); },
     // Called from the 20 s timer: someone else saved settings (vitals, room or dose time, PRN, tasks…) → same path as a cell change.
     // seen is only reset by load(), so a change keeps firing until a reload picks it up.
+    markDocs(){ if (seen) for (const k of DOC_KEYS) seen[k] = sig(k); },   // applyDocs took them: quiet until the next change
     async pollDocs(){
       if (polling || !onDocs || !seen) return; polling = true;
       try { if (await refreshDocs()) S.polledAt = Date.now(); if (DOC_KEYS.some(k => sig(k) !== seen[k])) onDocs('docs'); } finally { polling = false; }   // 'docs': someone saved vitals, a PRN… → quick reload
@@ -1680,7 +1681,7 @@ function OfficeStore(){
       try { docs().addHandlerAsync(Office.EventType.SettingsChanged, () => cb('docs')); } catch {}
       let all = false; try { all = Office.context.requirements.isSetSupported('ExcelApi', '1.9'); } catch {}
       Excel.run(async ctx => {
-        if (all) ctx.workbook.worksheets.onChanged.add(() => { cb(); return Promise.resolve(); });
+        if (all) ctx.workbook.worksheets.onChanged.add(e => { cb(e && e.source === 'Remote' ? 'remote' : undefined); return Promise.resolve(); });   // 'remote': a co-author's edit, often with a save of theirs on its way
         else for (const k in names){ ctx.workbook.tables.getItem(names[k]).onChanged.add(() => { cb(); return Promise.resolve(); }); }
         await ctx.sync();
       }).catch(() => {});
@@ -5221,7 +5222,7 @@ function provPageHTML(){
   const m = tdModel(), L = provNames(m), me = CFG.prov && L.includes(CFG.prov) ? CFG.prov : '';
   const pick = `<label class="lbl" for="provSel">Provider</label><select id="provSel" class="fld"><option value="">Choose your name…</option>${L.map(p => `<option ${p === me ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
   if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? 'Only your patients are shown on the map. This is remembered on this computer.' : 'Nobody is scheduled for ESK today.'}</p></div>`;
-  return `${emBannerHTML()}${pvHealthHTML()}<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}`;
+  return `${emBannerHTML()}${pvHealthHTML()}<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}${syncLagText() ? `<p class="small muted">${syncLagText()}</p>` : ''}`;
 }
 // The pane's tip: pin the Excel tab, then pop ESK Bays out. The window saves through the pane, so the tab has to stay open.
 const pvTipHTML = close => `<div class="msg info pvtip"><span><b>Tip:</b> pin this Excel tab in your browser (right-click the tab, then <b>Pin tab</b>) so it stays open, then use <b>Pop out</b> to put ESK Bays in its own window. The window saves through this tab.</span>${close ? '<button class="btn ghost sm" data-act="pvTipOff">Got it</button>' : ''}</div>`;
@@ -6145,7 +6146,7 @@ function settingsHTML(){
     <div class="set-row"><button class="btn" data-act="upBen" title="Import the Sohar Eligibility final tracker file into the Benefits tab">Import Sohar benefits</button><span class="small muted grow">${S.ben?.size ? `${S.ben.size} patients imported so far.` : 'Nothing imported yet.'}</span></div>
     <p class="set-hint">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN. You see a preview before anything is written.</p></section>`;
   const tb = Object.values(S.tables);
-  const wb = `<section class="card set-wb"><h3>Workbook</h3><h2>Connected tables</h2>${tb.length ? factsDL(tb.map(x => [x.sheet, esc(x.name)])) : '<p class="muted small">None yet.</p>'}</section>`;
+  const wb = `<section class="card set-wb"><h3>Workbook</h3>${syncLagText() ? `<p class="small">${syncLagText()}</p>` : ''}<h2>Connected tables</h2>${tb.length ? factsDL(tb.map(x => [x.sheet, esc(x.name)])) : '<p class="muted small">None yet.</p>'}</section>`;
   const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
   if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
   return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
@@ -6578,7 +6579,7 @@ function vitAlert(id, d, v, pre){
 // the pop-up when they're on. Failsafe: it comes back every 2 min (PRN_REPEAT) until someone acknowledges it. Checked every 5 s.
 // Like the vitals pop-up, no patient name, only the medication and bay.
 const PRN_REPEAT = 120000;
-setInterval(() => {
+function prnAlertsNow(){
   if (S.provView || S.full || !S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue;
     for (const o of prnPend(v)){ const t0 = prnSince(o) || Date.now(), n = Math.max(0, Math.floor((Date.now() - t0) / PRN_REPEAT)), id = key + 'prn' + o.id + '|' + n;
@@ -6588,7 +6589,8 @@ setInterval(() => {
       if (CFG.vitNotify) alertOut({ title: `${again}PRN ${what} · ${o.med}`, body: v.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: true }); else playSound(); }
     for (const o of (v.prnOrd || []).filter(o => o.no)){ const id = key + 'prnno' + o.id; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);   // declined: tell the PCT once
       if (Date.now() - (o.no.ts || 0) < 3600000) toast('warn', `<b>PRN declined: ${esc(o.med)} ${esc(o.dose)}</b> by ${esc(o.no.by || 'the provider')}${o.no.why ? ': ' + esc(o.no.why) : ''}.`); } }
-}, 5000);
+}
+setInterval(prnAlertsNow, 5000);
 function alertOut(a){
   if (alertsWinOk()) return sendAlert(a);
   if (S.mode === 'dialog' && S.alertsOn) return S.store.relayAlert?.(a);
@@ -6616,9 +6618,9 @@ let _loading = null, _again = false;
 const REFRESH_MS = 20000;   // workbook changes refresh the panel at most once per 20 s
 // Shared document settings: sent to the full-screen view on load, and watched for other people's saves. New esk* keys go here.
 const DOC_KEYS = ['eskRemsCov', 'eskPull', 'eskAudit', 'eskTasks', 'eskSnooze', 'eskProvAlias', 'eskFreqAlias', 'eskFreqRate', 'eskProvCred', 'eskCapacity', 'eskNotes', 'eskDocs', 'eskVisit', 'eskShared', 'eskDailyDay', 'eskCancel', 'eskApptList', 'Office.AutoShowTaskpaneWithDocument'];
-// Check the shared settings (vitals, PRNs, bays…) for other people's saves: every 4 s in ESK Bays, every 10 s in the tracker.
+// Check the shared settings (vitals, PRNs, bays…) for other people's saves every 2 s; a change is applied at once (applyDocs).
 // Pane only; the full-screen view hears it from the pane. A change then reloads after PROV_REFRESH_MS / REFRESH_MS.
-const POLL_MS = () => S.provView ? 4000 : 10000, PROV_REFRESH_MS = 2500;
+const POLL_MS = () => 2000, PROV_REFRESH_MS = 2500;
 (function poll(){ setTimeout(async () => { try { if (S.loaded && !S.store?.remote) await S.store?.pollDocs?.(); } catch {} poll(); }, POLL_MS()); })();
 async function reload(quiet, fromWatch){
   if (_loading){ if (!fromWatch) _again = true; return _loading; } // one read at a time; a save during a read queues one more, a workbook change is skipped
@@ -6628,6 +6630,8 @@ async function reload(quiet, fromWatch){
 // Table change events: ignore our own writes; otherwise refresh at most once per REFRESH_MS, skipping the cycle if a read is
 // already running. A form or busy overlay pushes it to the next cycle. The full-screen dialog refreshes as soon as the pane relays a change.
 function onWorkbookChange(kind){
+  if (kind === 'docs' && S.loaded){ applyDocs(); if (DLG && S.notifyDialogDocs) S.notifyDialogDocs(); return; }   // own saves never get here: setDoc marks them seen
+  if (kind === 'remote' && !S.store.remote) S.store.pollDocs?.().catch(() => {});   // then the usual table refresh below
   const quick = S.store.remote || S.provView || kind === 'docs';   // shared-settings saves (vitals, PRNs) are rare and matter now; cell edits wait the full 20 s
   if (S._writing || Date.now() - (S._selfWriteAt || 0) < 3000) return;   // a missed settings change comes back: pollDocs keeps firing until a reload reads it
   if (S._w){ if (!quick || S._wQuick) return; clearTimeout(S._w); }   // a slow wait already queued: a settings change cuts it short
@@ -6639,6 +6643,29 @@ function onWorkbookChange(kind){
     reload(true, true);
   }, S.store.remote ? 500 : quick ? PROV_REFRESH_MS : REFRESH_MS);
 }
+// Someone's vitals, PRN, bay or task (document settings): take them and redraw, without re-reading the tables. The visit merge keeps
+// this pane's own unsaved or just-saved fields. Then PRN alerts and the provider's notifications run at once instead of on their timers.
+function applyDocs(){
+  const g = k => S.store.getDoc(k), fresh = g('eskVisit');
+  if (fresh) S.visit = visitMerge(S.visit || {}, S._vlogBase || (S._vlogBase = {}), JSON.parse(JSON.stringify(fresh)));
+  S.cancel = g('eskCancel') || S.cancel || {}; S.pull = g('eskPull') || S.pull || {}; S.tasks = g('eskTasks') || S.tasks || {}; S.snooze = g('eskSnooze') || S.snooze || {};
+  S.notes = g('eskNotes') || S.notes || {}; S.docs = g('eskDocs') || S.docs || {}; S.shared = g('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {});
+  try { derive(); } catch (e){ console.error(e); }
+  S.store.markDocs?.(); S.syncedAt = Date.now(); syncLagNote();
+  prnAlertsNow(); if (S.provView) pvEvents();
+  if (!formBusy() && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) render();
+}
+// How long PRN news took to get here: arrival time minus the sender's save time (each PC's own clock, so a few seconds either way).
+// S.syncLags = last 6 [{ what, s }]; shown on the provider page and in Settings › Workbook.
+function syncLagNote(){
+  S._lagSeen = S._lagSeen || new Set(); const T = todaySerial(), now = Date.now(), first = !S._lagInit; S._lagInit = true;
+  for (const [key, v] of Object.entries(S.visit || {})){ if (Number(key.split('|')[1]) !== T) continue;
+    for (const o of v.prnOrd || []) for (const [st, ts] of [['PRN ' + (o.req ? 'request' : 'order'), o.req?.ts || o.ts], ['PRN approved', o.ok?.ts], ['PRN declined', o.no?.ts], ['PRN given', o.ack?.ts]]){
+      if (!ts) continue; const id = key + o.id + st; if (S._lagSeen.has(id)) continue; S._lagSeen.add(id);
+      if (!first && now - ts < 600000) (S.syncLags = S.syncLags || []).push({ what: st, s: Math.max(0, Math.round((now - ts) / 1000)) }); } }
+  if (S.syncLags?.length > 6) S.syncLags = S.syncLags.slice(-6);
+}
+const syncLagText = () => S.syncLags?.length ? `PRN news reached this screen after ${S.syncLags.map(x => x.s + ' s').join(', ')} (latest last).` : '';
 async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
@@ -6647,7 +6674,7 @@ async function reload1(quiet){
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
@@ -6798,7 +6825,7 @@ function hydrate(d){
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
-  const rx = makeRx(m => { if (m.rid && pend.has(m.rid)){ const p = pend.get(m.rid); pend.delete(m.rid); m.ok ? p.res(m.res) : p.rej(new Error(m.err)); } else if (m.ev === 'changed' && onChanged) onChanged(); else if (m.ev === 'alerts'){ S.alertsOn = !!m.on; if (S.loaded) render(); } });
+  const rx = makeRx(m => { if (m.rid && pend.has(m.rid)){ const p = pend.get(m.rid); pend.delete(m.rid); m.ok ? p.res(m.res) : p.rej(new Error(m.err)); } else if (m.ev === 'changed' && onChanged) onChanged(); else if (m.ev === 'docs' && m.docs){ docs = { ...docs, ...m.docs }; onChanged?.('docs'); } else if (m.ev === 'alerts'){ S.alertsOn = !!m.on; if (S.loaded) render(); } });
   Office.context.ui.addHandlerAsync(Office.EventType.DialogParentMessageReceived, a => rx(a.message));
   const up = obj => sendChunks(s => Office.context.ui.messageParent(s), obj);
   const call = (op, args) => new Promise((res, rej) => { const rid = Math.random().toString(36).slice(2); pend.set(rid, { res, rej }); up({ rid, op, args }); setTimeout(() => { if (pend.has(rid)){ pend.delete(rid); rej(new Error('Excel didn’t answer. Keep the ESK Tracker panel open behind this window, then try again.')); } }, 45000); });
@@ -6850,6 +6877,7 @@ function openFull(pop){
     DLG.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
     DLG.addEventHandler(Office.EventType.DialogEventReceived, () => { DLG = null; S.full = false; S.notifyDialogAlerts = null; reload(true); });
     S.notifyDialog = () => reply({ ev: 'changed' });
+    S.notifyDialogDocs = () => reply({ ev: 'docs', docs: Object.fromEntries(DOC_KEYS.map(k => [k, S.store.getDoc(k)])) });
     S.notifyDialogAlerts = on => reply({ ev: 'alerts', on }); S.notifyDialogAlerts(alertsWinOk());
   });
 }
