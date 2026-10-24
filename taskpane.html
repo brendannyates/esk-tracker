@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js"></script>
-<script src="notify.js"></script>
+<script src="notify-settings.js?v=48"></script>
+<script src="notify.js?v=48"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -6265,6 +6265,7 @@ async function nfyLoad(){
 function nfyCardHTML(){
   const head = '<section class="card set-teams"><h3>Teams notifications</h3><p class="small muted set-intro">Saved on the workbook’s Settings sheet, for everyone.</p>';
   if (!S.store?.live) return head + '<p class="small muted">Not in the demo.</p></section>';
+  if (typeof nfyFlowUrl !== 'function' && !S.store.remote) return head + '<div class="msg warn">Excel is running an older copy of the Teams scripts. Close Excel completely (every window) and open it again. If this stays, clear the Office cache.</div></section>';
   if (S.nfyErr) return head + `<div class="msg bad">Couldn’t read the Settings sheet: ${esc(S.nfyErr)}</div><button class="btn" data-act="nfyReload">Try again</button></section>`;
   if (!S.nfy){ if (!S._nfyAsked){ S._nfyAsked = true; nfyLoad(); } return head + '<p class="small muted">Reading the Settings sheet…</p></section>'; }
   if (S.nfy.missing.length) return head + `<p class="small">${S.nfy.missing.length === 4 ? 'Not set up in this workbook yet.' : `Missing: ${esc(S.nfy.missing.join(', '))}.`} This adds a <b>Settings</b> sheet with the notification tables. Nothing already in the workbook is changed.</p>
@@ -6311,7 +6312,7 @@ Object.assign(ACT_SETTINGS, {
   nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', flowUrl: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
   nfyDel: el => { S.nfyDraft.splice(+el.dataset.i, 1); render(); },
   nfySaveRoutes: () => nfySaveRoutes(),
-  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a workflow URL first.'); try { busy('Sending test…'); const r = await nfyCall('sendNotifyTest', p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s workflow. If it doesn’t show up in the chat, check the workflow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
+  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a workflow URL first.'); try { busy('Sending test…'); const r = await nfyCall('sendNotifyTest', p, CFG.me); toast(r.ok ? 'ok' : 'warn', !r.ok ? esc(r.reason) : r.unconfirmed ? `Test sent to ${esc(p)}’s workflow, but this browser couldn’t read its answer. If it isn’t in the chat, check the workflow’s run history.` : `${esc(p)}’s workflow accepted the test (${r.status}). It should be in the chat within a minute; if not, the workflow’s run history shows why.`); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
   nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!u || !nfyFlowOk(u)) return toast('warn', 'Paste the escalation chat’s Teams workflow URL (it contains powerplatform.com).'); return nfyWrite('Saving…', () => nfyCall('setNotifyConfig', 'EscalationChat', u), 'Escalation workflow saved.'); },
 });
 // Provider rows type into S.nfyDraft (no re-render while typing, so focus stays); checkboxes save their config flag straight away.
