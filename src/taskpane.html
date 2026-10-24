@@ -650,6 +650,10 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .set-teams .nfy-row>:nth-child(1){grid-area:p}.set-teams .nfy-row>:nth-child(2){grid-area:c}.set-teams .nfy-row>:nth-child(3){grid-area:e}.set-teams .nfy-row>:nth-child(4){grid-area:on;margin:0}.set-teams .nfy-row>:nth-child(5){grid-area:rm;justify-self:end}.set-teams .nfy-bad{grid-area:bad;margin:0}
 .set-teams .nfy-row .lbl{margin-top:0}.set-teams .set-sub{margin:16px 0 4px;font-size:14px}
 @media (min-width:1500px){.set-teams .nfy-row{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) minmax(0,1.2fr) auto auto;grid-template-areas:"p c e on rm" "bad bad bad bad bad"}}
+.em-alarm{display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:center;margin:8px 12px 12px;padding:14px 18px;border-radius:12px;background:var(--bad-soft);color:var(--ink);box-shadow:inset 0 0 0 2px var(--bad)}
+.em-alarm .em-t{font-size:17px;color:var(--bad)}.em-alarm .em-s{grid-column:1;color:var(--muted)}.em-alarm .btn{grid-row:1 / span 2;grid-column:2;background:var(--bad);color:var(--bad-ink);border-color:var(--bad)}
+.em-alarm.open{animation:emPulse 1.2s ease-in-out infinite}@keyframes emPulse{50%{box-shadow:inset 0 0 0 5px var(--bad)}}
+@media (prefers-reduced-motion:reduce){.em-alarm.open{animation:none;box-shadow:inset 0 0 0 4px var(--bad)}}
 .app.prov .btn.ico{width:44px;min-width:44px;padding:0;justify-content:center}
 .app.prov .btn.ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .app.prov .btn.ico.on{color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
@@ -1253,7 +1257,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5, vitSysMax:140, vitDiaMax:90, vitHrMax:110, vitHrMin:50, vitO2Min:92 };   // vitals ranges: team defaults, set in Settings
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5, vitSysMax:140, vitDiaMax:90, vitHrMax:110, vitHrMin:50, vitO2Min:92, vitEmSys:180, vitEmDia:120 };   // vitals ranges: team defaults, set in Settings
 // The demo keeps its own settings (eskCfgDemo), pre-filled with fake names, so it never touches a real person's Settings.
 const DEMO_CFG = { me: 'Taylor R.', sup: 'Provider A', pm: 'Jordan P.', prov: 'Provider A', genoaEmail: 'genoa.demo@example.com', cc: 'lead.demo@example.com', sig: 'Taylor R., ESK Clinic (demo)' };
 let CFG_KEY = /[?&]demo\b/.test(location.search) ? 'eskCfgDemo' : 'eskCfg';
@@ -1778,7 +1782,16 @@ function DemoStore(){
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
   { const bd = isoOf(T - 3), b = (mrn, name, pay, cp, co, dr, ds, orr, os, st) => [String(mrn), name, '', pay, 'PPO', 'In network', 'Individual', '2026-01-01', '2026-12-31', cp, co, '500', dr, ds, '4000', orr, os, '', st, bd, 'Verification', bd + ' 09:00'];   // fake Sohar benefits
     t.benefits = [BEN_COLS, [b(900101, 'ALDBEN', 'Aetna', '30', '20%', '100', 'Approaching', '2500', 'Not met', 'complete.eligible'), b(900102, 'BROCAM', 'Cigna', '0', '10%', '0', 'Met', '800', 'Approaching', 'complete.eligible'), b(900104, 'DUNEMI', 'Blue Shield', '', '', '', '', '', '', 'complete.ineligible (INACTIVE)')], new Set(), null]; }
-  return {
+  // Shared between demo tabs (the ESK Tracker demo and the ESK Bays demo side by side), like two people on one workbook:
+  // the documents and table values live in localStorage (eskDemoShared, today only); another tab's save fires the storage event.
+  const SHARE = 'eskDemoShared';
+  const share = () => { try { localStorage.setItem(SHARE, JSON.stringify({ day: T, docs, vals: Object.fromEntries(Object.entries(t).map(([k, x]) => [k, x[1]])) })); } catch {} };
+  const pull = () => { try { const o = JSON.parse(localStorage.getItem(SHARE) || 'null'); if (!o || o.day !== T) return false;
+    for (const k of Object.keys(docs)) delete docs[k]; Object.assign(docs, o.docs || {});
+    for (const [k, v] of Object.entries(o.vals || {})) if (t[k] && Array.isArray(v)) t[k][1].splice(0, t[k][1].length, ...v);
+    return true; } catch { return false; } };
+  pull();
+  const store = {
     live: false,
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
@@ -1808,9 +1821,13 @@ function DemoStore(){
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
     async setDoc(key, val){ docs[key] = JSON.parse(JSON.stringify(val)); },
-    async freshDoc(key){ return docs[key] == null ? null : JSON.parse(JSON.stringify(docs[key])); },
-    watch(){},
+    async freshDoc(key){ pull(); return docs[key] == null ? null : JSON.parse(JSON.stringify(docs[key])); },
+    watch(cb){ window.addEventListener('storage', e => { if (e.key === SHARE && pull()) cb('docs'); }); },
+    reset(){ try { localStorage.removeItem(SHARE); } catch {} },
   };
+  for (const m of ['update', 'add', 'addMany', 'updateMany', 'setDoc', 'setDropdown', 'upsertBenefits', 'upsertRems', 'clearCells', 'setCells']){   // every write is shared
+    const fn = store[m]; store[m] = async function(...a){ const r = await fn.apply(this, a); share(); return r; }; }
+  return store;
 }
 
 // ---------- app state ----------
@@ -2786,7 +2803,7 @@ function render(){
     const tools = [S.mode === 'pane' && S.canFull ? '<button class="btn" data-act="full" title="Open full screen over Excel">Full screen</button><button class="btn" data-act="popOut" title="Open ESK Bays in its own browser window">Pop out</button>' : '',
       S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', S.mode === 'demo' ? `<button class="btn" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
     app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
-      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
+      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
       <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
         <div class="tools">${tools}</div></header>
       <main id="main" class="pg-today pg-bays">${S.mode === 'pane' && S.canFull && !CFG.pvTipOff ? pvTipHTML(true) : ''}${body}</main></div></div>`;
@@ -2818,8 +2835,8 @@ function render(){
         ${conn}</div>
     </aside>
     <div class="page">
-      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
-      ${S.unsaved ? '<div class="msg bad noprint" role="alert" style="margin:8px 12px"><b>A visit change hasn’t reached the workbook yet.</b> The tracker keeps trying; keep this panel open.</div>' : ''}${freshHTML()}
+      ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
+      ${emBannerHTML()}${S.unsaved ? '<div class="msg bad noprint" role="alert" style="margin:8px 12px"><b>A visit change hasn’t reached the workbook yet.</b> The tracker keeps trying; keep this panel open.</div>' : ''}${freshHTML()}
       <header class="pbar"><div class="ptitle"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
         <div class="tools">${tools}<input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"></div></header>
       <main id="main" class="pg-${S.view}">${body}</main>
@@ -3293,7 +3310,7 @@ async function prnSyncKit(key){
 }
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
 // Vitals ranges (Settings › Vitals ranges, shared as eskShared.vitRange). vitOut(x) = what's past them, e.g. ['BP 152/96'], [] when fine.
-const VIT_RANGE = ['vitSysMax', 'vitDiaMax', 'vitHrMax', 'vitHrMin', 'vitO2Min'];
+const VIT_RANGE = ['vitSysMax', 'vitDiaMax', 'vitHrMax', 'vitHrMin', 'vitO2Min', 'vitEmSys', 'vitEmDia'];
 function vitOut(x, R = CFG){
   if (!x) return [];
   const out = [], bp = String(x.bp || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/), hr = parseFloat(x.hr), o2 = parseFloat(x.o2);
@@ -3301,6 +3318,19 @@ function vitOut(x, R = CFG){
   if (!isNaN(hr) && (hr > +R.vitHrMax || hr < +R.vitHrMin)) out.push(`HR ${hr}`);
   if (!isNaN(o2) && o2 < +R.vitO2Min) out.push(`O2 ${o2}%`);
   return out;
+}
+// Emergency: BP at or above vitEmSys / vitEmDia (default 180/120). vitEm(x) = 'BP 182/104', or '' when not an emergency.
+function vitEm(x, R = CFG){
+  const bp = String(x?.bp || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+  return bp && (+bp[1] >= +R.vitEmSys || +bp[2] >= +R.vitEmDia) ? `BP ${bp[1]}/${bp[2]}` : '';
+}
+// A visit's emergency readings: [{ rid, what, reading, at }]. rid names the reading and its value, so a new reading alarms again.
+// eskVisit[key].em = { [rid]: [{ by, role: 'prov'|'pct', ts }] } records who responded.
+function emReadings(key, v){
+  const L = [], lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals' };
+  for (const w of ['init', 'mid', 'fin']){ const x = (v?.vit || {})[w], e = vitEm(x); if (e) L.push({ rid: w + '|' + x.bp, what: lab[w], reading: e, at: x.at }); }
+  (v?.rechk || []).forEach((x, i) => { const e = vitEm(x); if (e) L.push({ rid: 'rk' + i + '|' + x.bp, what: 'Recheck', reading: e, at: fromHHMM(x.at) }); });
+  return L;
 }
 // PRNs the provider indicated in ESK Bays (eskVisit[key].prnOrd) that no PCT has acknowledged yet.
 // A PCT can also ask for one (o.req { by, at, ts }): it waits for the provider (prnAsk) until they approve (o.ok) or decline (o.no);
@@ -3457,7 +3487,7 @@ function visitMerge(mine, base, fresh){
 // settings (two people saving at once) is filled back in from its latest row on the next load. Fills blanks only.
 // A patient's rows stay until their next appointment day comes, then the daily prune removes them.
 const VLOG_SHEET = 'ESK Visit Log', VLOG_COLS = ['Logged', 'Visit', 'MRN', 'Appt date', 'Event', 'Time', 'BP', 'HR', 'O2', 'Detail', 'By', 'Snapshot'];
-const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc', 'prnOrd'];
+const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc', 'prnOrd', 'em'];
 const vlogEmpty = x => x == null || x === '' || (typeof x === 'object' && !Object.keys(x).length);
 function vlogPick(v){ const o = {}; for (const f of VLOG_F) if (v && !vlogEmpty(v[f])) o[f] = v[f]; return JSON.parse(JSON.stringify(o)); }
 const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
@@ -3488,6 +3518,7 @@ function vlogEvents(p, c){
     if (o.no && !q?.no) add('PRN declined', { time: hhmm(o.no.at), detail: [d, o.no.why].filter(Boolean).join(' · '), by: o.no.by || '' });
     if (o.ack && !q?.ack) add('PRN acknowledged', { time: o.ack.time || '', detail: d, by: o.ack.by || '' }); else if (!o.ack && q?.ack) add('PRN acknowledgement undone', { detail: d }); }
   if (PO.some(x => !CO.some(o => o.id === x.id))) add('PRN order removed');
+  for (const [rid, L] of Object.entries(c.em || {})) (L || []).slice(((p.em || {})[rid] || []).length).forEach(a => add('Emergency BP: responding', { detail: rid.split('|').pop(), by: a.by || '' }));
   return E;
 }
 // Sheet rows for everything that changed from prev to cur (both eskVisit maps). Visits dropped by the 45-day cut aren't logged.
@@ -5190,7 +5221,7 @@ function provPageHTML(){
   const m = tdModel(), L = provNames(m), me = CFG.prov && L.includes(CFG.prov) ? CFG.prov : '';
   const pick = `<label class="lbl" for="provSel">Provider</label><select id="provSel" class="fld"><option value="">Choose your name…</option>${L.map(p => `<option ${p === me ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
   if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? 'Only your patients are shown on the map. This is remembered on this computer.' : 'Nobody is scheduled for ESK today.'}</p></div>`;
-  return `${pvHealthHTML()}<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}`;
+  return `${emBannerHTML()}${pvHealthHTML()}<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}`;
 }
 // The pane's tip: pin the Excel tab, then pop ESK Bays out. The window saves through the pane, so the tab has to stay open.
 const pvTipHTML = close => `<div class="msg info pvtip"><span><b>Tip:</b> pin this Excel tab in your browser (right-click the tab, then <b>Pin tab</b>) so it stays open, then use <b>Pop out</b> to put ESK Bays in its own window. The window saves through this tab.</span>${close ? '<button class="btn ghost sm" data-act="pvTipOff">Got it</button>' : ''}</div>`;
@@ -5214,8 +5245,8 @@ function pvEventMap(m, prov){
     if (r.lost || rowProv(r) !== prov) continue;
     const v = r.v || {}, ev = { b: bayNo(v.bay) ? `Bay ${bayNo(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '', kind = '') => out.set(r.key + '|' + id, { ...ev, what, detail, kind });
     if (v.start != null) add('room', 'Arrived (roomed)');
-    for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w), o = vitOut(x); if (o.length) add('v' + w + '|' + o.join(), `${lab[w]} out of range`, o.join(' · '), 'vit'); }
-    (v.rechk || []).forEach((x, i) => { const o = vitOut(x); if (o.length) add('rk' + i + '|' + o.join(), 'Recheck out of range', [o.join(' · '), x.why].filter(Boolean).join(' · '), 'vit'); });
+    for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w), o = vitOut(x); if (o.length && !vitEm(x)) add('v' + w + '|' + o.join(), `${lab[w]} out of range`, o.join(' · '), 'vit'); }
+    (v.rechk || []).forEach((x, i) => { const o = vitOut(x); if (o.length && !vitEm(x)) add('rk' + i + '|' + o.join(), 'Recheck out of range', [o.join(' · '), x.why].filter(Boolean).join(' · '), 'vit'); });
     for (const o of prnAsk(v)){ const n = Math.max(0, Math.floor((Date.now() - (o.req.ts || Date.now())) / PRN_REPEAT));
       add('pq' + o.id + '|' + n, n ? `Still waiting: PRN approval for ${o.med}` : `PRN approval requested: ${o.med}`, [o.dose, o.reason, o.req.by && 'from ' + o.req.by].filter(Boolean).join(' · '), 'prn'); }
   }
@@ -5246,13 +5277,52 @@ setInterval(() => {
 }, 5000);
 // Failsafe banners for the provider page: the screen stopped hearing from the workbook, or a save of theirs hasn't landed.
 const PV_STALE = 45000;
+// ---------- emergency BP alarm ----------
+// Who: the visit's provider in ESK Bays, and every PCT screen (tracker pane or full screen). Until answered, a red banner at the top,
+// the alarm sound every 20 s (bell or not), and a pop-up that stays (bay and reading, no name). It stops on a provider's screen once
+// a provider responds; on a PCT screen once anyone responds. The banner stays, saying who's responding, until discharge.
+const EM_REPEAT = 20000;
+function emActive(){
+  if (!S.loaded || !S.visit) return [];
+  const T = todaySerial(), out = [];
+  for (const [key, v] of Object.entries(S.visit)){
+    if (Number(key.split('|')[1]) !== T || v.out) continue;
+    const a = S.A.find(x => x.key === key); if (!a) continue;
+    if (S.provView && canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || '') !== CFG.prov) continue;
+    for (const e of emReadings(key, v)){ const acks = (v.em || {})[e.rid] || [];
+      out.push({ ...e, key, a, v, acks, open: S.provView ? !acks.some(x => x.role === 'prov') : !acks.length }); }
+  }
+  return out;
+}
+function emBannerHTML(){
+  const L = emActive(); if (!L.length) return '';
+  return L.map(e => { const who = e.acks.map(x => x.by).filter(Boolean);
+    return `<div class="em-alarm${e.open ? ' open' : ''}" role="alert"><div class="em-t"><b>EMERGENCY · ${esc(e.reading)}</b> · ${esc(nm(e.a.mrn))}${bayNo(e.v.bay) ? ' · Bay ' + esc(bayNo(e.v.bay)) : ''} · ${esc(e.what)}${e.at != null ? ' ' + fmtT(e.at) : ''}</div>
+      <div class="em-s">${who.length ? 'Responding: ' + esc(who.join(', ')) : 'Nobody has responded yet.'}</div>
+      ${e.open ? `<button class="btn lg" data-act="emAck" data-k="${esc(e.key)}" data-r="${esc(e.rid)}">${S.provView ? 'I’m responding' : 'Responding'}</button>` : ''}</div>`; }).join('');
+}
+async function emAck(key, rid){
+  const v = visitGet(key) || {}, em = { ...(v.em || {}) };
+  em[rid] = [...(em[rid] || []), { by: (S.provView ? CFG.prov : CFG.me) || '', role: S.provView ? 'prov' : 'pct', ts: Date.now() }];
+  await visitSet(key, { em }); render();
+}
+setInterval(() => {
+  if (!S.loaded || S.full) return;   // S.full: the full-screen view or popped-out window alarms instead of its pane
+  const L = emActive(), sig = L.map(e => e.key + e.rid + e.open + e.acks.length).join('|');
+  if (sig !== S._emSig){ S._emSig = sig; if (!formBusy()) render(); }
+  const open = L.filter(e => e.open); if (!open.length) return;
+  if (Date.now() - (S._emAt || 0) < EM_REPEAT) return; S._emAt = Date.now();
+  S._emPop = S._emPop || new Set(); const id = e => 'em|' + e.key + e.rid, fresh = open.filter(e => !S._emPop.has(id(e)));
+  if (!fresh.length) return playSound('boom');   // repeat: the sound only
+  for (const e of fresh){ S._emPop.add(id(e)); alertOut({ title: `EMERGENCY · ${e.reading}`, body: bayNo(e.v.bay) ? `Bay ${bayNo(e.v.bay)}` : 'ESK', tag: 'esk-' + id(e), sound: 'boom', sticky: true }); }
+}, 5000);
 function pvHealthHTML(){
   const last = Math.max(S.polledAt || 0, S.loadedAt || 0), old = S.store?.live && !S.store.remote && last && Date.now() - last > PV_STALE;
   return (S.unsaved ? '<div class="msg bad" role="alert"><b>Your last change hasn’t reached the workbook yet.</b> It keeps trying. If this stays, tell the PCT in person.</div>' : '')
     + (old ? `<div class="msg warn" role="alert"><b>This screen hasn’t heard from the workbook since ${new Date(last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}.</b> Vitals and PRNs may be out of date. <button class="btn sm" data-act="refresh">Refresh</button></div>` : '');
 }
 Object.assign(ACT_TODAY, { pvOk: el => pvAnswer(el.dataset.k, el.dataset.o, true), pvNo: el => openPvNo(el.dataset.k, el.dataset.o), pvNoSave: () => pvAnswer(S.pv?.key, S.pv?.o, false, String($('#pvNoWhy')?.value || '').trim()),
-  prnReq: el => openPrnReq(el.dataset.k), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
+  prnReq: el => openPrnReq(el.dataset.k), emAck: el => emAck(el.dataset.k, el.dataset.r), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
 document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
@@ -5964,11 +6034,11 @@ PAGES.settings = {
       <div class="row" style="margin-top:12px"><button class="btn primary" data-act="settings">Open settings</button></div></div>`,
   badge: () => null,
 };
-const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter', sSysMax: 'vitSysMax', sDiaMax: 'vitDiaMax', sHrMax: 'vitHrMax', sHrMin: 'vitHrMin', sO2Min: 'vitO2Min' };
+const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter', sSysMax: 'vitSysMax', sDiaMax: 'vitDiaMax', sHrMax: 'vitHrMax', sHrMin: 'vitHrMin', sO2Min: 'vitO2Min', sEmSys: 'vitEmSys', sEmDia: 'vitEmDia' };
 // The PAGES.settings stub above is the foundation's (kept byte-identical for protect.js); Object.assign below replaces it.
 // SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
 // the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
-const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis', 'sSysMax', 'sDiaMax', 'sHrMax', 'sHrMin', 'sO2Min']);
+const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis', 'sSysMax', 'sDiaMax', 'sHrMax', 'sHrMin', 'sO2Min', 'sEmSys', 'sEmDia']);
 const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sSnd', 'sVitN', 'sVitS', 'sVitA', 'sFull', 'sAuto']);
 function setEditing(on){ if (on){ S.editing = true; S._setEd = true; } else if (S._setEd){ S.editing = false; S._setEd = false; } }
 function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
@@ -6058,7 +6128,9 @@ function settingsHTML(){
       ${f('sHrMax', 'Pulse above', { num: true })}
       ${f('sHrMin', 'Pulse below', { num: true })}
       ${f('sO2Min', 'O2 below (%)', { num: true })}
-      <div class="set-hint wide">A reading past any of these alerts the provider in ESK Bays (shared: one set for everyone). Set them with the medical director.</div>
+      ${f('sEmSys', 'Emergency: systolic at or above', { num: true })}
+      ${f('sEmDia', 'Emergency: diastolic at or above', { num: true })}
+      <div class="set-hint wide">A reading past any of these alerts the provider in ESK Bays. A BP at or above the emergency limits sets off the emergency alarm for the provider and every PCT screen. Shared: one set for everyone. Set them with the medical director.</div>
     </div>
   </section>`;
   const c = capOf(), tmplWk = Object.values(c.tmpl).reduce((s, x) => s + tmplSum(x), 0), chairWk = BLOCKS.reduce((s, b) => s + chairBlock(c, b.split('|')[1]), 0);
@@ -6357,6 +6429,7 @@ const ACT = {
   profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
   demo: el => startDemo(!!el.dataset.prov),
   fsDemo: () => fsToggle(),
+  demoReset: () => { S.store?.reset?.(); location.reload(); },
   dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
 Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_SETTINGS);
@@ -6688,6 +6761,7 @@ function openFull(pop){
 // Seeded once loaded: Provider A's patients in Bays 1 and 2 (one dosed, with a nifedipine PRN given and a recheck; one waiting on
 // dose confirmation with a Zofran PRN waiting for the PCT), a Provider B visit in Bay 4 ("In use" in ESK Bays), one booked in Bay 3.
 async function seedDemo(){
+  if (S.store.getDoc('eskDemoSeeded') === todaySerial()) return;   // another demo tab already set today up
   const T = todaySerial(), now = nowMin(), at = m => Math.max(0, now - m), L = todayModel(T), by = id => L.find(i => i.a.mrn === id);
   const vit = (bp, hr, o2, t) => ({ bp, hr, o2, at: t, by: CFG.me });
   const a = by('900101'), b = by('900104'), c = by('900110'), d = by('900113');
@@ -6705,7 +6779,7 @@ async function seedDemo(){
     prnOrd: [{ id: 'demo2', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', by: 'Provider A', at: at(4), ts: Date.now(), ack: null }] };
   if (c) S.visit[c.a.key] = { start: at(25), adm: at(20), bay: '4', mv: { prov: 'Provider B', time: c.a.time }, vit: { init: vit('120/78', '70', '99', at(25)) } };
   if (d) S.visit[d.a.key] = { bay: '3' };
-  await saveVisit(); S._pvSeen = null; await reload(true); closeModal(); render();
+  await saveVisit(); await S.store.setDoc('eskDemoSeeded', T); S._pvSeen = null; await reload(true); closeModal(); render();
 }
 // Browser full screen for the demo (outside Excel there is no Office dialog). Esc or the same button leaves it.
 const fsOn = () => !!document.fullscreenElement;
