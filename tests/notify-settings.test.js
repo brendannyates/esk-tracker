@@ -43,8 +43,8 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     const wb = workbook(), C = run(wb), r = await C.ensureNotifySettings();
     assert.deepStrictEqual([...r.created], ['tblNotifyConfig', 'tblNotifyRoutes', 'tblNotifyTemplates', 'tblNotifyLog']);
     const at = nm => { const x = wb.tables.find(y => y.name === nm); return [x.r0, x.c0, x.rows, x.cols].join(','); };
-    assert.strictEqual(at('tblNotifyConfig'), '0,0,13,2'); assert.strictEqual(at('tblNotifyRoutes'), '0,3,2,4'); assert.strictEqual(at('tblNotifyTemplates'), '0,8,3,3'); assert.strictEqual(at('tblNotifyLog'), '0,12,2,10');
-    assert.strictEqual(wb.get('Settings', 0, 5), 'Email'); assert.strictEqual(wb.get('Settings', 1, 0), 'WebhookUrl');
+    assert.strictEqual(at('tblNotifyConfig'), '0,0,12,2'); assert.strictEqual(at('tblNotifyRoutes'), '0,3,2,4'); assert.strictEqual(at('tblNotifyTemplates'), '0,8,3,3'); assert.strictEqual(at('tblNotifyLog'), '0,12,2,10');
+    assert.strictEqual(wb.get('Settings', 0, 4), 'FlowUrl'); assert.strictEqual(wb.get('Settings', 0, 5), 'Email'); assert.strictEqual(wb.get('Settings', 1, 0), 'Enabled');
     const again = await C.ensureNotifySettings(); assert.strictEqual(again.created.length, 0); assert.strictEqual(again.existing.length, 4, 'safe to call again');
     const st = await C.notifySettingsStatus(); assert(st.every(x => x.present));
   });
@@ -56,7 +56,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
   await t('provider rows: the starter row is reused, then add, update (any case), remove', async () => {
     const wb = workbook(), C = run(wb); await C.ensureNotifySettings();
     await C.upsertNotifyRoute('Dr A', 'https://teams.microsoft.com/l/chat/19:aaa@thread.v2/0', 'dra@example.com', true);
-    let d = await C.readNotifySettings(); assert.strictEqual(d.routes.length, 1); assert.strictEqual(d.routes[0].email, 'dra@example.com');
+    let d = await C.readNotifySettings(); assert.strictEqual(d.routes.length, 1); assert.strictEqual(d.routes[0].email, 'dra@example.com'); assert(/19:aaa/.test(d.routes[0].flowUrl));
     await C.upsertNotifyRoute('Dr B', '19:bbb@thread.v2', 'drb@example.com', false);
     await C.upsertNotifyRoute('dr a', 'https://teams.microsoft.com/l/chat/19:new@thread.v2/0', 'a2@example.com', true);
     d = await C.readNotifySettings();
@@ -67,8 +67,8 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
   });
   await t('config: set a value, add a missing key', async () => {
     const wb = workbook(), C = run(wb); await C.ensureNotifySettings();
-    await C.setNotifyConfig('WebhookUrl', 'https://example.invalid/flow'); await C.setNotifyConfig('NewKey', 'x');
-    const d = await C.readNotifySettings(); assert.strictEqual(d.config.WebhookUrl, 'https://example.invalid/flow'); assert.strictEqual(d.config.NewKey, 'x'); assert.strictEqual(d.config.Enabled, 'TRUE');
+    await C.setNotifyConfig('EscalationChat', 'https://example.invalid/flow'); await C.setNotifyConfig('NewKey', 'x');
+    const d = await C.readNotifySettings(); assert.strictEqual(d.config.EscalationChat, 'https://example.invalid/flow'); assert.strictEqual(d.config.NewKey, 'x'); assert.strictEqual(d.config.Enabled, 'TRUE');
   });
   console.log(n + ' passed');
 })().catch(e => { console.error(e); process.exit(1); });

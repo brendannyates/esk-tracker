@@ -2,7 +2,8 @@
 // onVitalsSaved(data)           call when vitals are saved: picks the stage from the visit, applies the rules, sends when warranted
 // sendToProviderChatButton()    the "Send to Provider Chat" button: always sends, still marks an emergency when the numbers say so
 // startProviderAlerts()         provider view: flags the bay map and plays a sound on new log rows for that provider
-// Office toggles live in tblNotifyConfig and travel in the payload as toggles{} + escalation[], so one flow serves every office.
+// Each provider has their own Teams workflow ("Send webhook alerts to a chat"): its URL sits in tblNotifyRoutes, and the post is an
+// Adaptive Card that workflow can show as it is. The same post also carries the plain fields (message, level, vitals...) for a custom flow.
 // Tables are found by name anywhere in the workbook, so they can live on the Settings sheet.
 var NOTIFY_TABLES = { config: 'tblNotifyConfig', routes: 'tblNotifyRoutes', templates: 'tblNotifyTemplates', log: 'tblNotifyLog' };
 var NOTIFY_VITALS = [["bp",""],["hr","HR"],["spo2","SpO2"],["temp","Temp"]];   // [field, label] in print order; blank label prints the value alone. Keys bp and spo2 feed the rules.
@@ -11,16 +12,30 @@ var NOTIFY_POST_DOSE_MIN = 60;   // minutes after administration that still coun
 
 function nfyTruthy(v){ return v === true || /^(true|yes|y|1)$/i.test(String(v == null ? '' : v).trim()); }
 function nfyNorm(s){ return String(s == null ? '' : s).trim().toLowerCase(); }
-function nfyEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
-function nfyChatId(v){
+// A Power Automate trigger URL (new powerplatform.com form or the older logic.azure.com one), else ''.
+function nfyFlowUrl(v){
   var s = String(v == null ? '' : v).trim();
-  try { s = decodeURIComponent(s); } catch (e) {}
-  var m = s.match(/19:[^\s\/?#&"'<>]+?@(?:thread\.v2|unq\.gbl\.spaces)/i);
-  return m ? m[0] : '';
+  return /^https:\/\/[^\/\s?#]+\.(?:powerplatform\.com|logic\.azure\.com)(?::\d+)?\/\S+$/i.test(s) ? s : '';
 }
-function nfyRender(tpl, d){
-  return String(tpl).replace(/\{(\w+)\}/g, function(_, k){ return nfyEsc(d[k] == null ? '' : d[k]); })
-    .replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
+// Plain text for the card and the toast: <b>x</b> becomes **x** (Adaptive Card markdown), other tags go.
+function nfyText(tpl, d){
+  return String(tpl).replace(/\{(\w+)\}/g, function(_, k){ return d[k] == null ? '' : String(d[k]); })
+    .replace(/<\/?b>/gi, '**').replace(/<[^>]*>/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
+}
+// What the Teams workflow template expects: { type: 'message', attachments: [ Adaptive Card ] }. Emergencies get a red heading.
+function nfyCard(text, facts, emergency){
+  var body = [];
+  if (emergency) body.push({ type: 'TextBlock', text: 'EMERGENCY', weight: 'Bolder', size: 'Large', color: 'Attention' });
+  body.push({ type: 'TextBlock', text: text, wrap: true });
+  var f = (facts || []).filter(function(x){ return x[1]; }).map(function(x){ return { title: x[0], value: String(x[1]) }; });
+  if (f.length) body.push({ type: 'FactSet', facts: f });
+  return { type: 'message', attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', contentUrl: null,
+    content: { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body } }] };
+}
+// text/plain + no-cors = a "simple" request: the browser sends it without a preflight (which the flow endpoint can't answer),
+// and can't read the answer, so delivery shows in the chat and the flow's run history.
+async function nfyPost(url, payload){
+  await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) });
 }
 function nfyId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function nfyParseBp(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})\s*\/\s*(\d{2,3})/); return m ? { sys: +m[1], dia: +m[2] } : null; }
@@ -74,17 +89,16 @@ async function loadNotifySettings(){
       group: flag('SendGroupChat', true), escalate: flag('EscalateEmergency', false), urgent: flag('UrgentEmergencies', true),
       stages: { initial: flag('NotifyInitial', true), recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) }
     };
-    var esc = nfyChatId(config.EscalationChat);
-    // Provider | ChatLink | Email | Enabled, found by header (the add-in's Settings added Email, so Enabled is no longer the third column)
+    var esc = nfyFlowUrl(config.EscalationChat);   // EscalationChat now holds the escalation chat's workflow URL
+    // Provider | FlowUrl | Email | Enabled, found by header (older sheets call the second column ChatLink)
     var hd = rts.values[0].map(nfyNorm), col = function(n, d){ var i = hd.indexOf(n); return i < 0 ? d : i; };
-    var cP = col('provider', 0), cC = col('chatlink', 1), cE = col('email', -1), cOn = col('enabled', hd.length - 1);
+    var cP = col('provider', 0), cC = col('flowurl', col('chatlink', 1)), cE = col('email', -1), cOn = col('enabled', hd.length - 1);
     var routes = {};    rts.values.slice(1).forEach(function(r){
       if (!nfyTruthy(r[cOn]) || !String(r[cP]).trim()) return;
-      var chat = nfyChatId(r[cC]);
-      routes[nfyNorm(r[cP])] = { chats: chat ? [chat] : [], email: cE < 0 ? '' : String(r[cE] == null ? '' : r[cE]).trim() };
+      routes[nfyNorm(r[cP])] = { flow: nfyFlowUrl(r[cC]), email: cE < 0 ? '' : String(r[cE] == null ? '' : r[cE]).trim() };
     });
     var templates = {}; tpl.values.forEach(function(r){ if (nfyTruthy(r[2])) templates[String(r[0]).trim()] = String(r[1]); });
-    return { config: config, routes: routes, templates: templates, toggles: toggles, escalation: esc ? [esc] : [] };
+    return { config: config, routes: routes, templates: templates, toggles: toggles, escalation: esc };
   });
 }
 
@@ -116,16 +130,15 @@ async function sendToProviderChatButton(data){
   return r;
 }
 
-// Core send. The Teams POST is fire-and-forget: the browser cannot read the flow's response,
-// so delivery is confirmed in the chat and in the flow's run history.
+// Core send: log row, then the provider's workflow (and the escalation workflow for an emergency when that's on).
 async function sendToProviderChat(data){
   var s = await loadNotifySettings();
   if (!nfyTruthy(s.config.Enabled)) return { ok: false, reason: 'Notifications are off (tblNotifyConfig > Enabled)' };
   var route = s.routes[nfyNorm(data.provider)];
-  if (!route || !route.chats.length)
-    return { ok: false, reason: 'No Teams group chat set for ' + data.provider + ' in tblNotifyRoutes' };
+  if (!route || !route.flow)
+    return { ok: false, reason: 'No Teams workflow URL set for ' + data.provider + ' (Settings › Teams notifications)' };
   var level = data.level === 'emergency' ? 'emergency' : 'standard';
-  var T = s.toggles, willEscalate = level === 'emergency' && T.escalate && s.escalation.length > 0;
+  var T = s.toggles, willEscalate = level === 'emergency' && T.escalate && !!s.escalation;
   if (!T.group && !willEscalate)
     return { ok: false, reason: 'Group chat posting is off for this office (SendGroupChat in tblNotifyConfig)' };
   var tpl = s.templates[level] || s.templates.standard;
@@ -136,41 +149,38 @@ async function sendToProviderChat(data){
   var now = new Date();
   var d = Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data,
                         { vitals: vitals, reasons: (data.reasons || []).join('; ') });
-  var payload = {
-    event: 'vitals', chats: route.chats, message: nfyRender(tpl, d),
+  var message = nfyText(tpl, d);
+  var payload = Object.assign(nfyCard(message, [['Provider', d.provider], ['Stage', d.stage], ['Why', d.reasons], ['Sent by', d.sentBy]], level === 'emergency'), {
+    event: 'vitals', message: message.replace(/\*\*/g, ''),
     level: level, stage: d.stage || '', vitals: vitals, reasons: data.reasons || [],
-    toggles: s.toggles, escalation: s.escalation,
+    toggles: s.toggles,
     provider: d.provider || '', patient: d.patient || '', bay: String(d.bay || ''), clinic: d.clinic || '',
     sentBy: d.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker'
-  };
+  });
 
   // 1) Log row: drives the in-app flag + sound for provider view, and is the audit trail.
   try { await appendNotifyLog(payload); } catch (e) { console.warn('notify log', e); }
 
-  // 2) Teams, through the flow.
-  var url = String(s.config.WebhookUrl || '').trim();
-  if (!/^https:\/\//i.test(url)) return { ok: false, reason: 'Logged for in-app alerts, but no webhook URL in tblNotifyConfig' };
+  // 2) Teams, through the provider's workflow.
   try {
-    // text/plain + no-cors = a "simple" request. The browser sends it without a preflight (which the flow endpoint cannot answer).
-    await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) });
+    if (T.group) await nfyPost(route.flow, payload);
+    if (willEscalate) await nfyPost(s.escalation, payload);
     return { ok: true, message: payload.message };
   } catch (e) {
     return { ok: false, reason: 'Network error: ' + e.message };
   }
 }
 
-// Settings › Teams notifications › "Send test": one test post to a provider's chat through the same webhook, no log row, no patient.
-// Same fire-and-forget POST, so the result shows in the chat and the flow's run history, not here.
+// Settings › Teams notifications › "Send test": one test card through a provider's workflow, no log row, no patient.
+// Fire-and-forget like the rest, so the result shows in the chat and the flow's run history, not here.
 async function sendNotifyTest(provider, sentBy){
   var s = await loadNotifySettings();
-  var url = String(s.config.WebhookUrl || '').trim();
-  if (!/^https:\/\//i.test(url)) return { ok: false, reason: 'No webhook URL saved yet' };
   var route = s.routes[nfyNorm(provider)];
-  if (!route || !route.chats.length) return { ok: false, reason: 'No Teams group chat ID found for ' + provider + ' (the link must contain 19:…@thread.v2)' };
+  if (!route || !route.flow) return { ok: false, reason: 'No Teams workflow URL saved for ' + provider };
   var now = new Date(), msg = 'Test from ESK Tracker' + (sentBy ? ' (' + sentBy + ')' : '') + ' - ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  var payload = { event: 'test', chats: route.chats, message: nfyEsc(msg), level: 'standard', stage: 'test', vitals: '', reasons: ['test'],
-    toggles: s.toggles, escalation: [], provider: provider, patient: '', bay: '', clinic: '', sentBy: sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
-  try { await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) }); return { ok: true, message: msg }; }
+  var payload = Object.assign(nfyCard(msg), { event: 'test', message: msg, level: 'standard', stage: 'test', vitals: '', reasons: ['test'],
+    toggles: s.toggles, provider: provider, patient: '', bay: '', clinic: '', sentBy: sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' });
+  try { await nfyPost(route.flow, payload); return { ok: true, message: msg }; }
   catch (e) { return { ok: false, reason: 'Network error: ' + e.message }; }
 }
 
