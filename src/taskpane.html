@@ -1059,6 +1059,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 /* ===== /page: settings ===== */
 .badText{color:var(--bad);font-weight:500}
 .pg-today .rems-close{margin-top:14px}
+.rems-how{margin:0 0 12px}.rems-how summary{cursor:pointer;font-weight:600}
 .prnbox{display:flex;flex-direction:column;gap:8px}
 .prnadd{display:flex;flex-wrap:wrap;gap:6px}
 .prnrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -3100,19 +3101,21 @@ async function noteApptList(){
   S.apptList = { sig, on: prev ? isoOf(todaySerial()) : null };   // first time: there is no way to tell how old the list is
   await S.store.setDoc('eskApptList', S.apptList);
 }
+// Steps to run a memorized NextGen PM report and bring it in (the appointment list, the REMS uploads DM report).
+const nextgenHowTo = (summary, type, name, last, open) => `<details style="margin-top:4px"${open ? ' open' : ''}><summary>${summary}</summary><ol style="margin:6px 0 0 18px;padding:0">
+      <li>Navigate to NextGen PM.</li>
+      <li>Locate the “Reports” menu option on the top-left.</li>
+      <li>Click “Memorized”.</li>
+      <li>Change the Report Type drop-down to “${type}” and select “${name}”.</li>
+      <li>Select “OK” to run the report.</li>
+      <li>Export the report by clicking the x symbol beside the bar graph icon <img src="assets/export-icon.png" alt="Export icon: spreadsheet x next to a bar graph" height="16">.</li>
+      <li>${last}</li>
+    </ol></details>`;
 function freshHTML(){
   if (!S.store.live) return '';
   const on = fromIso(S.apptList?.on); if ((on != null && on >= todaySerial()) || S.freshHidden === (S.apptList?.on || 'none')) return '';
   return `<div class="msg warn noprint fresh" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
-    <details style="margin-top:4px"><summary>How to run the report</summary><ol style="margin:6px 0 0 18px;padding:0">
-      <li>Navigate to NextGen PM.</li>
-      <li>Locate the “Reports” menu option on the top-left.</li>
-      <li>Click “Memorized”.</li>
-      <li>Change the Report Type drop-down to “Appointment Reports” and select “1 ESK Ordering - B”.</li>
-      <li>Select “OK” to run the report.</li>
-      <li>Export the report by clicking the x symbol beside the bar graph icon <img src="assets/export-icon.png" alt="Export icon: spreadsheet x next to a bar graph" height="16">.</li>
-      <li>Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:S and below on the Appt List tab (MRN to Status, then Rendering); the formula columns after them are left alone.</li>
-    </ol></details>
+    ${nextgenHowTo('How to run the report', 'Appointment Reports', '1 ESK Ordering - B', 'Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:S and below on the Appt List tab (MRN to Status, then Rendering); the formula columns after them are left alone.')}
     <div style="margin-top:6px"><button class="btn sm primary" data-act="upAppt">⇪ Upload appt list</button> <button class="btn sm ghost" data-act="freshHide">Dismiss</button></div></div>`;
 }
 // ---------- upload: 1 ESK Ordering - B export → Appt List (NextGen) table (M5:R and down) ----------
@@ -5769,13 +5772,14 @@ function repRange(){
 }
 function repM(){ if (!S._repM){ const [f, t] = repRange(); S._repM = remsModel(f, t); queueMicrotask(() => { S._repM = null; }); } return S._repM; }
 function reportsHTML(){
-  const R = S.rep, m = repM(), own = R.owner && m.owners.find(o => o.name === R.owner) ? R.owner : '';
+  const m = repM(), R = S.rep, own = R.owner && m.owners.find(o => o.name === R.owner) ? R.owner : '';
   const L = own ? m.owners.find(o => o.name === own).L : m.opps, c = own ? m.sum(L) : m.tot;
   const tile = (n, l, tone) => `<div class="tile${tone ? ' ' + tone : ''}"><b>${n}</b><span>${l}</span></div>`;
   const hd = (title, sub, right) => `<div class="acc-h"><h3>${title}</h3>${sub ? `<span class="acc-s">${sub}</span>` : ''}${right ? `<span class="grow"></span>${right}` : ''}</div>`;
   const ranges = [['week', 'This week (Sun–Sat)'], ['lastweek', 'Last week'], ['month', 'This month'], ['lastmonth', 'Last month'], ['d30', 'Last 30 days'], ['d90', 'Last 90 days'], ['custom', 'Custom…']];
   const li = remsLastImport();
-  const bar = `<section class="card acc-head"><div class="acc-bar"><div class="acc-filters">
+  const how = `<div class="rems-how small">${nextgenHowTo('How to run the DM report', 'Daily Reports', 'REMS uploads', 'Copy the file from your NextGen File Explorer, then select “Import DM report” at the top and choose it. It updates the hidden ESK REMS Uploads sheet (short names only) and this page.', !li)}</div>`;
+  const bar = `${how}<section class="card acc-head"><div class="acc-bar"><div class="acc-filters">
       <label class="acc-f"><span class="lbl">Dates</span><select class="fld" data-repv="r">${ranges.map(([v, l]) => `<option value="${v}" ${R.r === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${R.r === 'custom' ? `<label class="acc-f"><span class="lbl">From</span><input type="date" class="fld" data-repv="from" value="${isoOf(m.from)}"></label><label class="acc-f"><span class="lbl">To</span><input type="date" class="fld" data-repv="to" value="${isoOf(m.to)}"></label>` : ''}
       <label class="acc-f"><span class="lbl">Team member</span><select class="fld" data-repv="owner"><option value="">Everyone</option>${m.owners.map(o => `<option ${own === o.name ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
