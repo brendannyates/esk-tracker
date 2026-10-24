@@ -1248,7 +1248,7 @@ function parseScan(raw){
 }
 
 // ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5 };
+const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5, vitSysMax:140, vitDiaMax:90, vitHrMax:110, vitHrMin:50, vitO2Min:92 };   // vitals ranges: team defaults, set in Settings
 // The demo keeps its own settings (eskCfgDemo), pre-filled with fake names, so it never touches a real person's Settings.
 const DEMO_CFG = { me: 'Taylor R.', sup: 'Provider A', pm: 'Jordan P.', prov: 'Provider A', genoaEmail: 'genoa.demo@example.com', cc: 'lead.demo@example.com', sig: 'Taylor R., ESK Clinic (demo)' };
 let CFG_KEY = /[?&]demo\b/.test(location.search) ? 'eskCfgDemo' : 'eskCfg';
@@ -3286,10 +3286,25 @@ async function prnSyncKit(key){
   await write(null, () => S.store.updateMany('kits', [{ r: k.r, snap: t.snap(k.r), changes: out }]));
 }
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
+// Vitals ranges (Settings › Vitals ranges, shared as eskShared.vitRange). vitOut(x) = what's past them, e.g. ['BP 152/96'], [] when fine.
+const VIT_RANGE = ['vitSysMax', 'vitDiaMax', 'vitHrMax', 'vitHrMin', 'vitO2Min'];
+function vitOut(x, R = CFG){
+  if (!x) return [];
+  const out = [], bp = String(x.bp || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/), hr = parseFloat(x.hr), o2 = parseFloat(x.o2);
+  if (bp && (+bp[1] > +R.vitSysMax || +bp[2] > +R.vitDiaMax)) out.push(`BP ${bp[1]}/${bp[2]}`);
+  if (!isNaN(hr) && (hr > +R.vitHrMax || hr < +R.vitHrMin)) out.push(`HR ${hr}`);
+  if (!isNaN(o2) && o2 < +R.vitO2Min) out.push(`O2 ${o2}%`);
+  return out;
+}
 // PRNs the provider indicated in ESK Bays (eskVisit[key].prnOrd) that no PCT has acknowledged yet.
-const prnPend = v => v?.out ? [] : (v?.prnOrd || []).filter(o => !o.ack);
-// Failsafe on the provider's side: minutes an order has waited, once that's 5 min or more (else 0). The PCT is re-alerted every 2 min.
-const PRN_LATE_MIN = 5, prnLate = o => { if (o.ack || !o.ts) return 0; const m = Math.floor((Date.now() - o.ts) / 60000); return m >= PRN_LATE_MIN ? m : 0; };
+// A PCT can also ask for one (o.req { by, at, ts }): it waits for the provider (prnAsk) until they approve (o.ok) or decline (o.no);
+// only then is it the PCT's to give and log. Same record either way: { id, med, dose, reason, by (provider), at, ts, req?, ok?, no?, ack }.
+const prnPend = v => v?.out ? [] : (v?.prnOrd || []).filter(o => !o.ack && !o.no && (!o.req || o.ok));
+const prnAsk = v => v?.out ? [] : (v?.prnOrd || []).filter(o => o.req && !o.ok && !o.no);
+const prnSince = o => o.ok?.ts || o.ts;   // when it became the PCT's to give
+// Failsafe: minutes an order has waited on the PCT (or a request on the provider), once that's 5 min or more (else 0).
+// The waiting side is re-alerted every 2 min (PRN_REPEAT).
+const PRN_LATE_MIN = 5, prnLate = (o, t = prnSince(o)) => { if (o.ack || o.no || !t) return 0; const m = Math.floor((Date.now() - t) / 60000); return m >= PRN_LATE_MIN ? m : 0; };
 // Orders after a PRN save: acknowledged while a logged row carries its id (first save stamps by/time), open again if that row is removed.
 const prnAckOrders = (O, rescue, by, ts) => O.map(o => { const r = rescue.find(x => x.ord === o.id);
   return { ...o, ack: r ? (o.ack ? { ...o.ack, time: r.time } : { by, time: r.time, ts }) : null }; });
@@ -3342,7 +3357,29 @@ function openPrn(key, ord){
     <div class="lbl" style="margin-top:10px">Vitals rechecks <span class="muted">(time stamped)</span></div><div id="rkBox">${rkHTML()}</div>
     <div class="lbl" style="margin-top:12px">PRN given</div><div id="prnBox">${prnHTML()}</div>
     <div class="small muted" style="margin-top:8px">Log PRNs on the Medication Inventory Tracker too.</div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="prnSave" data-k="${esc(key)}">Save</button></div>`);
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="prnReq" data-k="${esc(key)}" title="Send it to the provider in ESK Bays to approve before you give it">Ask provider to approve…</button><span class="grow"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="prnSave" data-k="${esc(key)}">Save</button></div>`);
+}
+// PCT asks the provider (ESK Bays) to approve a PRN: a prnOrd entry with req and no ok yet. The provider gets the alert; once they
+// approve, it comes back here as a PRN to acknowledge and log, like one the provider indicated.
+function openPrnReq(key){
+  const a = S.A.find(x => x.key === key); if (!a) return; S.prq = { key }; const prov = a.rendering || S.byMrn.get(a.mrn)?.provider || 'the provider';
+  openModal(`<h2>Ask ${esc(prov)} to approve a PRN</h2><div class="muted small">${esc(nm(a.mrn))}. It shows on their bay map with a sound; you give it once they approve.</div>
+    <div class="form2"><div><label class="lbl" for="prqMed">Medication</label><select id="prqMed" class="fld">${RESCUE.map(m => `<option>${esc(m)}</option>`).join('')}<option value="">Other…</option></select></div>
+      <div><label class="lbl" for="prqMedO">Other medication</label><input id="prqMedO" class="fld" autocomplete="off" placeholder="Only for Other"></div>
+      <div><label class="lbl" for="prqDose">Dose / route</label><input id="prqDose" class="fld" autocomplete="off" placeholder="e.g. 4 mg ODT"></div>
+      <div><label class="lbl" for="prqWhy">Reason</label><input id="prqWhy" class="fld" autocomplete="off" placeholder="e.g. nausea, BP 162/98"></div></div>
+    <div id="prqMsg"></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="prnReqSave">Send to ${esc(prov)}</button></div>`);
+  setTimeout(() => $('#prqDose')?.focus(), 30);
+}
+async function prnReqSave(){
+  const key = S.prq?.key, a = key && S.A.find(x => x.key === key); if (!a) return closeModal();
+  const med = String($('#prqMed')?.value || $('#prqMedO')?.value || '').trim(), dose = String($('#prqDose')?.value || '').trim(), reason = String($('#prqWhy')?.value || '').trim();
+  const err = !med ? 'Enter the medication.' : !dose ? 'Enter the dose and route.' : !reason ? 'Add the reason, so the provider can decide.' : prnTracked(med) && prnMg(dose) == null ? `Enter the ${esc(med)} dose in mg (e.g. 4 mg ODT).` : '';
+  if (err){ $('#prqMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
+  const prov = canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), now = nowMin(), ts = Date.now();
+  const L = [...(visitGet(key)?.prnOrd || []), { id: 'r' + ts.toString(36), med, dose, reason, by: prov, at: now, ts, req: { by: CFG.me || '', at: now, ts }, ok: null, no: null, ack: null }];
+  closeModal(); S.prn = null; await visitSet(key, { prnOrd: L }); render(); toast('ok', `Sent to ${esc(prov || 'the provider')}. You’ll hear when they answer.`);
 }
 async function prnSave(key){
   const L = prnClean(); if (!L) return; const RK = rkClean(); if (!RK) return; closeModal(); const had = (visitGet(key)?.rescue || []).length;
@@ -3440,7 +3477,9 @@ function vlogEvents(p, c){
   if (J(p.pc) !== J(c.pc)) add(c.pc ? 'Provider confirmed dose' : 'Provider confirmation cleared', { time: hhmm(c.pc?.at), detail: c.pc ? [`kit …${c.pc.sn}`, c.pc.lot && `lot ${c.pc.lot}`].filter(Boolean).join(' · ') : '', by: c.pc?.by || '' });
   const PO = p.prnOrd || [], CO = c.prnOrd || [];
   for (const o of CO){ const q = PO.find(x => x.id === o.id), d = [o.med, o.dose, o.reason && `(${o.reason})`].filter(Boolean).join(' ');
-    if (!q) add('PRN indicated', { time: hhmm(o.at), detail: d, by: o.by || '' });
+    if (!q) add(o.req ? 'PRN requested' : 'PRN indicated', { time: hhmm(o.at), detail: d, by: o.req ? o.req.by || '' : o.by || '' });
+    if (o.ok && !q?.ok) add('PRN approved', { time: hhmm(o.ok.at), detail: d, by: o.ok.by || '' });
+    if (o.no && !q?.no) add('PRN declined', { time: hhmm(o.no.at), detail: [d, o.no.why].filter(Boolean).join(' · '), by: o.no.by || '' });
     if (o.ack && !q?.ack) add('PRN acknowledged', { time: o.ack.time || '', detail: d, by: o.ack.by || '' }); else if (!o.ack && q?.ack) add('PRN acknowledgement undone', { detail: d }); }
   if (PO.some(x => !CO.some(o => o.id === x.id))) add('PRN order removed');
   return E;
@@ -3582,6 +3621,9 @@ function stepsHTML(i, v, pri){
   ];
   const rk = (v?.rechk || []).map(x => ({ c: 'done', t: 'Vitals recheck', m: `<button class="linkbtn vv" data-act="prnOpen" data-k="${k}" title="Edit">${esc(rkText(x))}</button>${x.why ? ` <span>${esc(x.why)}</span>` : ''}`, w: `<button class="linkbtn tm" data-act="prnOpen" data-k="${k}" title="Edit">${fmtT(fromHHMM(x.at))}</button>` }));
   if (rk.length) L.splice(L.length - 1, 0, ...rk);
+  const pq = (v?.prnOrd || []).filter(o => o.req && !o.ok).map(o => o.no ? { c: 'done', t: `PRN declined: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.no.by || 'Provider')}${o.no.why ? ' · ' + esc(o.no.why) : ''}</span>`, w: '' }
+    : v?.out ? null : { c: 'active', t: `PRN requested: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>waiting for ${esc(o.by || 'the provider')} since ${fmtT(o.req.at)}${prnLate(o, o.req.ts) ? ` · <b class="warnText">no answer after ${prnLate(o, o.req.ts)} min, call them</b>` : ''}</span>`, w: '' }).filter(Boolean);
+  if (pq.length) L.splice(L.length - 1, 0, ...pq);
   const po = prnPend(v).map(o => ({ c: 'active', t: `PRN indicated: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.by || 'Provider')} at ${fmtT(o.at)}${o.reason ? ' · ' + esc(o.reason) : ''}</span>`, w: pri === 'prnAck' ? '' : `<button class="btn sm" data-act="prnAck" data-k="${k}" data-o="${esc(o.id)}">Acknowledge</button>` }));
   if (po.length) L.splice(L.length - 1, 0, ...po);
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
@@ -4894,7 +4936,7 @@ function bayMapModel(m, prov){
     const r = on.find(x => bayNo(x.v?.bay) === b.id);
     if (r && !mine(r)){ const u = bayUntil(r.v);
       return { ...b, row: null, res: null, busy: true, until: u, st: 'busy', title: 'Another provider', s: u == null ? 'In use' : u <= nowMin() ? 'In use · discharge due' : `In use until ~${fmtT(u)}` }; }
-    if (r){ const bs = bayState(r); return { ...b, row: r, ...bs, ...(prov ? { ts: prnPend(r.v).length ? 'PRN waiting for the PCT' : r.rank === 2 && r.v?.pc ? 'Administered, the tech signs it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) }; }
+    if (r){ const bs = bayState(r); return { ...b, row: r, ...bs, ...(prov ? { ts: prnAsk(r.v).length ? 'PRN approval needed' : prnPend(r.v).length ? 'PRN waiting for the PCT' : r.rank === 2 && r.v?.pc ? 'Administered, the tech signs it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) }; }
     const res = m.wait.filter(x => mine(x) && x.a.time != null && bayNo(x.v?.bay) === b.id).sort((x, y) => x.a.time - y.a.time)[0] || null;
     return { ...b, row: null, res, st: 'open', title: 'Open', s: res ? `${nm(res.a.mrn)} at ${fmtT(res.a.time)}` : prov ? 'Open' : 'Nobody booked' };
   });
@@ -4976,7 +5018,9 @@ function bayProvPanelHTML(b){
     : kit ? `<div class="msg ok">Administered${o != null ? ` at ${fmtT(o)}` : ''} · kit …${sn4}${pc ? ' · you confirmed it' : ''}${kit.tech ? ` · ${esc(kit.tech)}` : ''}</div>`
     : pc ? `<div class="msg ok">You confirmed the dose at ${fmtT(pc.at)} · kit …${esc(pc.sn)}. The tech finishes it in Administer.</div>`
     : `<button class="btn primary lg" data-act="pvDose" data-k="${esc(key)}">Confirm dose</button>`;
-  const ord = (v?.prnOrd || []).map(x => `<div class="pvit"><span class="pl">PRN</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}${x.ack ? `given ${x.ack.time ? fmtT(fromHHMM(x.ack.time)) : ''}${x.ack.by ? ' by ' + esc(x.ack.by) : ''}` : `ordered ${fmtT(x.at)} · waiting for the PCT${prnLate(x) ? `</span> <span class="warnText"><b>Not acknowledged after ${prnLate(x)} min. Tell the PCT directly.</b>` : ''}`}</span></span></div>`).join('');
+  const ask = x => `<div class="pvit pvask"><span class="pl">PRN?</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}asked by ${esc(x.req.by || 'the PCT')} at ${fmtT(x.req.at)}</span>${prnLate(x, x.req.ts) ? ` <span class="warnText"><b>Waiting ${prnLate(x, x.req.ts)} min.</b></span>` : ''}
+      <span class="row" style="margin-top:6px"><button class="btn primary sm" data-act="pvOk" data-k="${esc(key)}" data-o="${esc(x.id)}">Approve</button><button class="btn ghost sm" data-act="pvNo" data-k="${esc(key)}" data-o="${esc(x.id)}">Decline…</button></span></span></div>`;
+  const ord = (v?.prnOrd || []).map(x => x.req && !x.ok && !x.no ? (v?.out ? '' : ask(x)) : `<div class="pvit"><span class="pl">PRN</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}${x.no ? `declined${x.no.why ? ': ' + esc(x.no.why) : ''}` : x.ack ? `given ${x.ack.time ? fmtT(fromHHMM(x.ack.time)) : ''}${x.ack.by ? ' by ' + esc(x.ack.by) : ''}` : `ordered ${fmtT(x.at)} · waiting for the PCT${prnLate(x) ? `</span> <span class="warnText"><b>Not acknowledged after ${prnLate(x)} min. Tell the PCT directly.</b>` : ''}`}</span></span></div>`).join('');
   const prn = v?.start != null && !v?.out ? `<div class="pvits">${ord}</div><div class="row"><button class="btn ghost" data-act="pvPrn" data-k="${esc(key)}">Indicate PRN</button></div>` : ord ? `<div class="pvits">${ord}</div>` : '';
   return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div>
       <div class="meta">${[esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, v?.start != null ? `roomed ${fmtT(v.start)}` : ''].filter(Boolean).join(', ')}</div></div></div>
@@ -5040,6 +5084,19 @@ async function pvSave(){
   } else closeModal();
   await visitSet(key, { pc: { at, sn, lot: String(k.lot ?? lot).trim(), kit: k.id, by: CFG.prov, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
   render(); if (k.administered) toast('ok', `Dose confirmed for ${nm(it.a.mrn)}.`);
+}
+// The provider answers a PCT's request: ok = approved (it goes to the PCT to give and log, with the usual alert), no = declined.
+function openPvNo(key, o){
+  const x = (visitGet(key)?.prnOrd || []).find(y => y.id === o); if (!x) return; S.pv = { key, o };
+  openModal(`<h2>Decline ${esc(x.med)} ${esc(x.dose)}</h2><label class="lbl" for="pvNoWhy">Reason or instead <span class="muted">(the PCT sees this)</span></label><input id="pvNoWhy" class="fld" autocomplete="off" placeholder="e.g. recheck BP in 10 min first">
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="pvNoSave">Decline</button></div>`);
+  setTimeout(() => $('#pvNoWhy')?.focus(), 30);
+}
+async function pvAnswer(key, o, yes, why = ''){
+  const L = visitGet(key)?.prnOrd || [], i = L.findIndex(y => y.id === o); if (i < 0 || L[i].ok || L[i].no) return closeModal();
+  const ans = { by: CFG.prov || '', at: nowMin(), ts: Date.now(), ...(why ? { why } : {}) };
+  closeModal(); await visitSet(key, { prnOrd: L.map((y, j) => j === i ? { ...y, ...(yes ? { ok: ans } : { no: ans }) } : y) }); render();
+  toast('ok', yes ? `Approved. The PCT gets it to give and log.` : 'Declined. The PCT sees your note.');
 }
 // Provider indicates a PRN: eskVisit[key].prnOrd = [{ id, med, dose, reason, by, at, ts, ack }]. It is not given until the PCT
 // acknowledges it on Today, which opens the PRN entry with that row filled in; saving logs it in eskVisit[key].rescue (row.ord = id)
@@ -5139,21 +5196,22 @@ const PV_IC = {
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0"/></svg>',
   mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/></svg>' };
 const pvIconsHTML = () => `<button class="btn ico" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button>`
-  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals, vitals, rechecks, PRNs given, ready to discharge. Click to turn off.' : 'Sound off. Click to hear arrivals, vitals, rechecks, PRNs given and ready to discharge.'}">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button>`;
+  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals and vitals out of range. Click to turn off.' : 'Sound off. Click to hear arrivals and vitals out of range.'} PRN approval requests always sound.">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button>`;
 // What happened to this provider's patients since the last look: roomed, each vitals set, rechecks, PRNs given, discharged, overdue.
 // The first look (or a new provider name) only takes stock. New ones: a toast; with the bell on, the sound and, where the browser
 // allows it (the popped-out window), a pop-up with the bay and event only, no patient name.
+// Only three things notify the provider: an arrival (roomed), a reading past the vitals ranges (vitOut), and a PCT asking them to
+// approve a PRN. A request that's still waiting comes back every 2 min (PRN_REPEAT), and always sounds, bell or not.
 function pvEventMap(m, prov){
-  const out = new Map(), lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals: ready to discharge' };
+  const out = new Map(), lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals' };
   for (const r of [...m.need, ...m.chair, ...m.done]){
     if (r.lost || rowProv(r) !== prov) continue;
-    const v = r.v || {}, ev = { b: bayNo(v.bay) ? `Bay ${bayNo(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '') => out.set(r.key + '|' + id, { ...ev, what, detail });
-    if (v.start != null) add('room', 'Roomed');
-    for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w); if (x) add('v' + w, lab[w], vitTxt(x)); }
-    (v.rechk || []).forEach((x, i) => add('rk' + i, 'Vitals recheck', [rkText(x), x.why].filter(Boolean).join(' · ')));
-    for (const o of v.prnOrd || []) if (o.ack) add('pa' + o.id, `${o.med} given`, o.ack.by ? 'by ' + o.ack.by : '');
-    if (v.out) add('out', 'Discharged');
-    if (r.rank === 0) add('late', 'Vitals overdue');
+    const v = r.v || {}, ev = { b: bayNo(v.bay) ? `Bay ${bayNo(v.bay)}` : 'No bay', n: nm(r.a.mrn) }, add = (id, what, detail = '', kind = '') => out.set(r.key + '|' + id, { ...ev, what, detail, kind });
+    if (v.start != null) add('room', 'Arrived (roomed)');
+    for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w), o = vitOut(x); if (o.length) add('v' + w + '|' + o.join(), `${lab[w]} out of range`, o.join(' · '), 'vit'); }
+    (v.rechk || []).forEach((x, i) => { const o = vitOut(x); if (o.length) add('rk' + i + '|' + o.join(), 'Recheck out of range', [o.join(' · '), x.why].filter(Boolean).join(' · '), 'vit'); });
+    for (const o of prnAsk(v)){ const n = Math.max(0, Math.floor((Date.now() - (o.req.ts || Date.now())) / PRN_REPEAT));
+      add('pq' + o.id + '|' + n, n ? `Still waiting: PRN approval for ${o.med}` : `PRN approval requested: ${o.med}`, [o.dose, o.reason, o.req.by && 'from ' + o.req.by].filter(Boolean).join(' · '), 'prn'); }
   }
   return out;
 }
@@ -5163,8 +5221,8 @@ function pvEvents(){
   if (!S._pvSeen || S._pvSeenFor !== CFG.prov){ S._pvSeen = new Set(now.keys()); S._pvSeenFor = CFG.prov; return; }
   const fresh = [...now].filter(([id]) => !S._pvSeen.has(id)); if (!fresh.length) return;
   for (const [id] of fresh) S._pvSeen.add(id);
-  toast(fresh.some(([, e]) => /overdue/.test(e.what)) ? 'warn' : 'ok', fresh.slice(0, 3).map(([, e]) => `<div><b>${esc(e.n)}</b> · ${esc(e.b)}: ${esc(e.what)}${e.detail ? ' · ' + esc(e.detail) : ''}</div>`).join('') + (fresh.length > 3 ? `<div>and ${fresh.length - 3} more</div>` : ''));   // one toast (a new one replaces the last)
-  if (!CFG.pvSound) return;
+  toast(fresh.some(([, e]) => e.kind) ? 'warn' : 'ok', fresh.slice(0, 3).map(([, e]) => `<div><b>${esc(e.n)}</b> · ${esc(e.b)}: ${esc(e.what)}${e.detail ? ' · ' + esc(e.detail) : ''}</div>`).join('') + (fresh.length > 3 ? `<div>and ${fresh.length - 3} more</div>` : ''));   // one toast (a new one replaces the last)
+  if (!CFG.pvSound && !fresh.some(([, e]) => e.kind === 'prn')) return;
   playSound();
   if (notifyPerm() === 'granted') for (const [id, e] of fresh.slice(0, 3)) try { new Notification(`${e.b} · ${e.what}`, { body: e.detail || 'ESK Bays', tag: 'eskb-' + id, icon: 'assets/icon-80.png' }); } catch {}
 }
@@ -5187,7 +5245,8 @@ function pvHealthHTML(){
   return (S.unsaved ? '<div class="msg bad" role="alert"><b>Your last change hasn’t reached the workbook yet.</b> It keeps trying. If this stays, tell the PCT in person.</div>' : '')
     + (old ? `<div class="msg warn" role="alert"><b>This screen hasn’t heard from the workbook since ${new Date(last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}.</b> Vitals and PRNs may be out of date. <button class="btn sm" data-act="refresh">Refresh</button></div>` : '');
 }
-Object.assign(ACT_TODAY, { pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
+Object.assign(ACT_TODAY, { pvOk: el => pvAnswer(el.dataset.k, el.dataset.o, true), pvNo: el => openPvNo(el.dataset.k, el.dataset.o), pvNoSave: () => pvAnswer(S.pv?.key, S.pv?.o, false, String($('#pvNoWhy')?.value || '').trim()),
+  prnReq: el => openPrnReq(el.dataset.k), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
 document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
@@ -5899,11 +5958,11 @@ PAGES.settings = {
       <div class="row" style="margin-top:12px"><button class="btn primary" data-act="settings">Open settings</button></div></div>`,
   badge: () => null,
 };
-const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter' };
+const SET_CFG = { sMe: 'me', sSup: 'sup', sSig: 'sig', sTheme: 'theme', sPm: 'pm', sClinic: 'clinic', sLoc: 'locName', sEmail: 'email', sGEmail: 'genoaEmail', sCc: 'cc', sHelp: 'helpEmail', sLead: 'leadEmail', sProv: 'provEmails', sSched: 'schedDays', sGen: 'genoaDays', sV40: 'vitalsMin', sDis: 'disAfter', sSysMax: 'vitSysMax', sDiaMax: 'vitDiaMax', sHrMax: 'vitHrMax', sHrMin: 'vitHrMin', sO2Min: 'vitO2Min' };
 // The PAGES.settings stub above is the foundation's (kept byte-identical for protect.js); Object.assign below replaces it.
 // SET_CFG = field ids cfgSave reads, by CFG key. The page keeps unsaved typing in S.setDraft (id -> value or checked) so a refresh,
 // the Sohar import preview or a trip to another page can't wipe it; render() fills the fields from the draft.
-const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis']);
+const SET_NUM = new Set(['sSched', 'sGen', 'sV40', 'sDis', 'sSysMax', 'sDiaMax', 'sHrMax', 'sHrMin', 'sO2Min']);
 const SET_IDS = new Set([...Object.keys(SET_CFG), 'sMedInv', 'sSnd', 'sVitN', 'sVitS', 'sVitA', 'sFull', 'sAuto']);
 function setEditing(on){ if (on){ S.editing = true; S._setEd = true; } else if (S._setEd){ S.editing = false; S._setEd = false; } }
 function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
@@ -5985,6 +6044,15 @@ function settingsHTML(){
       <div class="set-hint wide">Final vitals are due ${sumV} min after the dose.</div>
       ${f('sSched', '“Booked through” window (days)', { num: true })}
       ${f('sGen', 'Genoa look-ahead (days)', { num: true, hint: 'Not used yet: the Genoa list runs through Friday of next week.' })}
+    </div>
+    <h2 class="set-sec">Vitals ranges</h2>
+    <div class="set-grid">
+      ${f('sSysMax', 'Systolic BP above', { num: true })}
+      ${f('sDiaMax', 'Diastolic BP above', { num: true })}
+      ${f('sHrMax', 'Pulse above', { num: true })}
+      ${f('sHrMin', 'Pulse below', { num: true })}
+      ${f('sO2Min', 'O2 below (%)', { num: true })}
+      <div class="set-hint wide">A reading past any of these alerts the provider in ESK Bays (shared: one set for everyone). Set them with the medical director.</div>
     </div>
   </section>`;
   const c = capOf(), tmplWk = Object.values(c.tmpl).reduce((s, x) => s + tmplSum(x), 0), chairWk = BLOCKS.reduce((s, b) => s + chairBlock(c, b.split('|')[1]), 0);
@@ -6198,6 +6266,7 @@ const ACT = {
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sn = $('#sSnd'); if (sn){ const o = sndParse(sn.value); if (sndFormat(o) !== sndFormat((S.shared || {}).soundLinks)){ if (Object.values(o).some(u => !/^https:\/\//i.test(u))) return toast('warn', 'Sound links should start with https://'); S.shared = { ...(S.shared || {}), soundLinks: o }; for (const k of Object.keys(soundUrl)) delete soundUrl[k]; await S.store.setDoc('eskShared', S.shared); } }
+    { const vr = Object.fromEntries(VIT_RANGE.map(k => [k, CFG[k]])); if (JSON.stringify(vr) !== JSON.stringify((S.shared || {}).vitRange || {})){ S.shared = { ...(S.shared || {}), vitRange: vr }; await S.store.setDoc('eskShared', S.shared); } }   // vitals ranges: one set for everyone
     const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; CFG.vitAhead = +($('#sVitA')?.value ?? 5); if (vn.checked && !alertsWinOk()) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
@@ -6356,11 +6425,13 @@ const PRN_REPEAT = 120000;
 setInterval(() => {
   if (S.provView || S.full || !S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue;
-    for (const o of prnPend(v)){ const n = Math.max(0, Math.floor((Date.now() - (o.ts || Date.now())) / PRN_REPEAT)), id = key + 'prn' + o.id + '|' + n;
+    for (const o of prnPend(v)){ const t0 = prnSince(o) || Date.now(), n = Math.max(0, Math.floor((Date.now() - t0) / PRN_REPEAT)), id = key + 'prn' + o.id + '|' + n;
       if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);
-      const a = S.A.find(x => x.key === key), again = n > 0 ? `Still waiting (${Math.round((Date.now() - o.ts) / 60000)} min): ` : '';
-      toast('warn', `<b>${again}PRN indicated: ${esc(o.med)} ${esc(o.dose)}</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}. Acknowledge it on Today.`);
-      if (CFG.vitNotify) alertOut({ title: `${again}PRN indicated · ${o.med}`, body: v.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: true }); else playSound(); } }
+      const a = S.A.find(x => x.key === key), again = n > 0 ? `Still waiting (${Math.round((Date.now() - t0) / 60000)} min): ` : '', what = o.req ? 'approved' : 'indicated';
+      toast('warn', `<b>${again}PRN ${what}: ${esc(o.med)} ${esc(o.dose)}</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}. Acknowledge it on Today.`);
+      if (CFG.vitNotify) alertOut({ title: `${again}PRN ${what} · ${o.med}`, body: v.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: true }); else playSound(); }
+    for (const o of (v.prnOrd || []).filter(o => o.no)){ const id = key + 'prnno' + o.id; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);   // declined: tell the PCT once
+      if (Date.now() - (o.no.ts || 0) < 3600000) toast('warn', `<b>PRN declined: ${esc(o.med)} ${esc(o.dose)}</b> by ${esc(o.no.by || 'the provider')}${o.no.why ? ': ' + esc(o.no.why) : ''}.`); } }
 }, 5000);
 function alertOut(a){
   if (alertsWinOk()) return sendAlert(a);
@@ -6420,7 +6491,7 @@ async function reload1(quiet){
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }

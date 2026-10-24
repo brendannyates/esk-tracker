@@ -5,16 +5,16 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'taskpane.html'), 'utf8').replace(/\r\n/g, '\n');
 const a = src.indexOf('// ---------- bay map:'), b = src.indexOf("document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap'");
 assert(a > 0 && b > a, 'bay map block markers');
-const pa = src.indexOf('// PRNs the provider indicated'), pb = src.indexOf('function prnStart(');   // prnPend, prnAckOrders, techDue
+const pa = src.indexOf('// Vitals ranges (Settings'), pb = src.indexOf('function prnStart(');   // vitOut, prnPend, prnAsk, prnAckOrders, techDue
 assert(pa > 0 && pb > pa, 'PRN helper markers');
 const C = { fin: new Set(), vit: {}, now: 650 }; vm.createContext(C);
 vm.runInContext(`const obsAt = v => v?.adm ?? null, v40At = v => v.adm + 40, disAt = o => o + 100, fmtT = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 const nowMin = () => now, S = {}, tdType = () => 'Follow-up', tdLead = r => '<p class="lead">lead ' + r.key + '</p>', trackHTML = () => '<div class="track"></div>', stepsHTML = () => '<ol class="steps"></ol>';
 const tdPrimary = r => ({ act: 'vit', html: '<button data-act="vit" data-k="' + r.key + '">Record</button>' });
 const vitGet = (k, w) => (vit[k] || {})[w] || (w === 'fin' ? (fin.has(k) ? { bp: '120/80', at: 700 } : null) : w === 'mid' ? (k.endsWith('m') ? { bp: '130/80', at: 650 } : null) : null);
-const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true };
+const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true, vitSysMax: 140, vitDiaMax: 90, vitHrMax: 110, vitHrMin: 50, vitO2Min: 92 };
 const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = r => [r.bp && 'BP ' + r.bp, r.hr && 'HR ' + r.hr].filter(Boolean).join(' · ');
-` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAckOrders, techDue, bayUntil });', C);
+` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAsk, prnAckOrders, techDue, bayUntil, vitOut });', C);
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const row = (key, bay, grp, rank, extra = {}) => ({ key, grp, rank, a: { mrn: key.toUpperCase(), time: 600, active: true }, i: { adminKit: {}, inf: { mg: 84 } }, v: { start: 600, adm: 605, bay }, ...extra });
 
@@ -147,6 +147,32 @@ t('in use until: final vitals from the dose, else from room time; past due says 
   assert.strictEqual(C.bayUntil({ start: 600, adm: 605 }), 705); assert.strictEqual(C.bayUntil({ start: 600 }), 700); assert.strictEqual(C.bayUntil({ start: 600, adm: 605, out: { at: 700 } }), null);
   const o = row('ob', '3', 'need', 0); o.a.rendering = 'Dr B'; C.now = 720;
   assert.strictEqual(C.bayMapModel({ act: [1], need: [o], chair: [], wait: [] }, 'Dr A').bays[2].s, 'In use · discharge due'); C.now = 650;
+});
+t('vitals ranges: BP, pulse and O2 past the limits; fine readings and blanks are not flagged', () => {
+  assert.deepStrictEqual([...C.vitOut({ bp: '132/84', hr: '78', o2: '98' })], []);
+  assert.deepStrictEqual([...C.vitOut({ bp: '152/84', hr: '78', o2: '98' })], ['BP 152/84'], 'systolic');
+  assert.deepStrictEqual([...C.vitOut({ bp: '130 / 95' })], ['BP 130/95'], 'diastolic, spaces');
+  assert.deepStrictEqual([...C.vitOut({ bp: '140/90', hr: '110', o2: '92' })], [], 'at the limit is fine');
+  assert.deepStrictEqual([...C.vitOut({ hr: '44', o2: '89' })], ['HR 44', 'O2 89%']);
+  assert.deepStrictEqual([...C.vitOut({ bp: '', hr: '', o2: '' })], []); assert.deepStrictEqual([...C.vitOut(null)], []);
+});
+t('PRN requests: wait for the provider, then go to the PCT once approved; declined never does', () => {
+  const r = { id: 'r1', med: 'Zofran', dose: '4 mg ODT', req: { by: 'Pat T', at: 620, ts: 1 }, ok: null, no: null, ack: null };
+  assert.strictEqual(C.prnAsk({ prnOrd: [r] }).length, 1); assert.strictEqual(C.prnPend({ prnOrd: [r] }).length, 0, 'not the PCT’s yet');
+  const ok = { ...r, ok: { by: 'Dr A', at: 622, ts: 2 } };
+  assert.strictEqual(C.prnAsk({ prnOrd: [ok] }).length, 0); assert.strictEqual(C.prnPend({ prnOrd: [ok] }).length, 1, 'approved: PCT gives and logs');
+  const no = { ...r, no: { by: 'Dr A', at: 622, ts: 2, why: 'recheck first' } };
+  assert.strictEqual(C.prnAsk({ prnOrd: [no] }).length, 0); assert.strictEqual(C.prnPend({ prnOrd: [no] }).length, 0);
+  assert.strictEqual(C.prnPend({ prnOrd: [{ id: 'o', med: 'Zofran', ack: null }] }).length, 1, 'provider-indicated: straight to the PCT');
+});
+t('provider panel: a PCT request shows Approve / Decline; the tag asks for approval first', () => {
+  const p = row('pq', '2', 'need', 3); p.a.rendering = 'Dr A';
+  p.v.prnOrd = [{ id: 'r1', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', by: 'Dr A', at: 620, ts: Date.now(), req: { by: 'Pat T', at: 620, ts: Date.now() }, ok: null, no: null, ack: null }];
+  assert.strictEqual(C.bayMapModel({ act: [1], need: [p], chair: [], wait: [] }, 'Dr A').bays[1].ts, 'PRN approval needed');
+  let h = C.bayProvPanelHTML({ id: '2', row: p, st: 'soon', s: '' });
+  assert(/asked by Pat T at 10:20/.test(h) && /data-act="pvOk" data-k="pq" data-o="r1">Approve/.test(h) && /data-act="pvNo"/.test(h));
+  p.v.prnOrd[0].no = { by: 'Dr A', at: 622, why: 'recheck first' }; h = C.bayProvPanelHTML({ id: '2', row: p, st: 'soon', s: '' });
+  assert(/declined: recheck first/.test(h) && !/pvOk/.test(h));
 });
 t('no visits today: no map', () => assert.strictEqual(C.bayMapHTML({ act: [], need: [], chair: [], wait: [] }), ''));
 console.log(n + ' passed');
