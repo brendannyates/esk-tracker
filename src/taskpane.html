@@ -2801,7 +2801,7 @@ function render(){
     }
     const body = provPageHTML(); S._pvSig = body; pvEvents();
     const tools = [S.mode === 'pane' && S.canFull ? '<button class="btn" data-act="full" title="Open full screen over Excel">Full screen</button><button class="btn" data-act="popOut" title="Open ESK Bays in its own browser window">Pop out</button>' : '',
-      S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', S.mode === 'demo' ? `<button class="btn" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
+      S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', S.mode === 'demo' ? `<button class="btn" data-act="demoBack" title="Back to the install page">← Back</button><button class="btn" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
     app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
       <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
@@ -2830,7 +2830,7 @@ function render(){
       ${brand}
       <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav>
       <div class="sec">
-        ${S.mode === 'demo' ? `<button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.mode === 'demo' ? `<button class="ni rt" data-act="demoBack" title="Back to the install page">← Back</button><button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="ni rt" data-act="refresh" title="Read the workbook again">Refresh</button>
         ${conn}</div>
     </aside>
@@ -6429,6 +6429,7 @@ const ACT = {
   profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
   demo: el => startDemo(!!el.dataset.prov),
   fsDemo: () => fsToggle(),
+  demoBack: () => { if (fsOn()) document.exitFullscreen?.()?.catch?.(() => {}); location.href = location.pathname; },   // back to the install page (no ?demo)
   demoReset: () => { S.store?.reset?.(); location.reload(); },
   dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
@@ -6656,7 +6657,7 @@ function setupErrorHTML(){ return `<main><div class="card"><h2>Can’t read the 
 function notInExcelHTML(){
   return `<main style="max-width:640px"><div class="card"><h2><span class="brand"><span class="dot">ESK</span></span> ESK Tracker</h2>
     <p>This page is an Excel add-in. It runs inside the Esketamine Master Tracker workbook in Excel.</p>
-    <h3>Install it (once)</h3>
+    <h3>Technicians: Install it (once)</h3>
     <ol><li>Click <b>Download manifest</b> below — it’s set up for this web address.</li>
       <li>Open the workbook in Excel on the web → <b>Home → Add-ins → More Add-ins → My Add-ins → Upload My Add-in</b>, and choose the file.</li>
       <li>An <b>ESK Tracker</b> button appears on the Home tab.</li></ol>
