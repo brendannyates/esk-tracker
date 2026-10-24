@@ -6,6 +6,7 @@
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script src="notify-settings.js"></script>
+<script src="notify.js"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -3437,7 +3438,7 @@ const fromHHMM = v => { const m = String(v || '').match(/^(\d{1,2}):(\d{2})/); r
 // a red banner says so, and the 20 s tick tries again until it sticks.
 async function saveVisit(){
   S._vlogBase = S._vlogBase || {};
-  const base0 = JSON.parse(JSON.stringify(S._vlogBase));
+  const base0 = JSON.parse(JSON.stringify(S._vlogBase)), mineVit = nfyVitalsChanged(base0, S.visit || {});   // before the merge: only what this pane entered
   let miss = [];
   for (let n = 0; n < 3; n++){
     S.visit = visitMerge(S.visit || {}, S._vlogBase, S.store.freshDoc ? await S.store.freshDoc('eskVisit') : null);
@@ -3450,8 +3451,46 @@ async function saveVisit(){
   const was = !!S.unsaved; S.unsaved = miss.length ? { keys: miss, at: Date.now() } : null;
   if (S.unsaved && !was) toast('bad', 'This change didn’t save to the workbook yet. The tracker keeps trying; don’t close the panel.');
   if (!S.unsaved && was) toast('ok', 'Saved. Everyone’s screens will show it.');
-  if (!S.unsaved) await vlogWrite();   // the log (and its baseline) waits until the change is really in the file
+  if (!S.unsaved){ await vlogWrite(); for (const x of mineVit) nfyOnSaved(x.key, x.stage, x.v); }   // the log (and its baseline) waits until the change is really in the file; Teams only once it's saved
   if (was !== !!S.unsaved && S.loaded) render();
+}
+// ---------- Teams notifications (notify.js): vitals saved here → onVitalsSaved, which applies the rules and posts through the flow ----------
+// Stage comes from which vitals were entered: initial / 40-min / final ("discharge") / a new recheck. Each reading is sent once (S._nfySent).
+function nfyVitalsChanged(base, cur){
+  const J = x => JSON.stringify(x ?? null), out = [], T = todaySerial(), st = { init: 'initial', mid: '40-min', fin: 'discharge' };
+  for (const [key, v] of Object.entries(cur)){ if (Number(key.split('|')[1]) !== T) continue; const b = base[key] || {};
+    for (const w of ['init', 'mid', 'fin']){ const x = (v.vit || {})[w]; if (x && (x.bp || x.hr || x.o2) && J(x) !== J((b.vit || {})[w])) out.push({ key, stage: st[w], v: x }); }
+    (v.rechk || []).forEach((x, i) => { if ((x.bp || x.hr || x.o2) && J(x) !== J((b.rechk || [])[i])) out.push({ key, stage: 'recheck', v: x }); }); }
+  return out;
+}
+function nfyData(key, stage, x){
+  const a = S.A.find(y => y.key === key), v = visitGet(key) || {}; if (!a) return null;
+  return { provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: lasfirOf(nm(a.mrn)), bay: bayNo(v.bay) || String(v.bay || ''), clinic: CFG.clinic || '', sentBy: CFG.me || '',
+    vitals: { bp: x.bp || '', hr: x.hr || '', spo2: x.o2 ? x.o2 + '%' : '' }, visit: { vitalsCount: 1, adminTime: null }, stage };
+}
+async function nfyOnSaved(key, stage, x){
+  if (typeof onVitalsSaved !== 'function') return;
+  const id = key + '|' + stage + '|' + JSON.stringify([x.bp, x.hr, x.o2, x.at]); S._nfySent = S._nfySent || new Set(); if (S._nfySent.has(id)) return; S._nfySent.add(id);
+  const d = nfyData(key, stage, x); if (!d || !d.provider) return;
+  if (!S.store?.live){ const e = nfyEvaluate(stage, d.vitals); if (e.send) toast(e.level === 'emergency' ? 'bad' : 'ok', `Demo: would post to ${esc(d.provider)}’s Teams chat${e.level === 'emergency' ? ' as EMERGENCY' : ''}: ${esc(d.patient)} ${esc(stage)} vitals ${esc(nfyVitals(d.vitals))}.`); return; }
+  if (S.store.remote) return S.store.relayNotify?.(d);   // full screen: the pane has Excel
+  return nfySendNow(d);
+}
+async function nfySendNow(d, button){
+  try { const r = button ? await sendToProviderChatButton(d) : await onVitalsSaved(d);
+    if (r.sent) toast(r.level === 'emergency' ? 'bad' : 'ok', `Sent to ${esc(d.provider)}’s Teams chat${r.level === 'emergency' ? ' as EMERGENCY' : ''}: ${esc(r.message || '')}`);
+    else if (button || !/within limits|are off for this office/.test(r.reason || '')) toast('warn', `Teams: ${esc(r.reason || 'not sent')}`);
+    return r; }
+  catch (e){ toast('warn', `Teams: couldn’t send (${esc(e.message || String(e))})`); return { ok: false }; }
+}
+// The visit's "Send to provider chat" button: the latest reading (last recheck, else final, 40-min, initial), sent whatever the rules say.
+async function nfyButton(key){
+  const v = visitGet(key) || {}, rk = (v.rechk || []).slice(-1)[0], w = ['fin', 'mid', 'init'].find(w => vitGet(key, w)), x = rk || (w && vitGet(key, w));
+  if (!x) return toast('warn', 'Record vitals first.');
+  const d = nfyData(key, rk ? 'recheck' : { fin: 'discharge', mid: '40-min', init: 'initial' }[w], x); if (!d?.provider) return toast('warn', 'This visit has no rendering provider.');
+  if (!S.store?.live) return toast('ok', `Demo: would post ${esc(d.patient)}’s vitals to ${esc(d.provider)}’s Teams chat.`);
+  if (S.store.remote) return S.store.relayNotify?.({ ...d, button: true });
+  return nfySendNow(d, true);
 }
 // Visits whose fields I changed (mine vs base) that the file's copy doesn't have as I saved them.
 function visitMissing(mine, base, file){
@@ -4906,7 +4945,7 @@ function tdDetail(r){
   const pri = tdPrimary(r);
   const facts = [esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, `<button class="btn inline" data-act="copyMrn" data-m="${mrn}" title="Copy the MRN">MRN ${mrn}</button>`,
     a.time != null ? `Booked ${fmtT(a.time)}` : 'No time booked', a.moved ? `moved from ${fmtT(a.origTime)} with ${esc(a.origRendering || 'no clinician')}` : ''].filter(Boolean).join(' · ');
-  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}${a.active && roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="prnOpen" data-k="${k}" title="Retake vitals (time stamped) or record a PRN such as Zofran">Recheck vitals / PRN</button>` : ''}${a.active && !v?.out && vitGet(key, 'init') && pri.act !== 'vOut' ? `<button class="btn ghost mute sm" data-act="vOut" data-k="${k}" title="Start the Tx report now; it saves as you type">Draft Tx report</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
+  const tools = `<button class="btn ghost mute sm" data-act="patient" data-m="${mrn}">Details</button>${a.active ? `<button class="btn ghost mute sm" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room, bay or discharge">Edit visit</button>` : ''}${a.active && !i.adminKit && !roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="apptCancel" data-k="${k}" title="Take this visit off today's list">Patient cancelled</button>` : ''}${a.active && roomed && !v?.out ? `<button class="btn ghost mute sm" data-act="prnOpen" data-k="${k}" title="Retake vitals (time stamped) or record a PRN such as Zofran">Recheck vitals / PRN</button>` : ''}${a.active && roomed && !v?.out && typeof onVitalsSaved === 'function' ? `<button class="btn ghost mute sm" data-act="nfySend" data-k="${k}" title="Post the latest vitals to the provider’s Teams group chat now">Send to provider chat</button>` : ''}${a.active && !v?.out && vitGet(key, 'init') && pri.act !== 'vOut' ? `<button class="btn ghost mute sm" data-act="vOut" data-k="${k}" title="Start the Tx report now; it saves as you type">Draft Tx report</button>` : ''}<button class="btn ghost mute sm" data-act="noteAdd" data-k="${k}">Add note</button>`;
   const flow = !a.active ? '' : v?.out
     ? `<details class="tfold" data-open="tl:${k}"${tdOpen('tl:' + key, false) ? ' open' : ''}><summary>Timeline</summary>${v.start != null ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}</details>`
     : `${roomed ? trackHTML(key, v) : ''}${stepsHTML(i, v, pri.act)}`;
@@ -5323,7 +5362,7 @@ function pvHealthHTML(){
     + (old ? `<div class="msg warn" role="alert"><b>This screen hasn’t heard from the workbook since ${new Date(last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}.</b> Vitals and PRNs may be out of date. <button class="btn sm" data-act="refresh">Refresh</button></div>` : '');
 }
 Object.assign(ACT_TODAY, { pvOk: el => pvAnswer(el.dataset.k, el.dataset.o, true), pvNo: el => openPvNo(el.dataset.k, el.dataset.o), pvNoSave: () => pvAnswer(S.pv?.key, S.pv?.o, false, String($('#pvNoWhy')?.value || '').trim()),
-  prnReq: el => openPrnReq(el.dataset.k), emAck: el => emAck(el.dataset.k, el.dataset.r), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
+  prnReq: el => openPrnReq(el.dataset.k), nfySend: el => nfyButton(el.dataset.k), emAck: el => emAck(el.dataset.k, el.dataset.r), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
 document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
@@ -6161,7 +6200,7 @@ const NFY_FLAGS = [['Enabled', 'Send Teams notifications', 'Master switch'], ['S
   ['UrgentEmergencies', 'Emergencies as urgent (Teams priority)'], ['EscalateEmergency', 'Also post emergencies to the escalation chat'],
   ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
 const nfyOn = v => String(v).toUpperCase() === 'TRUE' || v === true;
-const nfyChatOk = u => !u || /^https:\/\/teams\.(microsoft|live)\.com\//i.test(u) || /^19:[^@\s]+@thread\.(v2|tacv2|skype)$/i.test(u);
+const nfyChatOk = u => !u || (typeof nfyChatId === 'function' ? !!nfyChatId(u) : /19:[^@\s]+@thread\./i.test(u));   // what notify.js can post to: a group chat ID, alone or inside its link
 const nfyMailOk = e => !e || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e);
 let _nfyBoot = false;
 TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.store.remote && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
@@ -6183,7 +6222,7 @@ function nfyCardHTML(){
   const c = S.nfy.config, hook = String(c.WebhookUrl || '').trim(), D = S.nfyDraft || [];
   const flag = ([k, l, h]) => `<label class="check"><input type="checkbox" data-nfyc="${k}" ${nfyOn(c[k]) ? 'checked' : ''}><span class="l">${esc(l)}${h ? `<small>${esc(h)}</small>` : ''}</span></label>`;
   const provs = [...new Set([...provNames(tdModel()), ...S.P.map(p => canonProv(p.provider || '')).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
-  const row = (r, i) => { const bad = !nfyChatOk(r.chatLink) ? 'That isn’t a Teams chat link (https://teams.microsoft.com/…) or chat ID (19:…@thread.v2).' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
+  const row = (r, i) => { const bad = !nfyChatOk(r.chatLink) ? 'Use the group chat’s link (it contains 19:…@thread.v2) or the chat ID itself. A link to a person, not a chat, won’t work.' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
     return `<div class="nfy-row" role="group" aria-label="Provider ${i + 1}">
       <div><label class="lbl" for="nfyP${i}">Provider</label><input id="nfyP${i}" class="fld" data-nfyr="${i}|provider" list="dlNfyProv" value="${esc(r.provider)}" autocomplete="off"></div>
       <div><label class="lbl" for="nfyC${i}">Group chat link</label><input id="nfyC${i}" class="fld" data-nfyr="${i}|chatLink" value="${esc(r.chatLink)}" placeholder="https://teams.microsoft.com/l/chat/…" autocomplete="off" spellcheck="false"></div>
@@ -6201,7 +6240,9 @@ function nfyCardHTML(){
       <p class="small muted">Anyone who can open this workbook can read this URL on the Settings sheet, and anyone with the URL can post through the flow. Keep the workbook’s sharing tight.</p></div>
     <div class="set-f wide"><label class="lbl" for="nfyEsc">Escalation chat <span class="muted">(charge RN, clinic lead)</span></label><div class="row"><input id="nfyEsc" class="fld grow" value="${esc(String(c.EscalationChat || ''))}" placeholder="Group chat link or 19:…@thread.v2" autocomplete="off" spellcheck="false"><button class="btn" data-act="nfyEscSave">Save</button></div></div>
     <h4 class="set-sub">What gets sent</h4>${NFY_FLAGS.map(flag).join('')}
-    <p class="small muted">Initial vitals and emergencies always notify. Nothing is sent to Teams until the sending piece (notify.js) is added.</p></section>`;
+    <h4 class="set-sub">Test</h4><div class="row"><select id="nfyTestP" class="fld" aria-label="Provider to test">${S.nfy.routes.filter(r => r.enabled && r.chatLink).map(r => `<option>${esc(r.provider)}</option>`).join('') || '<option value="">Save a provider with a chat first</option>'}</select><button class="btn" data-act="nfyTest">Send test</button></div>
+    <p class="small muted">Posts “Test from ESK Tracker” to that chat. The add-in can’t see the flow’s answer: check the chat and the flow’s run history.</p>
+    <p class="small muted">Initial vitals always go; later vitals go when BP is over 140/90 or SpO2 under 92%; BP at or above 180/120 goes as an emergency (limits set in notify.js).</p></section>`;
 }
 async function nfyWrite(label, fn, ok){
   try { busy(label); await fn(); toast('ok', ok); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); }
@@ -6222,6 +6263,7 @@ Object.assign(ACT_SETTINGS, {
   nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', chatLink: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
   nfyDel: el => { S.nfyDraft.splice(+el.dataset.i, 1); render(); },
   nfySaveRoutes: () => nfySaveRoutes(),
+  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a group chat first.'); try { busy('Sending test…'); const r = await sendNotifyTest(p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s chat. If it doesn’t show up, check the flow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
   nfyHookSave: () => { const u = String($('#nfyHook')?.value || '').trim(); if (!/^https:\/\//i.test(u)) return toast('warn', 'Paste the full https:// URL from the flow’s trigger card.'); return nfyWrite('Saving the webhook…', () => setNotifyConfig('WebhookUrl', u), 'Webhook URL saved to the Settings sheet.'); },
   nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!nfyChatOk(u)) return toast('warn', 'That isn’t a Teams chat link or chat ID.'); return nfyWrite('Saving…', () => setNotifyConfig('EscalationChat', u), 'Escalation chat saved.'); },
 });
@@ -6849,6 +6891,7 @@ function RemoteStore(){
     async freshDoc(k){ const v = await call('freshDoc', [k]); docs[k] = v; return v; },
     watch(cb){ onChanged = cb; },
     relayAlert(a){ up({ ev: 'alert', a }); },
+    relayNotify(d){ up({ ev: 'notify', d }); },
     close(){ up({ ev: 'close' }); },
   };
 }
@@ -6866,6 +6909,7 @@ function openFull(pop){
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
     const rx = makeRx(async m => {
       if (m.ev === 'close'){ try { DLG.close(); } catch {} DLG = null; S.full = false; reload(true); return; }
+      if (m.ev === 'notify' && m.d){ const { button, ...d } = m.d; nfySendNow(d, !!button); return; }   // Teams send from the full-screen view
       if (m.ev === 'alert'){ if (alertsWinOk()) sendAlert(m.a || {}); else playSound(m.a?.sound); return; }   // an alert from the full-screen view, for the alerts window
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
