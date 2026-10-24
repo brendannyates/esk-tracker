@@ -647,6 +647,9 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bkey .bsw[data-k="ready"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
 /* provider view (?view=bays): one page, no rail; another provider's bay is a quiet hatched "In use" */
 .app.prov{display:block}
+.set-admin .adm-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)}.set-admin .adm-row>span{flex:1;min-width:0}
+.set-admin .adm-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;align-items:center;margin-top:8px}.set-admin .adm-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.set-admin .set-sub{margin:16px 0 4px;font-size:14px}.pill.test{background:var(--warn-soft);color:var(--warn)}
 .set-teams .nfy-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"p e" "c c" "on rm" "bad bad";gap:6px 12px;align-items:end;padding:12px 0;border-top:1px solid var(--line)}
 .set-teams .nfy-row>:nth-child(1){grid-area:p}.set-teams .nfy-row>:nth-child(2){grid-area:c}.set-teams .nfy-row>:nth-child(3){grid-area:e}.set-teams .nfy-row>:nth-child(4){grid-area:on;margin:0}.set-teams .nfy-row>:nth-child(5){grid-area:rm;justify-self:end}.set-teams .nfy-bad{grid-area:bad;margin:0}
 .set-teams .nfy-row .lbl{margin-top:0}.set-teams .set-sub{margin:16px 0 4px;font-size:14px}
@@ -1891,11 +1894,28 @@ function derive(){
     K.push(k);
   });
   S.ben = benMap(S.tables.benefits);
+  for (const a of testAppts()){ A.push(a); const mv = (S.visit || {})[a.key]?.mv; if (mv){ a.origTime = a.time; a.origRendering = a.rendering; if (mv.time != null) a.time = mv.time; if (mv.prov) a.rendering = canonProv(mv.prov); a.moved = true; } }
   Object.assign(S, { P, A, K, byMrn }); S._ind = null;
 }
 S.win = defaultWindow();
 const nm = mrn => S.byMrn.get(mrn)?.name || S.A.find(a => a.mrn === mrn)?.patient || mrn;
 const fifo = (a, b) => (a.received ?? 1e9) - (b.received ?? 1e9) || (a.expDate ?? 1e9) - (b.expDate ?? 1e9) || a.r - b.r;
+// ---------- test patients (Settings › Admin): only in the add-in, shared through the document settings (eskTest), never in a sheet ----------
+// eskTest = { day, pts: [{ mrn, name, provider, time, mg, start }], kits: { [visit key]: { mg, tech, sup, at, by } } }, today only.
+// They join today's list flagged a.test: no pharmacy (so no ordering list picks them up), a simulated kit, nothing written to a table.
+const testOn = () => S.test && S.test.day === todaySerial() ? S.test : null;
+function testAppts(){
+  const t = testOn(); if (!t) return [];
+  return (t.pts || []).map(p => ({ r: -1, key: `${p.mrn}|${t.day}|${p.time}`, mrn: p.mrn, patient: p.name, date: t.day, time: p.time, event: p.start ? 'Start' : 'Follow-up', dose: p.mg, status: 'Expected',
+    hold: false, marked: false, rendering: canonProv(p.provider || ''), cancelled: false, active: true, isStart: !!p.start, isEFU: !p.start, test: true }));
+}
+const testSN = a => 'TEST' + String(1000 + ((a.mrn.match(/\d+/)?.[0] || 0) % 9000)).slice(-4);
+function testKit(a){ return { id: 'T:' + a.key, test: true, serial: 'TESTSN00' + testSN(a).slice(-4), lot: 'TESTLOT' + testSN(a).slice(-4), recv: apptInfo(a).mg || 84, mrn: a.mrn, pharm: 'TEST', available: true, full: true, received: todaySerial(), expDate: todaySerial() + 60 }; }
+function testKitDone(a){ const r = testOn()?.kits?.[a.key]; if (!r) return null; return { ...testKit(a), available: false, administered: true, admin: r.mg, adminRaw: r.mg, adminDate: todaySerial(), tech: r.tech || '', sup: r.sup || '' }; }
+const testKitsToday = () => testAppts().map(a => testKitDone(a) || testKit(a));
+const kitById = id => S.K.find(x => x.id === id) || testKitsToday().find(x => x.id === id) || null;
+async function testSave(t){ S.test = t; await S.store.setDoc('eskTest', t); derive(); render(); }
+async function testKitSet(key, rec){ const t = testOn(); if (!t) return; const k = { ...(t.kits || {}) }; if (rec) k[key] = { ...(k[key] || {}), ...rec, at: nowMin(), by: CFG.me || CFG.prov || '' }; else delete k[key]; await testSave({ ...t, kits: k }); }
 function apptInfo(a){
   const p = S.byMrn.get(a.mrn); const pharm = p?.pharm || '';
   let mg = a.dose, src = 'schedule';
@@ -1920,7 +1940,7 @@ function todayModel(day){
   const used = new Set(Object.values(pull));
   const items = list.map(a => {
     const inf = apptInfo(a); const p = S.byMrn.get(a.mrn);
-    const adminKit = S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === day) || null;
+    const adminKit = a.test ? testKitDone(a) : S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === day) || null;
     const pulledKit = pull[a.key] ? S.K.find(k => k.id === pull[a.key]) || null : null;
     const fut = S.A.filter(x => x.mrn === a.mrn && x.active && x.date > day);
     const thru = scheduledThru(a.mrn);
@@ -1929,6 +1949,7 @@ function todayModel(day){
   });
   const pool = S.K.filter(k => k.available && !used.has(k.id)).sort(fifo);
   for (const it of items){
+    if (it.a.test){ if (!it.adminKit && it.a.active) it.suggest = testKit(it.a); continue; }   // test visit: its own simulated kit
     if (!it.a.active || it.adminKit || it.pulledKit || !it.inf.mg) continue;
     let i = -1;
     if (it.inf.pharm === 'BESSE'){ const bp = pool.filter(k => k.pharm === 'BESSE'); const j = pickBesse(bp, it.a.mrn, it.inf.mg, day); i = j >= 0 ? pool.indexOf(bp[j]) : -1; }
@@ -2854,7 +2875,7 @@ function globalFind(raw){
   const done = () => { S.gq = ''; const g = $('#gq'); if (g) g.value = ''; };
   const { list } = findByScan(q);
   if (list.length){ done(); S.view = 'inventory'; S.invTab = 'stock'; render(); window.scrollTo(0, 0); openKit(list[0].id); return; }
-  const mrns = new Set([...S.byMrn.keys(), ...S.A.map(a => a.mrn)].filter(Boolean));
+  const mrns = new Set([...S.byMrn.keys(), ...S.A.filter(a => !a.test).map(a => a.mrn)].filter(Boolean));
   const k = mrnKey(q), lq = q.toLowerCase();
   const m = mrns.has(k) ? k : [...mrns].find(x => String(nm(x) || '').trim().toLowerCase() === lq);
   if (m){ done(); ACT.patient({ dataset: { m } }); return; }
@@ -3120,9 +3141,9 @@ async function setCancelled(key, on){
   if (on) c[key] = { date: a.date, at: isoOf(T), orig }; else delete c[key];
   S.cancel = c; await S.store.setDoc('eskCancel', c); derive(); render();
   // Also write it on the Appt List tab (Status column), so the sheet matches until the next NextGen upload replaces the list.
-  const ta = S.tables.appts, cur = ta ? String(ta.get(a.r, 'status') ?? '') : '';
+  const ta = S.tables.appts, cur = ta && !a.test ? String(ta.get(a.r, 'status') ?? '') : '';
   const val = on ? 'Cancelled' : /cancel/i.test(cur) ? (orig || 'Expected') : null;
-  if (ta && val != null && val !== cur){ const { out } = changesFor('appts', { status: val }); if (out.length) await write(null, () => S.store.updateMany('appts', [{ r: a.r, snap: ta.snap(a.r), changes: out }])); }
+  if (ta && !a.test && val != null && val !== cur){ const { out } = changesFor('appts', { status: val }); if (out.length) await write(null, () => S.store.updateMany('appts', [{ r: a.r, snap: ta.snap(a.r), changes: out }])); }
   toast(on ? 'warn' : 'ok', on ? `${esc(nm(a.mrn))} ${fmtT(a.time)} marked cancelled. Cancel it in NextGen too. Undo is under “Cancelled” below the list.` : 'Appointment restored.');
 }
 function cancelledHTML(items){
@@ -3337,8 +3358,21 @@ function emReadings(key, v){
 // PRNs the provider indicated in ESK Bays (eskVisit[key].prnOrd) that no PCT has acknowledged yet.
 // A PCT can also ask for one (o.req { by, at, ts }): it waits for the provider (prnAsk) until they approve (o.ok) or decline (o.no);
 // only then is it the PCT's to give and log. Same record either way: { id, med, dose, reason, by (provider), at, ts, req?, ok?, no?, ack }.
-const prnPend = v => v?.out ? [] : (v?.prnOrd || []).filter(o => !o.ack && !o.no && (!o.req || o.ok));
-const prnAsk = v => v?.out ? [] : (v?.prnOrd || []).filter(o => o.req && !o.ok && !o.no);
+const prnPend = v => v?.out ? [] : (v?.prnOrd || []).filter(o => !o.ack && !o.no && !o.cx && (!o.req || o.ok));
+const prnAsk = v => v?.out ? [] : (v?.prnOrd || []).filter(o => o.req && !o.ok && !o.no && !o.cx);
+// Clearing a PRN notification. Dismiss = this screen stops alerting and repeating for it (localStorage eskPrnDismiss, by order and step);
+// the order stays as it is. Admin › Clear alerts › everyone sets eskShared.prnClearAt: anything older stops alerting on every screen.
+// Cancel = the order or request is withdrawn for everyone (o.cx { by, role, ts }), shown as cancelled, logged.
+const prnStep = o => o.cx ? 'cx' : o.no ? 'no' : o.ack ? 'ack' : o.ok ? 'ok' : o.req ? 'req' : 'ord';
+const prnDisKey = o => o.id + '|' + prnStep(o);
+function prnDisSet(){ if (!S._prnDis){ try { const o = JSON.parse(localStorage.getItem('eskPrnDismiss') || '{}'); S._prnDis = o.day === todaySerial() ? new Set(o.ids || []) : new Set(); } catch { S._prnDis = new Set(); } } return S._prnDis; }
+const prnDismissed = o => prnDisSet().has(prnDisKey(o)) || ((S.shared || {}).prnClearAt || 0) > (o.ok?.ts || o.req?.ts || o.ts || 0);
+function prnDismiss(list){ const d = prnDisSet(); for (const o of list) d.add(prnDisKey(o)); try { localStorage.setItem('eskPrnDismiss', JSON.stringify({ day: todaySerial(), ids: [...d] })); } catch {} }
+async function prnCancel(key, id){
+  const L = visitGet(key)?.prnOrd || [], i = L.findIndex(o => o.id === id); if (i < 0 || L[i].cx || L[i].ack) return;
+  const cx = { by: (S.provView ? CFG.prov : CFG.me) || '', role: S.provView ? 'prov' : 'pct', ts: Date.now(), at: nowMin() };
+  await visitSet(key, { prnOrd: L.map((o, j) => j === i ? { ...o, cx } : o) }); render(); toast('ok', `${esc(L[i].med)} ${L[i].req ? 'request' : 'order'} cancelled. The other side sees it.`);
+}
 const prnSince = o => o.ok?.ts || o.ts;   // when it became the PCT's to give
 // Failsafe: minutes an order has waited on the PCT (or a request on the provider), once that's 5 min or more (else 0).
 // The waiting side is re-alerted every 2 min (PRN_REPEAT).
@@ -3465,7 +3499,7 @@ function nfyVitalsChanged(base, cur){
 }
 function nfyData(key, stage, x){
   const a = S.A.find(y => y.key === key), v = visitGet(key) || {}; if (!a) return null;
-  return { provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: lasfirOf(nm(a.mrn)), bay: bayNo(v.bay) || String(v.bay || ''), clinic: CFG.clinic || '', sentBy: CFG.me || '',
+  return { provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: a.test ? 'TEST-' + a.mrn : lasfirOf(nm(a.mrn)), bay: bayNo(v.bay) || String(v.bay || ''), clinic: CFG.clinic || '', sentBy: CFG.me || '',
     vitals: { bp: x.bp || '', hr: x.hr || '', spo2: x.o2 ? x.o2 + '%' : '' }, visit: { vitalsCount: 1, adminTime: null }, stage };
 }
 async function nfyOnSaved(key, stage, x){
@@ -3555,6 +3589,7 @@ function vlogEvents(p, c){
   for (const o of CO){ const q = PO.find(x => x.id === o.id), d = [o.med, o.dose, o.reason && `(${o.reason})`].filter(Boolean).join(' ');
     if (!q) add(o.req ? 'PRN requested' : 'PRN indicated', { time: hhmm(o.at), detail: d, by: o.req ? o.req.by || '' : o.by || '' });
     if (o.ok && !q?.ok) add('PRN approved', { time: hhmm(o.ok.at), detail: d, by: o.ok.by || '' });
+    if (o.cx && !q?.cx) add(o.req ? 'PRN request cancelled' : 'PRN cancelled', { time: hhmm(o.cx.at), detail: d, by: o.cx.by || '' });
     if (o.no && !q?.no) add('PRN declined', { time: hhmm(o.no.at), detail: [d, o.no.why].filter(Boolean).join(' · '), by: o.no.by || '' });
     if (o.ack && !q?.ack) add('PRN acknowledged', { time: o.ack.time || '', detail: d, by: o.ack.by || '' }); else if (!o.ack && q?.ack) add('PRN acknowledgement undone', { detail: d }); }
   if (PO.some(x => !CO.some(o => o.id === x.id))) add('PRN order removed');
@@ -3698,11 +3733,13 @@ function stepsHTML(i, v, pri){
   ];
   const rk = (v?.rechk || []).map(x => ({ c: 'done', t: 'Vitals recheck', m: `<button class="linkbtn vv" data-act="prnOpen" data-k="${k}" title="Edit">${esc(rkText(x))}</button>${x.why ? ` <span>${esc(x.why)}</span>` : ''}`, w: `<button class="linkbtn tm" data-act="prnOpen" data-k="${k}" title="Edit">${fmtT(fromHHMM(x.at))}</button>` }));
   if (rk.length) L.splice(L.length - 1, 0, ...rk);
-  const pq = (v?.prnOrd || []).filter(o => o.req && !o.ok).map(o => o.no ? { c: 'done', t: `PRN declined: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.no.by || 'Provider')}${o.no.why ? ' · ' + esc(o.no.why) : ''}</span>`, w: '' }
-    : v?.out ? null : { c: 'active', t: `PRN requested: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>waiting for ${esc(o.by || 'the provider')} since ${fmtT(o.req.at)}${prnLate(o, o.req.ts) ? ` · <b class="warnText">no answer after ${prnLate(o, o.req.ts)} min, call them</b>` : ''}</span>`, w: '' }).filter(Boolean);
+  const pq = (v?.prnOrd || []).filter(o => o.req && !o.ok).map(o => o.cx ? { c: 'done', t: `PRN request cancelled: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.cx.by || '')}</span>`, w: '' } : o.no ? { c: 'done', t: `PRN declined: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.no.by || 'Provider')}${o.no.why ? ' · ' + esc(o.no.why) : ''}</span>`, w: '' }
+    : v?.out ? null : { c: 'active', t: `PRN requested: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>waiting for ${esc(o.by || 'the provider')} since ${fmtT(o.req.at)}${prnLate(o, o.req.ts) ? ` · <b class="warnText">no answer after ${prnLate(o, o.req.ts)} min, call them</b>` : ''}</span>`, w: `<button class="linkbtn" data-act="prnCancel" data-k="${k}" data-o="${esc(o.id)}">Cancel request</button>` }).filter(Boolean);
   if (pq.length) L.splice(L.length - 1, 0, ...pq);
-  const po = prnPend(v).map(o => ({ c: 'active', t: `PRN indicated: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.by || 'Provider')} at ${fmtT(o.at)}${o.reason ? ' · ' + esc(o.reason) : ''}</span>`, w: pri === 'prnAck' ? '' : `<button class="btn sm" data-act="prnAck" data-k="${k}" data-o="${esc(o.id)}">Acknowledge</button>` }));
+  const po = prnPend(v).map(o => ({ c: 'active', t: `PRN indicated: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>${esc(o.by || 'Provider')} at ${fmtT(o.at)}${o.reason ? ' · ' + esc(o.reason) : ''}</span>`, w: `${pri === 'prnAck' ? '' : `<button class="btn sm" data-act="prnAck" data-k="${k}" data-o="${esc(o.id)}">Acknowledge</button>`}${prnDismissed(o) ? ' <span class="muted small">alert dismissed</span>' : ` <button class="linkbtn" data-act="prnDis" data-k="${k}" data-o="${esc(o.id)}" title="Stop the alert and repeats on this screen; the PRN stays to give">Dismiss alert</button>`}` }));
   if (po.length) L.splice(L.length - 1, 0, ...po);
+  const pcx = (v?.prnOrd || []).filter(o => !o.req && o.cx).map(o => ({ c: 'done', t: `PRN cancelled: ${esc(o.med)} ${esc(o.dose)}`, m: `<span>by ${esc(o.cx.by || 'the provider')}</span>`, w: '' }));
+  if (pcx.length) L.splice(L.length - 1, 0, ...pcx);
   return `<ol class="steps">${L.map((s, n) => `<li class="step ${s.c}"><span class="n">${s.c === 'done' ? '✓' : n + 1}</span><span><span class="t">${s.t}</span>${s.m ? `<span class="m">${s.m}</span>` : ''}</span><span class="w">${s.w}</span></li>`).join('')}</ol>`;
 }
 // Bottom of the appointment card. Today: timeline + steps; once discharged only the discharge time shows (timeline folds away).
@@ -4044,15 +4081,16 @@ function openAdmin(key){
     S.adm = { key, kitId: k.id, fin: true, mg: k.admin || it.inf.mg || k.recv || 84, tech: CFG.me, sup: k.sup || CFG.sup, at: hhmm(pc ? pc.at : o ?? nowMin()), msg: null };
     return renderAdmin();
   }
-  const pk = pc && S.K.find(k => k.id === pc.kit && !k.administered);   // the provider's confirmed kit and time come first
+  const pk = pc && [...S.K, ...testKitsToday()].find(k => k.id === pc.kit && !k.administered);   // the provider's confirmed kit and time come first
   const kit = pk || it.pulledKit || it.suggest || null;
   S.adm = { key, kitId: kit?.id || null, mg: it.inf.mg || kit?.recv || 84, tech: CFG.me, sup: CFG.sup, at: hhmm(pc ? pc.at : nowMin()), msg: null };
   renderAdmin();
 }
 function renderAdmin(){
   const it = todayModel(S.day).find(i => i.a.key === S.adm.key); if (!it){ closeModal(); return; }
-  const k = S.K.find(x => x.id === S.adm.kitId) || null; const probs = [], warns = [];
-  if (!k) probs.push('Scan or choose the kit being used.');
+  const k = kitById(S.adm.kitId); const probs = [], warns = [];
+  if (!k) probs.push(it.a.test ? 'Test patient: use the test kit shown.' : 'Scan or choose the kit being used.');
+  if (k && it.a.test && !k.test) probs.push('Test patient: a real kit can’t be used. Nothing is written to the Inventory for test visits.');
   else {
     if (k.administered && !(S.adm.fin && k.id === it.adminKit?.id)) probs.push(`Serial ${esc(k.serial)} is already administered.`);
     if (k.disposed) probs.push('This kit is marked for disposal.');
@@ -4070,7 +4108,7 @@ function renderAdmin(){
   if (k && !k.mrn) obj.mrn = mrnVal(it.a.mrn);
   if (k && !k.comments) obj.comments = nm(it.a.mrn);
   const { out } = changesFor('kits', obj);
-  const cands = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn)))).sort((a, b) => ((b.mrn === it.a.mrn) - (a.mrn === it.a.mrn)) || fifo(a, b)).slice(0, 4);
+  const cands = it.a.test ? [] : S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn)))).sort((a, b) => ((b.mrn === it.a.mrn) - (a.mrn === it.a.mrn)) || fifo(a, b)).slice(0, 4);
   const fin = S.adm.fin && k?.id === it.adminKit?.id;
   openModal(`<h2>${fin ? 'Finish administration' : 'Administer'} — ${esc(nm(it.a.mrn))}</h2><div class="muted small">MRN ${esc(it.a.mrn)} · ${fmtD(S.day, 'dow')} ${fmtT(it.a.time)} · ${it.a.isStart ? 'Start' : 'EFU'} · ${PH_LABEL[it.inf.pharm]}</div>
     ${pc ? `<div class="msg ok">${esc(pc.by || 'Provider')} confirmed kit …${esc(pc.sn)}${pc.lot ? ` · lot ${esc(pc.lot)}` : ''}, given at ${fmtT(pc.at)}.${fin ? ' Add your name as treating technician to finish it.' : ''}</div>` : ''}
@@ -4087,12 +4125,13 @@ function renderAdmin(){
     </div>
     ${datalist('dlTech', distinct('kits', 'treatingtechnician'))}${datalist('dlSup', distinct('kits', 'supervisingphysician'))}
     ${probs.map(p => `<div class="msg bad">${p}</div>`).join('')}${warns.map(p => `<div class="msg warn">${p}</div>`).join('')}${msgHTML(S.adm.msg)}
-    ${k ? `<div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>` : ''}
+    ${k?.test ? '<div class="writes"><b>Test patient:</b> nothing is written to the workbook.</div>' : k ? `<div class="writes"><b>Will write to Inventory row ${k.r + 3}:</b>${describe('kits', out)}</div>` : ''}
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="admSave" ${probs.length ? 'disabled' : ''}>${fin ? 'Finish administration' : 'Record administration'}</button></div>`);
   if (!k) setTimeout(() => $('#admScan')?.focus(), 30);
 }
 async function adminSave(){
-  const it = todayModel(S.day).find(i => i.a.key === S.adm.key); const k = S.K.find(x => x.id === S.adm.kitId); if (!it || !k) return;
+  const it = todayModel(S.day).find(i => i.a.key === S.adm.key); const k = kitById(S.adm.kitId); if (!it || !k) return;
+  if (k.test){ const { mg, tech, sup } = S.adm, at = fromHHMM(S.adm.at); await testKitSet(it.a.key, { mg: +mg, tech, sup }); if (at != null) await visitSet(it.a.key, { adm: at }); closeModal(); render(); return toast('ok', `Test: recorded ${mg} mg (nothing written to the workbook).`); }
   const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup, ...prnTotals(visitGet(it.a.key)?.rescue) };
   if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
   CFG.sup = S.adm.sup; if (!CFG.me) CFG.me = S.adm.tech; saveCfg();
@@ -4818,7 +4857,7 @@ const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'PRN: ' + v.rescue.
 function tdRow(i, now, on){
   const a = i.a, key = a.key, v = visitGet(key);
   const r = { i, a, v, key, grp: 'wait', rank: 9, at: a.time ?? 0, tone: '', line: '' };
-  r.tags = [i.noKit && !i.adminKit && a.active ? tag('bad', 'No kit') : '', i.needsMadrs && a.active ? tag('bad', 'MADRS') : '', a.isStart ? tag('info', 'Start') : ''].filter(Boolean).slice(0, 2);
+  r.tags = [a.test ? tag('warn', 'TEST') : '', i.noKit && !i.adminKit && a.active ? tag('bad', 'No kit') : '', i.needsMadrs && a.active ? tag('bad', 'MADRS') : '', a.isStart ? tag('info', 'Start') : ''].filter(Boolean).slice(0, 2);
   if (!a.active){ r.grp = 'off'; r.line = esc(a.hold ? 'Hold' : a.status || 'Not active'); return r; }
   if (v?.out){ r.grp = 'done'; r.at = v.out.at; r.line = `Discharged ${fmtT(v.out.at)}`; return r; }
   if (v?.start == null){ r.line = a.time == null ? 'No appointment time' : i.adminKit ? `Given, no room time · booked ${fmtT(a.time)}` : tdLive({ what: 'Expected', at: a.time, kind: 'arr' }); return r; }
@@ -5096,8 +5135,8 @@ function bayProvPanelHTML(b){
     : pc ? `<div class="msg ok">You confirmed the dose at ${fmtT(pc.at)} · kit …${esc(pc.sn)}. The tech finishes it in Administer.</div>`
     : `<button class="btn primary lg" data-act="pvDose" data-k="${esc(key)}">Confirm dose</button>`;
   const ask = x => `<div class="pvit pvask"><span class="pl">PRN?</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}asked by ${esc(x.req.by || 'the PCT')} at ${fmtT(x.req.at)}</span>${prnLate(x, x.req.ts) ? ` <span class="warnText"><b>Waiting ${prnLate(x, x.req.ts)} min.</b></span>` : ''}
-      <span class="row" style="margin-top:6px"><button class="btn primary sm" data-act="pvOk" data-k="${esc(key)}" data-o="${esc(x.id)}">Approve</button><button class="btn ghost sm" data-act="pvNo" data-k="${esc(key)}" data-o="${esc(x.id)}">Decline…</button></span></span></div>`;
-  const ord = (v?.prnOrd || []).map(x => x.req && !x.ok && !x.no ? (v?.out ? '' : ask(x)) : `<div class="pvit"><span class="pl">PRN</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}${x.no ? `declined${x.no.why ? ': ' + esc(x.no.why) : ''}` : x.ack ? `given ${x.ack.time ? fmtT(fromHHMM(x.ack.time)) : ''}${x.ack.by ? ' by ' + esc(x.ack.by) : ''}` : `ordered ${fmtT(x.at)} · waiting for the PCT${prnLate(x) ? `</span> <span class="warnText"><b>Not acknowledged after ${prnLate(x)} min. Tell the PCT directly.</b>` : ''}`}</span></span></div>`).join('');
+      <span class="row" style="margin-top:6px"><button class="btn primary sm" data-act="pvOk" data-k="${esc(key)}" data-o="${esc(x.id)}">Approve</button><button class="btn ghost sm" data-act="pvNo" data-k="${esc(key)}" data-o="${esc(x.id)}">Decline…</button>${prnDismissed(x) ? '<span class="muted small">alert dismissed</span>' : `<button class="linkbtn" data-act="prnDis" data-k="${esc(key)}" data-o="${esc(x.id)}" title="Stop the alert and repeats on this screen; the request stays to answer">Dismiss alert</button>`}</span></span></div>`;
+  const ord = (v?.prnOrd || []).map(x => x.req && !x.ok && !x.no && !x.cx ? (v?.out ? '' : ask(x)) : `<div class="pvit"><span class="pl">PRN</span><span><b>${esc([x.med, x.dose].filter(Boolean).join(' '))}</b> <span class="muted">${x.reason ? esc(x.reason) + ' · ' : ''}${x.cx ? `cancelled by ${esc(x.cx.by || '')}` : x.no ? `declined${x.no.why ? ': ' + esc(x.no.why) : ''}` : x.ack ? `given ${x.ack.time ? fmtT(fromHHMM(x.ack.time)) : ''}${x.ack.by ? ' by ' + esc(x.ack.by) : ''}` : `ordered ${fmtT(x.at)} · waiting for the PCT </span><button class="linkbtn" data-act="prnCancel" data-k="${esc(key)}" data-o="${esc(x.id)}">Cancel</button><span>${prnLate(x) ? `</span> <span class="warnText"><b>Not acknowledged after ${prnLate(x)} min. Tell the PCT directly.</b>` : ''}`}</span></span></div>`).join('');
   const prn = v?.start != null && !v?.out ? `<div class="pvits">${ord}</div><div class="row"><button class="btn ghost" data-act="pvPrn" data-k="${esc(key)}">Indicate PRN</button></div>` : ord ? `<div class="pvits">${ord}</div>` : '';
   return `<aside class="bpanel" aria-label="${B}"><div class="bph"><div><div class="name">${esc(nm(a.mrn))}<span class="bayno">${B}</span></div>
       <div class="meta">${[esc(tdType(a)), `${i.inf.mg ?? '?'} mg`, v?.start != null ? `roomed ${fmtT(v.start)}` : ''].filter(Boolean).join(', ')}</div></div></div>
@@ -5117,6 +5156,7 @@ function bayNextHTML(m, prov){
 // and saves eskVisit[key].pc { at, sn, lot, kit, by, ts } plus the dose time when none is set (vitals timers start there).
 // The tech finishes it in Administer, which writes their name into the row.
 function pvKits(it){
+  if (it.a.test) return [it.adminKit || it.suggest].filter(Boolean);   // test patient: its simulated kit only
   const L = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn))));
   return [...new Set([it.pulledKit, it.suggest, ...L].filter(Boolean))];
 }
@@ -5151,7 +5191,8 @@ async function pvSave(){
   const err = r.err || (at == null ? 'Enter the time the dose was given.' : '');
   if (err){ $('#pvMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
   const k = r.k;
-  if (!k.administered){   // Inventory row: administered, no Treating Technician yet (Administer → Finish administration adds it)
+  if (k.test){ closeModal(); await testKitSet(key, { mg: +(it.inf.mg || k.recv), tech: '', sup: CFG.prov }); }   // test patient: simulated, no Inventory
+  else if (!k.administered){   // Inventory row: administered, no Treating Technician yet (Administer → Finish administration adds it)
     const obj = { administeredmg: +(it.inf.mg || k.recv), dateadministered: { date: todaySerial() }, supervisingphysician: CFG.prov, ...prnTotals(visitGet(key)?.rescue) };
     if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
     const { out } = changesFor('kits', obj);
@@ -5287,7 +5328,8 @@ function pvEventMap(m, prov){
     if (v.start != null) add('room', 'Arrived (roomed)');
     for (const w of ['init', 'mid', 'fin']){ const x = vitGet(r.key, w), o = vitOut(x); if (o.length && !vitEm(x)) add('v' + w + '|' + o.join(), `${lab[w]} out of range`, o.join(' · '), 'vit'); }
     (v.rechk || []).forEach((x, i) => { const o = vitOut(x); if (o.length && !vitEm(x)) add('rk' + i + '|' + o.join(), 'Recheck out of range', [o.join(' · '), x.why].filter(Boolean).join(' · '), 'vit'); });
-    for (const o of prnAsk(v)){ const n = Math.max(0, Math.floor((Date.now() - (o.req.ts || Date.now())) / PRN_REPEAT));
+    for (const o of (v.prnOrd || []).filter(o => o.req && o.cx?.role === 'pct')) add('pc' + o.id, `PRN request cancelled: ${o.med}`, o.cx.by ? 'by ' + o.cx.by : '');
+    for (const o of prnAsk(v)){ if (prnDismissed(o)) continue; const n = Math.max(0, Math.floor((Date.now() - (o.req.ts || Date.now())) / PRN_REPEAT));
       add('pq' + o.id + '|' + n, n ? `Still waiting: PRN approval for ${o.med}` : `PRN approval requested: ${o.med}`, [o.dose, o.reason, o.req.by && 'from ' + o.req.by].filter(Boolean).join(' · '), 'prn'); }
   }
   return out;
@@ -5330,7 +5372,7 @@ function emActive(){
     const a = S.A.find(x => x.key === key); if (!a) continue;
     if (S.provView && canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || '') !== CFG.prov) continue;
     for (const e of emReadings(key, v)){ const acks = (v.em || {})[e.rid] || [];
-      out.push({ ...e, key, a, v, acks, open: S.provView ? !acks.some(x => x.role === 'prov') : !acks.length }); }
+      out.push({ ...e, key, a, v, acks, open: !(S._emMute || new Set()).has(key + '|' + e.rid) && (S.provView ? !acks.some(x => x.role === 'prov') : !acks.length) }); }
   }
   return out;
 }
@@ -5362,7 +5404,7 @@ function pvHealthHTML(){
     + (old ? `<div class="msg warn" role="alert"><b>This screen hasn’t heard from the workbook since ${new Date(last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}.</b> Vitals and PRNs may be out of date. <button class="btn sm" data-act="refresh">Refresh</button></div>` : '');
 }
 Object.assign(ACT_TODAY, { pvOk: el => pvAnswer(el.dataset.k, el.dataset.o, true), pvNo: el => openPvNo(el.dataset.k, el.dataset.o), pvNoSave: () => pvAnswer(S.pv?.key, S.pv?.o, false, String($('#pvNoWhy')?.value || '').trim()),
-  prnReq: el => openPrnReq(el.dataset.k), nfySend: el => nfyButton(el.dataset.k), emAck: el => emAck(el.dataset.k, el.dataset.r), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
+  prnReq: el => openPrnReq(el.dataset.k), prnCancel: el => prnCancel(el.dataset.k, el.dataset.o), prnDis: el => { const o = (visitGet(el.dataset.k)?.prnOrd || []).find(x => x.id === el.dataset.o); if (o){ prnDismiss([o]); render(); toast('ok', 'Alert dismissed on this screen. The PRN is still there.'); } }, nfySend: el => nfyButton(el.dataset.k), emAck: el => emAck(el.dataset.k, el.dataset.r), prnReqSave: () => prnReqSave(), pvDose: el => openPvDose(el.dataset.k), pvSave: () => pvSave(), pvPrn: el => openPvPrn(el.dataset.k), pvPrnSave: () => pvPrnSave(), prnAck: el => openPrn(el.dataset.k, el.dataset.o) });
 document.addEventListener('change', e => { if (e.target.id === 'provSel'){ CFG.prov = e.target.value; S.bSel = null; saveCfg(); render(); } });
 // ===== /page: today =====
 
@@ -6189,7 +6231,7 @@ function settingsHTML(){
   const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
   if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
   return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
-  ${pageCols('two', you + imports + wb, clinic + shared + nfyCardHTML())}${lists}
+  ${pageCols('two', you + imports + wb + adminCardHTML(), clinic + shared + nfyCardHTML())}${lists}
   <div class="set-save${dirty ? ' dirty' : ''}"><span id="setState" class="small" role="status">${dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="grow"></span><button class="btn ghost mute" id="setDiscard" data-act="setDiscard" ${dirty ? '' : 'hidden'}>Discard</button><button class="btn primary" data-act="cfgSave">Save settings</button></div>`;
 }
 // ---------- Settings › Teams notifications: the Settings sheet (notify-settings.js) ----------
@@ -6198,15 +6240,24 @@ function settingsHTML(){
 // being edited ([{ provider, chatLink, email, enabled, was }], was = the name it had on the sheet, '' for a new row).
 const NFY_FLAGS = [['Enabled', 'Send Teams notifications', 'Master switch'], ['SendGroupChat', 'Post to the provider’s group chat'],
   ['UrgentEmergencies', 'Emergencies as urgent (Teams priority)'], ['EscalateEmergency', 'Also post emergencies to the escalation chat'],
-  ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
+  ['NotifyInitial', 'Initial vitals'], ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
 const nfyOn = v => String(v).toUpperCase() === 'TRUE' || v === true;
+const NFY_DEF = { Enabled: true, SendGroupChat: true, UrgentEmergencies: true, EscalateEmergency: false, NotifyInitial: true, NotifyRecheck: true, Notify40Min: true, NotifyDischarge: true, InAppAlerts: true, AlertSound: true };
+const nfyFlag = (c, k) => c[k] == null || String(c[k]).trim() === '' ? !!NFY_DEF[k] : nfyOn(c[k]);   // a key an older sheet doesn't have yet shows its default
 const nfyChatOk = u => !u || (typeof nfyChatId === 'function' ? !!nfyChatId(u) : /19:[^@\s]+@thread\./i.test(u));   // what notify.js can post to: a group chat ID, alone or inside its link
 const nfyMailOk = e => !e || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e);
 let _nfyBoot = false;
-TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.store.remote && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
+TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
+// The Settings-sheet functions (notify-settings.js / notify.js) need Excel: the pane runs them directly, the full-screen view asks the pane.
+const NFY_FNS = ['notifySettingsStatus', 'readNotifySettings', 'ensureNotifySettings', 'setNotifyConfig', 'upsertNotifyRoute', 'removeNotifyRoute', 'sendNotifyTest'];
+function nfyCall(fn, ...args){
+  if (!NFY_FNS.includes(fn)) return Promise.reject(new Error('Unknown Settings-sheet call'));
+  if (S.store?.remote) return S.store.nfy(fn, args);
+  const f = window[fn]; return typeof f === 'function' ? f(...args) : Promise.reject(new Error('The Teams scripts didn’t load. Close and reopen the panel.'));
+}
 async function nfyLoad(){
-  if (!S.store?.live || S.store.remote || typeof readNotifySettings !== 'function') return;
-  try { const [st, d] = await Promise.all([notifySettingsStatus(), readNotifySettings()]);
+  if (!S.store?.live || (!S.store.remote && typeof readNotifySettings !== 'function')) return;
+  try { const [st, d] = await Promise.all([nfyCall('notifySettingsStatus'), nfyCall('readNotifySettings')]);
     S.nfy = { ...d, missing: st.filter(x => !x.present).map(x => x.table) }; S.nfyDraft = d.routes.map(r => ({ ...r, was: r.provider })); S.nfyErr = ''; }
   catch (e){ S.nfyErr = e.message || String(e); }
   if (S.view === 'settings') render();
@@ -6214,13 +6265,12 @@ async function nfyLoad(){
 function nfyCardHTML(){
   const head = '<section class="card set-teams"><h3>Teams notifications</h3><p class="small muted set-intro">Saved on the workbook’s Settings sheet, for everyone.</p>';
   if (!S.store?.live) return head + '<p class="small muted">Not in the demo.</p></section>';
-  if (S.store.remote) return head + '<p class="small muted">Change these from the Excel panel (close full screen first).</p></section>';
   if (S.nfyErr) return head + `<div class="msg bad">Couldn’t read the Settings sheet: ${esc(S.nfyErr)}</div><button class="btn" data-act="nfyReload">Try again</button></section>`;
   if (!S.nfy){ if (!S._nfyAsked){ S._nfyAsked = true; nfyLoad(); } return head + '<p class="small muted">Reading the Settings sheet…</p></section>'; }
   if (S.nfy.missing.length) return head + `<p class="small">${S.nfy.missing.length === 4 ? 'Not set up in this workbook yet.' : `Missing: ${esc(S.nfy.missing.join(', '))}.`} This adds a <b>Settings</b> sheet with the notification tables. Nothing already in the workbook is changed.</p>
     <button class="btn primary" data-act="nfySetup">Set up Teams notifications</button></section>`;
   const c = S.nfy.config, hook = String(c.WebhookUrl || '').trim(), D = S.nfyDraft || [];
-  const flag = ([k, l, h]) => `<label class="check"><input type="checkbox" data-nfyc="${k}" ${nfyOn(c[k]) ? 'checked' : ''}><span class="l">${esc(l)}${h ? `<small>${esc(h)}</small>` : ''}</span></label>`;
+  const flag = ([k, l, h]) => `<label class="check"><input type="checkbox" data-nfyc="${k}" ${nfyFlag(c, k) ? 'checked' : ''}><span class="l">${esc(l)}${h ? `<small>${esc(h)}</small>` : ''}</span></label>`;
   const provs = [...new Set([...provNames(tdModel()), ...S.P.map(p => canonProv(p.provider || '')).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
   const row = (r, i) => { const bad = !nfyChatOk(r.chatLink) ? 'Use the group chat’s link (it contains 19:…@thread.v2) or the chat ID itself. A link to a person, not a chat, won’t work.' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
     return `<div class="nfy-row" role="group" aria-label="Provider ${i + 1}">
@@ -6242,7 +6292,7 @@ function nfyCardHTML(){
     <h4 class="set-sub">What gets sent</h4>${NFY_FLAGS.map(flag).join('')}
     <h4 class="set-sub">Test</h4><div class="row"><select id="nfyTestP" class="fld" aria-label="Provider to test">${S.nfy.routes.filter(r => r.enabled && r.chatLink).map(r => `<option>${esc(r.provider)}</option>`).join('') || '<option value="">Save a provider with a chat first</option>'}</select><button class="btn" data-act="nfyTest">Send test</button></div>
     <p class="small muted">Posts “Test from ESK Tracker” to that chat. The add-in can’t see the flow’s answer: check the chat and the flow’s run history.</p>
-    <p class="small muted">Initial vitals always go; later vitals go when BP is over 140/90 or SpO2 under 92%; BP at or above 180/120 goes as an emergency (limits set in notify.js).</p></section>`;
+    <p class="small muted">Initial vitals go when that box is on; later vitals go when BP is over 140/90 or SpO2 under 92%; BP at or above 180/120 always goes, as an emergency (limits set in notify.js).</p></section>`;
 }
 async function nfyWrite(label, fn, ok){
   try { busy(label); await fn(); toast('ok', ok); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); }
@@ -6254,24 +6304,144 @@ async function nfySaveRoutes(){
     : D.find(r => !nfyChatOk(r.chatLink)) ? 'Fix the group chat link marked below.' : D.find(r => !nfyMailOk(r.email)) ? 'Fix the email marked below.' : '';
   if (bad) return toast('warn', bad);
   const gone = S.nfy.routes.filter(r => !D.some(d => d.was && d.was.toLowerCase() === r.provider.toLowerCase() && d.provider.toLowerCase() === r.provider.toLowerCase()));
-  await nfyWrite('Saving provider chats…', async () => { for (const r of gone) await removeNotifyRoute(r.provider); for (const r of D) await upsertNotifyRoute(r.provider, r.chatLink, r.email, r.enabled); },
+  await nfyWrite('Saving provider chats…', async () => { for (const r of gone) await nfyCall('removeNotifyRoute', r.provider); for (const r of D) await nfyCall('upsertNotifyRoute', r.provider, r.chatLink, r.email, r.enabled); },
     `Saved ${D.length} provider${D.length === 1 ? '' : 's'} to the Settings sheet.`);
 }
 Object.assign(ACT_SETTINGS, {
   nfyReload: () => { S.nfy = null; S.nfyErr = ''; S._nfyAsked = false; render(); },
-  nfySetup: () => nfyWrite('Setting up the Settings sheet…', async () => { const r = await ensureNotifySettings(); if (r.blocked.length) throw new Error(`The Settings sheet already has something where these go, so they weren’t added: ${r.blocked.join(', ')}. Move it, then try again.`); }, 'Teams notification tables are ready on the Settings sheet.'),
+  nfySetup: () => nfyWrite('Setting up the Settings sheet…', async () => { const r = await nfyCall('ensureNotifySettings'); if (r.blocked.length) throw new Error(`The Settings sheet already has something where these go, so they weren’t added: ${r.blocked.join(', ')}. Move it, then try again.`); }, 'Teams notification tables are ready on the Settings sheet.'),
   nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', chatLink: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
   nfyDel: el => { S.nfyDraft.splice(+el.dataset.i, 1); render(); },
   nfySaveRoutes: () => nfySaveRoutes(),
-  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a group chat first.'); try { busy('Sending test…'); const r = await sendNotifyTest(p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s chat. If it doesn’t show up, check the flow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
-  nfyHookSave: () => { const u = String($('#nfyHook')?.value || '').trim(); if (!/^https:\/\//i.test(u)) return toast('warn', 'Paste the full https:// URL from the flow’s trigger card.'); return nfyWrite('Saving the webhook…', () => setNotifyConfig('WebhookUrl', u), 'Webhook URL saved to the Settings sheet.'); },
-  nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!nfyChatOk(u)) return toast('warn', 'That isn’t a Teams chat link or chat ID.'); return nfyWrite('Saving…', () => setNotifyConfig('EscalationChat', u), 'Escalation chat saved.'); },
+  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a group chat first.'); try { busy('Sending test…'); const r = await nfyCall('sendNotifyTest', p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s chat. If it doesn’t show up, check the flow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
+  nfyHookSave: () => { const u = String($('#nfyHook')?.value || '').trim(); if (!/^https:\/\//i.test(u)) return toast('warn', 'Paste the full https:// URL from the flow’s trigger card.'); return nfyWrite('Saving the webhook…', () => nfyCall('setNotifyConfig', 'WebhookUrl', u), 'Webhook URL saved to the Settings sheet.'); },
+  nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!nfyChatOk(u)) return toast('warn', 'That isn’t a Teams chat link or chat ID.'); return nfyWrite('Saving…', () => nfyCall('setNotifyConfig', 'EscalationChat', u), 'Escalation chat saved.'); },
 });
 // Provider rows type into S.nfyDraft (no re-render while typing, so focus stays); checkboxes save their config flag straight away.
 document.addEventListener('input', e => { const d = e.target.dataset?.nfyr; if (!d || !S.nfyDraft) return; const [i, k] = d.split('|'); if (!S.nfyDraft[+i]) return;
   S.nfyDraft[+i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; const b = $('[data-act="nfySaveRoutes"]'); if (b) b.disabled = false; });
-document.addEventListener('change', e => { const k = e.target.dataset?.nfyc; if (k) nfyWrite('Saving…', () => setNotifyConfig(k, e.target.checked ? 'TRUE' : 'FALSE'), 'Saved.');
+document.addEventListener('change', e => { const k = e.target.dataset?.nfyc; if (k) nfyWrite('Saving…', () => nfyCall('setNotifyConfig', k, e.target.checked ? 'TRUE' : 'FALSE'), 'Saved.');
   else if (e.target.dataset?.nfyr && S.view === 'settings') render(); });
+// ---------- Settings › Admin (PIN) ----------
+// PIN: eskShared.adminPin = { salt, h } (SHA-256 of salt + PIN). Anyone who can open the workbook could read the hash, so it's a speed bump,
+// not security. Unlocked for 30 min on this screen. Every change goes through the visit save, so it's in the visit log with who did it.
+const ADMIN_MIN = 30;
+const adminOn = () => (S.adminUntil || 0) > Date.now();
+async function pinHash(salt, pin){
+  const txt = salt + '|' + pin;
+  try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+  catch { let h = 2166136261; for (const c of txt) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return 'f' + h.toString(16); }   // no crypto.subtle (plain file:// demo)
+}
+function adminCardHTML(){
+  const head = '<section class="card set-admin"><h3>Admin</h3>', pin = (S.shared || {}).adminPin;
+  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
+    : `<p class="small">No admin PIN yet. Set one (4 to 8 digits) to open Admin. It's saved in the workbook for everyone.</p><div class="row"><input id="admPinNew" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="New PIN" aria-label="New admin PIN" style="max-width:140px"><input id="admPinNew2" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Again" aria-label="New admin PIN again" style="max-width:140px"><button class="btn" data-act="admPinSet">Set PIN</button></div>`) + '</section>';
+  return head + `<div class="row"><span class="small muted grow">Unlocked on this screen until ${new Date(S.adminUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</span><button class="btn ghost sm" data-act="admPinChange">Change PIN</button><button class="btn ghost sm" data-act="admLock">Lock</button></div>
+    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}</section>`;
+}
+// Test patients: Settings › Admin only; today only; never in a sheet (see testAppts)
+function admTestHTML(){
+  const t = testOn(), L = t?.pts || [], provs = [...new Set([...provNames(tdModel()), ...S.P.map(p => canonProv(p.provider || '')).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+  const row = p => `<div class="adm-row"><b>${esc(p.name)}</b><span>${esc(p.provider)} · ${fmtT(p.time)} · ${p.mg} mg${p.start ? ' · Start' : ''}</span><button class="btn ghost sm" data-act="admTpDel" data-m="${esc(p.mrn)}">Remove</button></div>`;
+  return `<h4 class="set-sub">Test patients <span class="muted">(today only, nothing written to the workbook)</span></h4>
+    ${L.map(row).join('') || '<p class="small muted">None today.</p>'}
+    <div class="adm-form"><input id="admTpName" class="fld" placeholder="Name (e.g. TEST1)" autocomplete="off" aria-label="Test patient name">
+      <select id="admTpProv" class="fld" aria-label="Provider">${provs.map(p => `<option ${p === CFG.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+      <input id="admTpTime" class="fld" type="time" value="${hhmm(Math.min(nowMin() + 15, 23 * 60))}" aria-label="Appointment time">
+      <select id="admTpMg" class="fld" aria-label="Dose">${[56, 84].map(m => `<option>${m}</option>`).join('')}</select>
+      <label class="check"><input type="checkbox" id="admTpStart"><span class="l">Start</span></label><button class="btn" data-act="admTpAdd">Add test patient</button></div>
+    ${L.length ? '<div class="row"><button class="btn ghost sm" data-act="admTpClear">Remove all test patients</button></div>' : ''}
+    <p class="small muted">They show on Today, the bay map and ESK Bays for everyone, marked TEST. Doses use a simulated kit (last 4 of the serial and lot shown on the card); Teams posts go out with the TEST name.</p>`;
+}
+// One visit: undo single steps, PRN states, the dose confirmation, or go back to a saved point from the visit log
+function admVisitHTML(){
+  const items = todayModel(todaySerial()).filter(i => !i.a.cancelled), key = items.some(i => i.a.key === S.admKey) ? S.admKey : '';
+  const sel = `<select id="admVisit" class="fld" aria-label="Visit">${['<option value="">Choose a visit…</option>', ...items.map(i => `<option value="${esc(i.a.key)}" ${i.a.key === key ? 'selected' : ''}>${fmtT(i.a.time)} · ${esc(nm(i.a.mrn))}${i.a.test ? ' (TEST)' : ''}${visitGet(i.a.key)?.bay ? ' · Bay ' + esc(visitGet(i.a.key).bay) : ''}</option>`)].join('')}</select>`;
+  let body = '';
+  if (key){
+    const v = visitGet(key) || {}, it = items.find(i => i.a.key === key), b = (what, lab, on) => on ? `<button class="btn ghost sm" data-act="admUndo" data-k="${esc(key)}" data-w="${what}">${lab}</button>` : '';
+    const steps = [b('start', 'Clear room time', v.start != null), b('adm', 'Clear dose time', v.adm != null), b('bay', 'Clear bay', v.bay), b('out', 'Undo discharge', v.out), b('mv', 'Undo move', v.mv),
+      b('vit:init', 'Clear initial vitals', v.vit?.init), b('vit:mid', `Clear ${CFG.vitalsMin || 40}-min vitals`, v.vit?.mid), b('vit:fin', 'Clear final vitals', v.vit?.fin), b('rechk', 'Remove last recheck', (v.rechk || []).length),
+      b('em', 'Clear emergency responses', v.em && Object.keys(v.em).length), b('pc', it?.adminKit?.test ? 'Undo test dose' : 'Undo provider dose confirmation', v.pc || it?.adminKit?.test)].filter(Boolean).join('');
+    const prn = (v.prnOrd || []).map(o => `<div class="adm-row"><span><b>${esc(o.med)} ${esc(o.dose)}</b> <span class="muted">${esc({ cx: 'cancelled', no: 'declined', ack: 'given', ok: 'approved', req: 'requested', ord: 'ordered' }[prnStep(o)])}</span></span>
+      ${prnStep(o) !== 'ord' && prnStep(o) !== 'req' ? `<button class="btn ghost sm" data-act="admPrn" data-k="${esc(key)}" data-o="${esc(o.id)}" data-w="reopen">Reopen</button>` : ''}<button class="btn ghost sm" data-act="admPrn" data-k="${esc(key)}" data-o="${esc(o.id)}" data-w="del">Delete</button></div>`).join('');
+    const snaps = (S._vlogRows || []).filter(r => r.key === key && r.snap).sort((x, y) => y.at.localeCompare(x.at)).slice(0, 12);
+    body = `<div class="adm-acts">${steps || '<span class="small muted">Nothing recorded on this visit yet.</span>'}</div>
+      ${prn ? `<div class="small" style="margin-top:8px"><b>PRNs</b></div>${prn}` : ''}
+      ${snaps.length ? `<details class="small" style="margin-top:8px"><summary>Go back to a saved point (visit log)</summary>${snaps.map((r, i) => `<div class="adm-row"><span>${esc(r.at.slice(11, 16))} · ${esc(r.ev)}</span><button class="btn ghost sm" data-act="admSnap" data-k="${esc(key)}" data-i="${i}">Restore</button></div>`).join('')}<p class="muted">Restores room, dose, bay, vitals, rechecks, PRNs, discharge, move and dose confirmation to how they were after that change. Refresh to see the newest changes here.</p></details>` : ''}`;
+  }
+  return `<h4 class="set-sub">Undo on a visit</h4>${sel}${body}`;
+}
+function admClearHTML(){
+  const T = todaySerial(), pend = Object.entries(S.visit || {}).filter(([k]) => Number(k.split('|')[1]) === T).reduce((n, [, v]) => n + prnPend(v).length + prnAsk(v).length, 0), em = emActive().filter(e => e.open).length;
+  return `<h4 class="set-sub">Clear alerts</h4><p class="small muted">${pend} PRN alert${pend === 1 ? '' : 's'} waiting, ${em} open emergenc${em === 1 ? 'y' : 'ies'}${S.unsaved ? ', and an unsaved change on this screen' : ''}. The PRNs themselves stay; to withdraw one, Cancel it on the visit.</p>
+    <div class="adm-acts"><button class="btn ghost sm" data-act="admClear" data-w="me">Clear on this screen</button><button class="btn ghost sm" data-act="admClear" data-w="all">Clear for everyone</button>${S.unsaved ? '<button class="btn ghost sm" data-act="admClear" data-w="unsaved">Discard the unsaved change</button>' : ''}</div>`;
+}
+// Ask before doing it: S.admGo = { label, run }
+function admAsk(label, run){ S.admGo = run; openModal(`<h2>${label}</h2><p class="small muted">Saved with the visit and written to the visit log with your name.</p><div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="admGo">${label}</button></div>`); }
+async function admUndo(key, what){
+  const v = JSON.parse(JSON.stringify(visitGet(key) || {}));
+  if (what === 'pc') return admUndoDose(key);
+  if (what.startsWith('vit:')){ if (v.vit) delete v.vit[what.slice(4)]; }
+  else if (what === 'rechk') v.rechk = (v.rechk || []).slice(0, -1);
+  else delete v[what];
+  S.visit[key] = v; await saveVisit(); derive(); render(); toast('ok', 'Undone.');
+}
+async function admUndoDose(key){
+  const it = todayModel(todaySerial()).find(i => i.a.key === key), v = JSON.parse(JSON.stringify(visitGet(key) || {})), k = it?.adminKit;
+  if (k?.test) await testKitSet(key, null);
+  else if (k && v.pc && k.id === v.pc.kit){
+    if (!techDue(k)) return toast('warn', `A tech (${esc(k.tech)}) already signed this dose, so the Inventory row stays. Fix it in Meds › Edit if it's wrong.`);
+    const { out } = changesFor('kits', { administeredmg: '', dateadministered: '', supervisingphysician: '' });
+    const ok = await write('Undoing the dose on the Inventory…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), 'The Inventory row is back to not administered.'); if (!ok) return;
+  }
+  delete v.pc; S.visit[key] = v; await saveVisit(); derive(); render(); toast('ok', 'Dose confirmation undone.');
+}
+async function admPrn(key, id, what){
+  const v = JSON.parse(JSON.stringify(visitGet(key) || {})), L = v.prnOrd || [], i = L.findIndex(o => o.id === id); if (i < 0) return;
+  if (what === 'del') L.splice(i, 1);
+  else { const o = L[i]; delete o.ack; delete o.cx; if (o.req){ delete o.ok; delete o.no; } v.rescue = (v.rescue || []).filter(r => r.ord !== id); }   // reopened: not given, back to waiting
+  v.prnOrd = L; S.visit[key] = v; await saveVisit(); await prnSyncKit(key); render(); toast('ok', what === 'del' ? 'PRN removed from the visit.' : 'PRN reopened.');
+}
+async function admSnap(key, i){
+  const r = (S._vlogRows || []).filter(x => x.key === key && x.snap).sort((x, y) => y.at.localeCompare(x.at))[i]; if (!r) return;
+  let snap; try { snap = JSON.parse(r.snap); } catch { return toast('bad', 'That saved point can’t be read.'); }
+  const v = { ...(visitGet(key) || {}) }; for (const f of VLOG_F){ if (snap[f] !== undefined) v[f] = snap[f]; else delete v[f]; }
+  S.visit[key] = v; await saveVisit(); derive(); render(); toast('ok', `Visit restored to ${esc(r.at.slice(11, 16))} (${esc(r.ev)}).`);
+}
+async function admClear(w){
+  const T = todaySerial(), today = Object.entries(S.visit || {}).filter(([k]) => Number(k.split('|')[1]) === T);
+  if (w === 'unsaved'){ S.unsaved = null; S._vlogBase = null; await reload(true); return toast('ok', 'Unsaved change discarded; this screen shows the workbook again.'); }
+  if (w === 'me'){ prnDismiss(today.flatMap(([, v]) => v.prnOrd || [])); S._emMute = S._emMute || new Set(); for (const e of emActive()) S._emMute.add(e.key + '|' + e.rid); render(); return toast('ok', 'Alerts cleared on this screen. New ones still come through.'); }
+  S.shared = { ...(S.shared || {}), prnClearAt: Date.now() }; await S.store.setDoc('eskShared', S.shared);
+  for (const e of emActive().filter(e => e.open || !e.acks.length)){ const v = S.visit[e.key], em = { ...(v.em || {}) }; em[e.rid] = [...(em[e.rid] || []), { by: 'Admin ' + (CFG.me || ''), role: 'prov', ts: Date.now() }, { by: 'Admin ' + (CFG.me || ''), role: 'pct', ts: Date.now() }]; v.em = em; }
+  await saveVisit(); render(); toast('ok', 'Alerts cleared on every screen. New ones still come through.');
+}
+Object.assign(ACT_SETTINGS, {
+  admPinSet: async () => { const a = String($('#admPinNew')?.value || ''), b = String($('#admPinNew2')?.value || ''); if (!/^\d{4,8}$/.test(a)) return toast('warn', 'Use 4 to 8 digits.'); if (a !== b) return toast('warn', 'The two PINs don’t match.');
+    if ((S.shared || {}).adminPin && !adminOn()) return toast('warn', 'Unlock Admin first.');
+    const salt = Math.random().toString(36).slice(2, 10); S.shared = { ...(S.shared || {}), adminPin: { salt, h: await pinHash(salt, a), by: CFG.me || '', at: new Date().toISOString() } }; await S.store.setDoc('eskShared', S.shared);
+    S.adminUntil = Date.now() + ADMIN_MIN * 60000; S._admPinNew = false; render(); toast('ok', 'Admin PIN saved for this workbook.'); },
+  admUnlock: async () => { const p = (S.shared || {}).adminPin, v = String($('#admPin')?.value || ''); if (!p) return; if (await pinHash(p.salt, v) !== p.h){ $('#admPin').value = ''; return toast('bad', 'Wrong PIN.'); } S.adminUntil = Date.now() + ADMIN_MIN * 60000; render(); },
+  admLock: () => { S.adminUntil = 0; render(); },
+  admPinChange: () => { S.shared = { ...(S.shared || {}) }; const old = S.shared.adminPin; delete S.shared.adminPin; render(); S.shared.adminPin = old; setTimeout(() => { const n = $('#admPinNew'); if (n) n.focus(); }, 30); },
+  admTpAdd: async () => { const t = testOn() || { day: todaySerial(), pts: [], kits: {} }, used = new Set(t.pts.map(p => p.mrn)); let n = 1; while (used.has('TEST' + String(n).padStart(2, '0'))) n++;
+    const mrn = 'TEST' + String(n).padStart(2, '0'), name = String($('#admTpName')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9 ]/g, '') || mrn, time = fromHHMM($('#admTpTime')?.value), provider = $('#admTpProv')?.value || '';
+    if (time == null) return toast('warn', 'Pick a time.'); if (!provider) return toast('warn', 'Pick a provider.');
+    if (t.pts.some(p => p.time === time && p.provider === provider && p.name === name)) return toast('warn', 'That test patient is already there.');
+    await testSave({ ...t, pts: [...t.pts, { mrn, name: name.startsWith('TEST') ? name : 'TEST ' + name, provider, time, mg: +($('#admTpMg')?.value || 84), start: !!$('#admTpStart')?.checked }] }); toast('ok', `Test patient ${esc(mrn)} added for ${esc(provider)} at ${fmtT(time)}.`); },
+  admTpDel: el => admAsk('Remove this test patient', async () => { const t = testOn(); if (!t) return; const p = t.pts.find(x => x.mrn === el.dataset.m); if (!p) return;
+    const key = `${p.mrn}|${t.day}|${p.time}`, kits = { ...(t.kits || {}) }; delete kits[key]; if (S.visit?.[key]){ delete S.visit[key]; await saveVisit(); }
+    await testSave({ ...t, pts: t.pts.filter(x => x !== p), kits }); toast('ok', 'Test patient removed.'); }),
+  admTpClear: () => admAsk('Remove all test patients', async () => { const t = testOn(); if (!t) return; let n = 0; for (const p of t.pts){ const key = `${p.mrn}|${t.day}|${p.time}`; if (S.visit?.[key]){ delete S.visit[key]; n++; } } if (n) await saveVisit();
+    await testSave({ day: t.day, pts: [], kits: {} }); toast('ok', 'All test patients removed.'); }),
+  admUndo: el => admAsk(el.textContent.trim(), () => admUndo(el.dataset.k, el.dataset.w)),
+  admPrn: el => admAsk(el.dataset.w === 'del' ? 'Delete this PRN from the visit' : 'Reopen this PRN', () => admPrn(el.dataset.k, el.dataset.o, el.dataset.w)),
+  admSnap: el => admAsk('Restore the visit to this point', () => admSnap(el.dataset.k, +el.dataset.i)),
+  admClear: el => admAsk({ me: 'Clear alerts on this screen', all: 'Clear alerts for everyone', unsaved: 'Discard the unsaved change' }[el.dataset.w], () => admClear(el.dataset.w)),
+  admGo: async () => { const run = S.admGo; S.admGo = null; closeModal(); if (run) await run(); },
+});
+document.addEventListener('change', e => { if (e.target.id === 'admVisit'){ S.admKey = e.target.value; render(); } });
 const setBackLabel = () => { const r = S.setReturn; return r && r !== 'settings' && PAGES[r] ? PAGES[r].label : ''; };
 Object.assign(PAGES.settings, {
   sub: () => CFG.me ? `Signed as ${esc(CFG.me)}` : 'No name yet',
@@ -6625,13 +6795,13 @@ const PRN_REPEAT = 120000;
 function prnAlertsNow(){
   if (S.provView || S.full || !S.loaded || !S.visit) return; S._dueSeen = S._dueSeen || new Set(); const T = todaySerial();
   for (const [key, v] of Object.entries(S.visit)){ if (Number(key.split('|')[1]) !== T) continue;
-    for (const o of prnPend(v)){ const t0 = prnSince(o) || Date.now(), n = Math.max(0, Math.floor((Date.now() - t0) / PRN_REPEAT)), id = key + 'prn' + o.id + '|' + n;
+    for (const o of prnPend(v)){ if (prnDismissed(o)) continue; const t0 = prnSince(o) || Date.now(), n = Math.max(0, Math.floor((Date.now() - t0) / PRN_REPEAT)), id = key + 'prn' + o.id + '|' + n;
       if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);
       const a = S.A.find(x => x.key === key), again = n > 0 ? `Still waiting (${Math.round((Date.now() - t0) / 60000)} min): ` : '', what = o.req ? 'approved' : 'indicated';
       toast('warn', `<b>${again}PRN ${what}: ${esc(o.med)} ${esc(o.dose)}</b> — ${esc(a ? nm(a.mrn) : 'patient')}${v.bay ? ' · Bay ' + esc(v.bay) : ''}. Acknowledge it on Today.`);
       if (CFG.vitNotify) alertOut({ title: `${again}PRN ${what} · ${o.med}`, body: v.bay ? `Bay ${v.bay}` : 'ESK Tracker', tag: 'esk-' + id, sound: CFG.vitSound, sticky: true }); else playSound(); }
-    for (const o of (v.prnOrd || []).filter(o => o.no)){ const id = key + 'prnno' + o.id; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);   // declined: tell the PCT once
-      if (Date.now() - (o.no.ts || 0) < 3600000) toast('warn', `<b>PRN declined: ${esc(o.med)} ${esc(o.dose)}</b> by ${esc(o.no.by || 'the provider')}${o.no.why ? ': ' + esc(o.no.why) : ''}.`); } }
+    for (const o of (v.prnOrd || []).filter(o => (o.no || (o.cx && o.cx.role === 'prov')) && !prnDismissed(o))){ const id = key + 'prnno' + o.id; if (S._dueSeen.has(id)) continue; S._dueSeen.add(id);   // declined: tell the PCT once
+      const x = o.no || o.cx; if (Date.now() - (x.ts || 0) < 3600000) toast('warn', `<b>PRN ${o.no ? 'declined' : 'cancelled'}: ${esc(o.med)} ${esc(o.dose)}</b> by ${esc(x.by || 'the provider')}${o.no?.why ? ': ' + esc(o.no.why) : ''}.`); } }
 }
 setInterval(prnAlertsNow, 5000);
 function alertOut(a){
@@ -6660,7 +6830,7 @@ setInterval(() => {
 let _loading = null, _again = false;
 const REFRESH_MS = 20000;   // workbook changes refresh the panel at most once per 20 s
 // Shared document settings: sent to the full-screen view on load, and watched for other people's saves. New esk* keys go here.
-const DOC_KEYS = ['eskRemsCov', 'eskPull', 'eskAudit', 'eskTasks', 'eskSnooze', 'eskProvAlias', 'eskFreqAlias', 'eskFreqRate', 'eskProvCred', 'eskCapacity', 'eskNotes', 'eskDocs', 'eskVisit', 'eskShared', 'eskDailyDay', 'eskCancel', 'eskApptList', 'Office.AutoShowTaskpaneWithDocument'];
+const DOC_KEYS = ['eskRemsCov', 'eskPull', 'eskAudit', 'eskTasks', 'eskSnooze', 'eskProvAlias', 'eskFreqAlias', 'eskFreqRate', 'eskProvCred', 'eskCapacity', 'eskNotes', 'eskDocs', 'eskVisit', 'eskShared', 'eskDailyDay', 'eskCancel', 'eskApptList', 'eskTest', 'Office.AutoShowTaskpaneWithDocument'];
 // Check the shared settings (vitals, PRNs, bays…) for other people's saves every 2 s; a change is applied at once (applyDocs).
 // Pane only; the full-screen view hears it from the pane. A change then reloads after PROV_REFRESH_MS / REFRESH_MS.
 const POLL_MS = () => 2000, PROV_REFRESH_MS = 2500;
@@ -6691,7 +6861,7 @@ function onWorkbookChange(kind){
 function applyDocs(){
   const g = k => S.store.getDoc(k), fresh = g('eskVisit');
   if (fresh) S.visit = visitMerge(S.visit || {}, S._vlogBase || (S._vlogBase = {}), JSON.parse(JSON.stringify(fresh)));
-  S.cancel = g('eskCancel') || S.cancel || {}; S.pull = g('eskPull') || S.pull || {}; S.tasks = g('eskTasks') || S.tasks || {}; S.snooze = g('eskSnooze') || S.snooze || {};
+  S.cancel = g('eskCancel') || S.cancel || {}; S.test = g('eskTest') || null; S.pull = g('eskPull') || S.pull || {}; S.tasks = g('eskTasks') || S.tasks || {}; S.snooze = g('eskSnooze') || S.snooze || {};
   S.notes = g('eskNotes') || S.notes || {}; S.docs = g('eskDocs') || S.docs || {}; S.shared = g('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {});
   try { derive(); } catch (e){ console.error(e); }
   S.store.markDocs?.(); S.syncedAt = Date.now(); syncLagNote();
@@ -6717,7 +6887,7 @@ async function reload1(quiet){
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.test = S.store.getDoc('eskTest') || null; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S._vlogRows = d.vlog || []; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
@@ -6796,6 +6966,7 @@ function RemoteStore(){
     watch(cb){ onChanged = cb; },
     relayAlert(a){ up({ ev: 'alert', a }); },
     relayNotify(d){ up({ ev: 'notify', d }); },
+    nfy: (fn, args) => call('nfy', [fn, args]),
     close(){ up({ ev: 'close' }); },
   };
 }
@@ -6817,6 +6988,7 @@ function openFull(pop){
       if (m.ev === 'alert'){ if (alertsWinOk()) sendAlert(m.a || {}); else playSound(m.a?.sound); return; }   // an alert from the full-screen view, for the alerts window
       if (m.op === 'upsertBenefits'){ S._writing = true; try { reply({ rid: m.rid, ok: true, res: await S.store.upsertBenefits(...(m.args || [])) }); } catch (e){ reply({ rid: m.rid, ok: false, err: e.message || String(e) }); } finally { S._writing = false; S._selfWriteAt = Date.now(); } return; }   // Sohar benefits import from the full-screen view
       const { rid, op, args } = m;
+      if (op === 'nfy'){ try { reply({ rid, ok: true, res: await nfyCall(args[0], ...(args[1] || [])) ?? null }); } catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); } return; }   // Settings sheet / Teams test from the full-screen view
       const read = op === 'load' || op === 'freshDoc';
       try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }

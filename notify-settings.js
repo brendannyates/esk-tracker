@@ -12,8 +12,9 @@
 //                            UrgentEmergencies TRUE      office toggle, applied by the flow (Teams priority notification)
 //                            EscalateEmergency FALSE     office toggle, applied by the flow
 //                            EscalationChat    ''        group chat URL or ID for emergencies (charge RN, clinic lead)
-//                            NotifyRecheck     TRUE      stage toggles, applied by the add-in; initial is always on,
-//                            Notify40Min       TRUE        emergencies ignore them
+//                            NotifyInitial     TRUE      stage toggles, applied by the add-in;
+//                            NotifyRecheck     TRUE        emergencies ignore them
+//                            Notify40Min       TRUE
 //                            NotifyDischarge   TRUE
 //                            InAppAlerts       TRUE      provider view flag
 //                            AlertSound        TRUE      provider view sound
@@ -34,6 +35,7 @@ var NOTIFY_SETTINGS_SPEC = [
       ['UrgentEmergencies', 'TRUE'],
       ['EscalateEmergency', 'FALSE'],
       ['EscalationChat', ''],
+      ['NotifyInitial', 'TRUE'],
       ['NotifyRecheck', 'TRUE'],
       ['Notify40Min', 'TRUE'],
       ['NotifyDischarge', 'TRUE'],

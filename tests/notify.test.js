@@ -52,6 +52,12 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     const log = (await C.readNotifyLogSince('2000')).filter(r => r.provider === 'Dr A'); assert(log.length >= 4);
     const r = await C.onVitalsSaved({ ...base, provider: 'Dr B', stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(r.sent, false); assert(/No Teams group chat/.test(r.reason));
   });
+  await t('initial vitals have their own toggle (on by default); an emergency still goes', async () => {
+    await C.setNotifyConfig('NotifyInitial', 'FALSE');
+    const r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '128/82' } }); assert.strictEqual(r.sent, false); assert(/initial alerts are off/.test(r.reason));
+    assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '186/112' } })).level, 'emergency');
+    await C.setNotifyConfig('NotifyInitial', 'TRUE');
+  });
   await t('test send: one post, no log row, no patient', async () => {
     const before = (await C.readNotifyLogSince('2000')).length, k = posts.length;
     const r = await C.sendNotifyTest('Dr A', 'Tech T'); assert.strictEqual(r.ok, true); assert.strictEqual(posts.length, k + 1);
