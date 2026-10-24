@@ -6,8 +6,9 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'taskpane.html'), 'utf8').replace(/\r\n/g, '\n');
 const line = re => { const m = src.match(re); if (!m) throw new Error('not found: ' + re); return m[0]; };
 const between = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); assert(i > 0 && j > i, a); return src.slice(i, j); };
-const code = [line(/^const DOC_KEYS = .*$/m), line(/^const CH = .*$/m), between('function OfficeStore(){', '// ---------- store: demo'),
-  between('function visitMerge(', '// ---------- visit log'), 'globalThis.OfficeStore = OfficeStore; globalThis.visitMerge = visitMerge;'].join('\n');
+const code = ['var S = {};', line(/^const DOC_KEYS = .*$/m), line(/^const CH = .*$/m), between('function OfficeStore(){', '// ---------- store: demo'),
+  between('function visitMissing(', '// Someone else may have saved visits'), between('function visitMerge(', '// ---------- visit log'),
+  'globalThis.OfficeStore = OfficeStore; globalThis.visitMerge = visitMerge; globalThis.visitMissing = visitMissing; globalThis.S = S;'].join('\n');
 
 const FILE = {};   // what is saved in the workbook
 function pane(){
@@ -65,5 +66,19 @@ const K1 = '900101|46316|600', K2 = '900102|46316|660';
   assert.strictEqual(b.C.visitMerge(m3, b3, {})[K1], undefined, 'a visit someone else cleared stays cleared');
   assert.strictEqual(b.C.visitMerge(m3, b3, null), m3, 'no file copy: unchanged');
   console.log('ok saving merges per visit: others\' visits kept, mine win where I changed them');
-  console.log('3 passed');
+  // failsafe: setDoc reports whether the save reached the file; polls stamp S.polledAt and tell the watcher it's a settings change
+  const c = pane(); let kinds = []; c.store.watch(k => kinds.push(k)); await c.store.load();
+  assert.strictEqual(await c.store.setDoc('eskTasks', { y: 1 }), true, 'saved');
+  c.C.Office.context.document.settings.saveAsync = cb => setTimeout(() => cb({ status: 'failed' }), 0);
+  assert.strictEqual(await c.store.setDoc('eskTasks', { y: 2 }), false, 'a failed save says so');
+  await a.store.setDoc('eskNotes', { z: 1 }); c.C.S.polledAt = 0; await c.store.pollDocs();
+  assert(c.C.S.polledAt > 0, 'poll stamps the last good read'); assert.strictEqual(kinds.at(-1), 'docs', 'settings change → quick reload');
+  // failsafe: what didn't make it into the file
+  const mb = { [K1]: { start: 600 } }, mm = { [K1]: { start: 600, vit: { mid: { bp: '130/80' } } }, [K2]: { start: 660 } };
+  assert.deepStrictEqual([...c.C.visitMissing(mm, mb, { [K1]: { start: 600, vit: { mid: { bp: '130/80' } } }, [K2]: { start: 660 } })], [], 'all there');
+  assert.deepStrictEqual([...c.C.visitMissing(mm, mb, { [K1]: { start: 600 } })], [K1, K2], 'both lost');
+  assert.deepStrictEqual([...c.C.visitMissing(mm, mb, { [K1]: { start: 600, bay: '2', vit: { mid: { bp: '130/80' } } }, [K2]: { start: 660 } })], [], 'someone else added a field: fine');
+  assert.deepStrictEqual([...c.C.visitMissing(mm, mb, null)], [K1, K2], 'no file copy: everything I changed is unconfirmed');
+  console.log('ok failsafe: failed saves are reported, polls stamp the last read, missing changes are found');
+  console.log('4 passed');
 })().catch(e => { console.error(e); process.exit(1); });
