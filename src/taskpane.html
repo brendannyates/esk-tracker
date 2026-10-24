@@ -6237,14 +6237,14 @@ function settingsHTML(){
 // ---------- Settings › Teams notifications: the Settings sheet (notify-settings.js) ----------
 // The tables live on the workbook's "Settings" sheet; this card reads and writes them so nobody edits the sheet by hand.
 // Only from the Excel panel (Excel.run); the full-screen view says so. S.nfy = what the sheet holds, S.nfyDraft = the provider rows
-// being edited ([{ provider, chatLink, email, enabled, was }], was = the name it had on the sheet, '' for a new row).
+// being edited ([{ provider, flowUrl, email, enabled, was }], was = the name it had on the sheet, '' for a new row).
 const NFY_FLAGS = [['Enabled', 'Send Teams notifications', 'Master switch'], ['SendGroupChat', 'Post to the provider’s group chat'],
-  ['UrgentEmergencies', 'Emergencies as urgent (Teams priority)'], ['EscalateEmergency', 'Also post emergencies to the escalation chat'],
+  ['UrgentEmergencies', 'Emergencies as urgent', 'Only if the workflow sets Teams priority; the card is red either way'], ['EscalateEmergency', 'Also post emergencies to the escalation chat'],
   ['NotifyInitial', 'Initial vitals'], ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
 const nfyOn = v => String(v).toUpperCase() === 'TRUE' || v === true;
 const NFY_DEF = { Enabled: true, SendGroupChat: true, UrgentEmergencies: true, EscalateEmergency: false, NotifyInitial: true, NotifyRecheck: true, Notify40Min: true, NotifyDischarge: true, InAppAlerts: true, AlertSound: true };
 const nfyFlag = (c, k) => c[k] == null || String(c[k]).trim() === '' ? !!NFY_DEF[k] : nfyOn(c[k]);   // a key an older sheet doesn't have yet shows its default
-const nfyChatOk = u => !u || (typeof nfyChatId === 'function' ? !!nfyChatId(u) : /19:[^@\s]+@thread\./i.test(u));   // what notify.js can post to: a group chat ID, alone or inside its link
+const nfyFlowOk = u => !u || (typeof nfyFlowUrl === 'function' ? !!nfyFlowUrl(u) : /^https:\/\/\S+\.(powerplatform\.com|logic\.azure\.com)/i.test(u));   // a Power Automate trigger URL
 const nfyMailOk = e => !e || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e);
 let _nfyBoot = false;
 TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
@@ -6269,29 +6269,27 @@ function nfyCardHTML(){
   if (!S.nfy){ if (!S._nfyAsked){ S._nfyAsked = true; nfyLoad(); } return head + '<p class="small muted">Reading the Settings sheet…</p></section>'; }
   if (S.nfy.missing.length) return head + `<p class="small">${S.nfy.missing.length === 4 ? 'Not set up in this workbook yet.' : `Missing: ${esc(S.nfy.missing.join(', '))}.`} This adds a <b>Settings</b> sheet with the notification tables. Nothing already in the workbook is changed.</p>
     <button class="btn primary" data-act="nfySetup">Set up Teams notifications</button></section>`;
-  const c = S.nfy.config, hook = String(c.WebhookUrl || '').trim(), D = S.nfyDraft || [];
+  const c = S.nfy.config, escUrl = String(c.EscalationChat || '').trim(), D = S.nfyDraft || [];
   const flag = ([k, l, h]) => `<label class="check"><input type="checkbox" data-nfyc="${k}" ${nfyFlag(c, k) ? 'checked' : ''}><span class="l">${esc(l)}${h ? `<small>${esc(h)}</small>` : ''}</span></label>`;
   const provs = [...new Set([...provNames(tdModel()), ...S.P.map(p => canonProv(p.provider || '')).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
-  const row = (r, i) => { const bad = !nfyChatOk(r.chatLink) ? 'Use the group chat’s link (it contains 19:…@thread.v2) or the chat ID itself. A link to a person, not a chat, won’t work.' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
+  const row = (r, i) => { const bad = !nfyFlowOk(r.flowUrl) ? 'Paste the URL from the provider’s Teams workflow (it starts https:// and contains powerplatform.com). A chat link won’t work.' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
     return `<div class="nfy-row" role="group" aria-label="Provider ${i + 1}">
       <div><label class="lbl" for="nfyP${i}">Provider</label><input id="nfyP${i}" class="fld" data-nfyr="${i}|provider" list="dlNfyProv" value="${esc(r.provider)}" autocomplete="off"></div>
-      <div><label class="lbl" for="nfyC${i}">Group chat link</label><input id="nfyC${i}" class="fld" data-nfyr="${i}|chatLink" value="${esc(r.chatLink)}" placeholder="https://teams.microsoft.com/l/chat/…" autocomplete="off" spellcheck="false"></div>
+      <div><label class="lbl" for="nfyC${i}">Teams workflow URL</label><input id="nfyC${i}" class="fld" type="password" data-nfyr="${i}|flowUrl" value="${esc(r.flowUrl)}" placeholder="${r.flowUrl ? '' : 'https://…powerplatform.com/…'}" title="${r.flowUrl ? 'Saved. Paste over it to replace' : ''}" autocomplete="off" spellcheck="false"></div>
       <div><label class="lbl" for="nfyE${i}">Email</label><input id="nfyE${i}" class="fld" type="email" data-nfyr="${i}|email" value="${esc(r.email)}" placeholder="name@mymhs.com" autocomplete="off"></div>
       <label class="check nfy-on"><input type="checkbox" data-nfyr="${i}|enabled" ${r.enabled ? 'checked' : ''}><span class="l">On</span></label>
       <button class="btn ghost sm" data-act="nfyDel" data-i="${i}" aria-label="Remove ${esc(r.provider || 'this provider')}">Remove</button>
       ${bad ? `<div class="msg warn small nfy-bad">${bad}</div>` : ''}</div>`; };
   const dirty = JSON.stringify(D.map(({ was, ...r }) => r)) !== JSON.stringify(S.nfy.routes) || D.some(r => r.was !== r.provider);
-  return head + `<h4 class="set-sub">Provider group chats</h4>
+  return head + `<h4 class="set-sub">Provider chats</h4>
+    <p class="small muted">One Teams workflow per provider, posting to their group chat: in the chat, <b>…</b> › <b>Workflows</b> › <b>Send webhook alerts to a chat</b>, then copy the URL it gives you. Set who can trigger it to <b>Anyone</b>.</p>
     ${D.length ? D.map(row).join('') : '<p class="small muted">No providers yet.</p>'}${datalist('dlNfyProv', provs)}
     <div class="row" style="margin-top:8px"><button class="btn" data-act="nfyAdd">+ Add provider</button><span class="grow"></span>${dirty ? '<span class="small warnText">Unsaved</span>' : ''}<button class="btn primary" data-act="nfySaveRoutes" ${dirty ? '' : 'disabled'}>Save providers</button></div>
-    <h4 class="set-sub">Flow</h4>
-    <div class="set-f wide"><label class="lbl" for="nfyHook">Teams webhook URL <span class="muted">(from the flow’s trigger card; ${hook ? 'saved, not shown' : 'not set'})</span></label>
-      <div class="row"><input id="nfyHook" class="fld grow" type="password" autocomplete="off" spellcheck="false" placeholder="${hook ? '•••• saved. Paste a new one to replace it' : 'Paste the HTTP URL'}"><button class="btn" data-act="nfyHookSave">Save</button></div>
-      <p class="small muted">Anyone who can open this workbook can read this URL on the Settings sheet, and anyone with the URL can post through the flow. Keep the workbook’s sharing tight.</p></div>
-    <div class="set-f wide"><label class="lbl" for="nfyEsc">Escalation chat <span class="muted">(charge RN, clinic lead)</span></label><div class="row"><input id="nfyEsc" class="fld grow" value="${esc(String(c.EscalationChat || ''))}" placeholder="Group chat link or 19:…@thread.v2" autocomplete="off" spellcheck="false"><button class="btn" data-act="nfyEscSave">Save</button></div></div>
+    <p class="small muted">Anyone who can open this workbook can read these URLs on the Settings sheet, and anyone with a URL can post to that chat. Keep the workbook’s sharing tight, and if a URL gets out, make a new workflow and paste its URL here.</p>
+    <div class="set-f wide"><label class="lbl" for="nfyEsc">Escalation workflow URL <span class="muted">(charge RN, clinic lead chat; ${nfyFlowOk(escUrl) && escUrl ? 'saved, not shown' : 'not set'})</span></label><div class="row"><input id="nfyEsc" class="fld grow" type="password" placeholder="${nfyFlowOk(escUrl) && escUrl ? '•••• saved. Paste a new one to replace it' : 'https://…powerplatform.com/…'}" autocomplete="off" spellcheck="false"><button class="btn" data-act="nfyEscSave">Save</button></div></div>
     <h4 class="set-sub">What gets sent</h4>${NFY_FLAGS.map(flag).join('')}
-    <h4 class="set-sub">Test</h4><div class="row"><select id="nfyTestP" class="fld" aria-label="Provider to test">${S.nfy.routes.filter(r => r.enabled && r.chatLink).map(r => `<option>${esc(r.provider)}</option>`).join('') || '<option value="">Save a provider with a chat first</option>'}</select><button class="btn" data-act="nfyTest">Send test</button></div>
-    <p class="small muted">Posts “Test from ESK Tracker” to that chat. The add-in can’t see the flow’s answer: check the chat and the flow’s run history.</p>
+    <h4 class="set-sub">Test</h4><div class="row"><select id="nfyTestP" class="fld" aria-label="Provider to test">${S.nfy.routes.filter(r => r.enabled && r.flowUrl && nfyFlowOk(r.flowUrl)).map(r => `<option>${esc(r.provider)}</option>`).join('') || '<option value="">Save a provider with a workflow URL first</option>'}</select><button class="btn" data-act="nfyTest">Send test</button></div>
+    <p class="small muted">Posts “Test from ESK Tracker” through that provider’s workflow. The add-in can’t see the workflow’s answer: check the chat and the workflow’s run history.</p>
     <p class="small muted">Initial vitals go when that box is on; later vitals go when BP is over 140/90 or SpO2 under 92%; BP at or above 180/120 always goes, as an emergency (limits set in notify.js).</p></section>`;
 }
 async function nfyWrite(label, fn, ok){
@@ -6301,21 +6299,20 @@ async function nfyWrite(label, fn, ok){
 async function nfySaveRoutes(){
   const D = (S.nfyDraft || []).map(r => ({ ...r, provider: String(r.provider || '').trim() })), names = D.map(r => r.provider.toLowerCase());
   const bad = D.find(r => !r.provider) ? 'Every row needs a provider name, or remove it.' : names.some((n, i) => names.indexOf(n) !== i) ? 'A provider is listed twice.'
-    : D.find(r => !nfyChatOk(r.chatLink)) ? 'Fix the group chat link marked below.' : D.find(r => !nfyMailOk(r.email)) ? 'Fix the email marked below.' : '';
+    : D.find(r => !nfyFlowOk(r.flowUrl)) ? 'Fix the workflow URL marked below.' : D.find(r => !nfyMailOk(r.email)) ? 'Fix the email marked below.' : '';
   if (bad) return toast('warn', bad);
   const gone = S.nfy.routes.filter(r => !D.some(d => d.was && d.was.toLowerCase() === r.provider.toLowerCase() && d.provider.toLowerCase() === r.provider.toLowerCase()));
-  await nfyWrite('Saving provider chats…', async () => { for (const r of gone) await nfyCall('removeNotifyRoute', r.provider); for (const r of D) await nfyCall('upsertNotifyRoute', r.provider, r.chatLink, r.email, r.enabled); },
+  await nfyWrite('Saving providers…', async () => { for (const r of gone) await nfyCall('removeNotifyRoute', r.provider); for (const r of D) await nfyCall('upsertNotifyRoute', r.provider, r.flowUrl, r.email, r.enabled); },
     `Saved ${D.length} provider${D.length === 1 ? '' : 's'} to the Settings sheet.`);
 }
 Object.assign(ACT_SETTINGS, {
   nfyReload: () => { S.nfy = null; S.nfyErr = ''; S._nfyAsked = false; render(); },
   nfySetup: () => nfyWrite('Setting up the Settings sheet…', async () => { const r = await nfyCall('ensureNotifySettings'); if (r.blocked.length) throw new Error(`The Settings sheet already has something where these go, so they weren’t added: ${r.blocked.join(', ')}. Move it, then try again.`); }, 'Teams notification tables are ready on the Settings sheet.'),
-  nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', chatLink: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
+  nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', flowUrl: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
   nfyDel: el => { S.nfyDraft.splice(+el.dataset.i, 1); render(); },
   nfySaveRoutes: () => nfySaveRoutes(),
-  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a group chat first.'); try { busy('Sending test…'); const r = await nfyCall('sendNotifyTest', p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s chat. If it doesn’t show up, check the flow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
-  nfyHookSave: () => { const u = String($('#nfyHook')?.value || '').trim(); if (!/^https:\/\//i.test(u)) return toast('warn', 'Paste the full https:// URL from the flow’s trigger card.'); return nfyWrite('Saving the webhook…', () => nfyCall('setNotifyConfig', 'WebhookUrl', u), 'Webhook URL saved to the Settings sheet.'); },
-  nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!nfyChatOk(u)) return toast('warn', 'That isn’t a Teams chat link or chat ID.'); return nfyWrite('Saving…', () => nfyCall('setNotifyConfig', 'EscalationChat', u), 'Escalation chat saved.'); },
+  nfyTest: async () => { const p = $('#nfyTestP')?.value; if (!p) return toast('warn', 'Save a provider with a workflow URL first.'); try { busy('Sending test…'); const r = await nfyCall('sendNotifyTest', p, CFG.me); toast(r.ok ? 'ok' : 'warn', r.ok ? `Test sent to ${esc(p)}’s workflow. If it doesn’t show up in the chat, check the workflow’s run history.` : esc(r.reason)); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); } },
+  nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!u || !nfyFlowOk(u)) return toast('warn', 'Paste the escalation chat’s Teams workflow URL (it contains powerplatform.com).'); return nfyWrite('Saving…', () => nfyCall('setNotifyConfig', 'EscalationChat', u), 'Escalation workflow saved.'); },
 });
 // Provider rows type into S.nfyDraft (no re-render while typing, so focus stays); checkboxes save their config flag straight away.
 document.addEventListener('input', e => { const d = e.target.dataset?.nfyr; if (!d || !S.nfyDraft) return; const [i, k] = d.split('|'); if (!S.nfyDraft[+i]) return;

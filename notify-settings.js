@@ -6,12 +6,11 @@
 // Sheet: Settings            (tables sit side by side so tblNotifyLog can grow downward without hitting anything)
 //
 //   tblNotifyConfig     A1   Key | Value
-//                            WebhookUrl        ''        HTTP URL from the flow's trigger card, pasted once per office
 //                            Enabled           TRUE      master switch
 //                            SendGroupChat     TRUE      office toggle, applied by the flow
-//                            UrgentEmergencies TRUE      office toggle, applied by the flow (Teams priority notification)
-//                            EscalateEmergency FALSE     office toggle, applied by the flow
-//                            EscalationChat    ''        group chat URL or ID for emergencies (charge RN, clinic lead)
+//                            UrgentEmergencies TRUE      office toggle, for a flow that sets Teams priority (the card is red either way)
+//                            EscalateEmergency FALSE     office toggle: emergencies also go to the escalation workflow
+//                            EscalationChat    ''        workflow URL for the escalation chat (charge RN, clinic lead)
 //                            NotifyInitial     TRUE      stage toggles, applied by the add-in;
 //                            NotifyRecheck     TRUE        emergencies ignore them
 //                            Notify40Min       TRUE
@@ -19,7 +18,8 @@
 //                            InAppAlerts       TRUE      provider view flag
 //                            AlertSound        TRUE      provider view sound
 //
-//   tblNotifyRoutes     D1   Provider | ChatLink | Email | Enabled   one row per provider; ChatLink = Teams URL or 19:…@thread.v2
+//   tblNotifyRoutes     D1   Provider | FlowUrl | Email | Enabled    one row per provider; FlowUrl = their Teams workflow's trigger URL
+//                                                                  (older sheets call the column ChatLink; it's read by position either way)
 //   tblNotifyTemplates  I1   Event | Template | Enabled             rows: standard, emergency
 //   tblNotifyLog        M1   Id | Provider | Patient | Bay | Stage | Vitals | Level | SentBy | SentAt | Seen   (written by notify.js)
 //
@@ -29,7 +29,6 @@ var NOTIFY_SETTINGS_SHEET = 'Settings';
 
 var NOTIFY_SETTINGS_SPEC = [
   { name: 'tblNotifyConfig', anchor: 'A1', columns: ['Key', 'Value'], rows: [
-      ['WebhookUrl', ''],
       ['Enabled', 'TRUE'],
       ['SendGroupChat', 'TRUE'],
       ['UrgentEmergencies', 'TRUE'],
@@ -42,7 +41,7 @@ var NOTIFY_SETTINGS_SPEC = [
       ['InAppAlerts', 'TRUE'],
       ['AlertSound', 'TRUE']
   ] },
-  { name: 'tblNotifyRoutes', anchor: 'D1', columns: ['Provider', 'ChatLink', 'Email', 'Enabled'], rows: [
+  { name: 'tblNotifyRoutes', anchor: 'D1', columns: ['Provider', 'FlowUrl', 'Email', 'Enabled'], rows: [
       ['', '', '', 'TRUE']                               // blank starter row; notify.js skips rows with no Provider
   ] },
   { name: 'tblNotifyTemplates', anchor: 'I1', columns: ['Event', 'Template', 'Enabled'], rows: [
@@ -107,7 +106,7 @@ async function notifySettingsStatus(){
   });
 }
 
-// Everything the add-in's Settings panel shows: { config: { Key: value }, routes: [{ provider, chatLink, email, enabled }] }.
+// Everything the add-in's Settings panel shows: { config: { Key: value }, routes: [{ provider, flowUrl, email, enabled }] }.
 // Columns are found by header, so a column moved by hand still reads right. Missing tables give empty results.
 async function readNotifySettings(){
   return Excel.run(async function(ctx){
@@ -118,8 +117,9 @@ async function readNotifySettings(){
     var config = {}; if (cv) cv.values.slice(1).forEach(function(row){ var k = String(row[0]).trim(); if (k) config[k] = row[1]; });
     var routes = [];
     if (rv){ var h = rv.values[0].map(function(x){ return String(x).trim().toLowerCase(); }), at = function(n){ return h.indexOf(n); };
+      var cu = at('flowurl') < 0 ? at('chatlink') : at('flowurl');
       rv.values.slice(1).forEach(function(row){ var p = String(row[at('provider')] || '').trim(); if (!p) return;
-        routes.push({ provider: p, chatLink: String(row[at('chatlink')] ?? '').trim(), email: at('email') < 0 ? '' : String(row[at('email')] ?? '').trim(), enabled: String(row[at('enabled')]).toUpperCase() !== 'FALSE' }); }); }
+        routes.push({ provider: p, flowUrl: String(row[cu] ?? '').trim(), email: at('email') < 0 ? '' : String(row[at('email')] ?? '').trim(), enabled: String(row[at('enabled')]).toUpperCase() !== 'FALSE' }); }); }
     return { config: config, routes: routes, hasConfig: !!cv, hasRoutes: !!rv };
   });
 }
@@ -137,15 +137,15 @@ async function setNotifyConfig(key, value){
   });
 }
 
-// Add or update a provider's group chat and email from the add-in's Settings panel (matched by provider name, any case).
-async function upsertNotifyRoute(provider, chatLink, email, enabled){
+// Add or update a provider's workflow URL and email from the add-in's Settings panel (matched by provider name, any case).
+async function upsertNotifyRoute(provider, flowUrl, email, enabled){
   return Excel.run(async function(ctx){
     var t = ctx.workbook.tables.getItem('tblNotifyRoutes');
     var body = t.getDataBodyRange().load('values');
     await ctx.sync();
     var key = String(provider).trim().toLowerCase();
     var idx = body.values.findIndex(function(r){ return String(r[0]).trim().toLowerCase() === key; });
-    var row = [String(provider).trim(), String(chatLink || '').trim(), String(email || '').trim(), enabled === false ? 'FALSE' : 'TRUE'];
+    var row = [String(provider).trim(), String(flowUrl || '').trim(), String(email || '').trim(), enabled === false ? 'FALSE' : 'TRUE'];
     if (idx < 0) {
       var blank = body.values.findIndex(function(r){ return !String(r[0]).trim(); });   // reuse the starter row if it is still empty
       if (blank < 0) t.rows.add(null, [row]);
@@ -174,5 +174,5 @@ async function removeNotifyRoute(provider){
 }
 
 // ---- Wiring (taskpane.html, Settings › Teams notifications)
-//   "Set up Teams notifications" → ensureNotifySettings();  webhook field → setNotifyConfig('WebhookUrl', url)
-//   provider rows → upsertNotifyRoute(provider, chatLink, email, enabled) / removeNotifyRoute(provider)
+//   "Set up Teams notifications" → ensureNotifySettings();  escalation field → setNotifyConfig('EscalationChat', url)
+//   provider rows → upsertNotifyRoute(provider, flowUrl, email, enabled) / removeNotifyRoute(provider)
