@@ -32,10 +32,21 @@ function nfyCard(text, facts, emergency){
   return { type: 'message', attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', contentUrl: null,
     content: { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body } }] };
 }
-// text/plain + no-cors = a "simple" request: the browser sends it without a preflight (which the flow endpoint can't answer),
-// and can't read the answer, so delivery shows in the chat and the flow's run history.
+// Real JSON with CORS: the trigger answers the preflight (Allow-Origin *, content-type allowed), so the workflow reads the body as-is
+// and the add-in sees its answer: 202 = accepted. Returns { ok, status } or { ok: false, status, reason }.
+// If the browser blocks the request anyway, it falls back to a text/plain no-cors post, which can't be confirmed ({ ok, unconfirmed }).
+var NFY_HTTP_HINT = { 401: 'the URL is incomplete or out of date (paste it again from the trigger card), or the workflow isn’t set to Anyone', 403: 'the workflow isn’t set to Anyone, or the tenant blocks it', 404: 'the URL is wrong or the workflow was deleted', 409: 'the workflow is turned off', 429: 'too many requests, try again in a minute' };
 async function nfyPost(url, payload){
-  await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) });
+  var r;
+  try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); }
+  catch (e) {
+    await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(payload) });
+    return { ok: true, unconfirmed: true };
+  }
+  if (r.ok) return { ok: true, status: r.status };
+  var t = ''; try { t = await r.text(); } catch (e) {}
+  var code = (t.match(/"code"\s*:\s*"([^"]+)"/) || [])[1], hint = NFY_HTTP_HINT[r.status] || (/disabled/i.test(t) ? 'the workflow is turned off' : '');
+  return { ok: false, status: r.status, reason: 'The Teams workflow answered ' + r.status + (code ? ' (' + code + ')' : '') + (hint ? ': ' + hint : '') };
 }
 function nfyId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function nfyParseBp(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})\s*\/\s*(\d{2,3})/); return m ? { sys: +m[1], dia: +m[2] } : null; }
@@ -161,18 +172,20 @@ async function sendToProviderChat(data){
   // 1) Log row: drives the in-app flag + sound for provider view, and is the audit trail.
   try { await appendNotifyLog(payload); } catch (e) { console.warn('notify log', e); }
 
-  // 2) Teams, through the provider's workflow.
+  // 2) Teams, through the provider's workflow (and the escalation one).
   try {
-    if (T.group) await nfyPost(route.flow, payload);
-    if (willEscalate) await nfyPost(s.escalation, payload);
-    return { ok: true, message: payload.message };
+    var a = T.group ? await nfyPost(route.flow, payload) : { ok: true };
+    if (!a.ok) return { ok: false, reason: a.reason };
+    var b = willEscalate ? await nfyPost(s.escalation, payload) : { ok: true };
+    if (!b.ok) return { ok: false, reason: 'Sent to ' + data.provider + ', but the escalation workflow failed. ' + b.reason };
+    return { ok: true, message: payload.message, unconfirmed: !!(a.unconfirmed || b.unconfirmed) };
   } catch (e) {
     return { ok: false, reason: 'Network error: ' + e.message };
   }
 }
 
 // Settings › Teams notifications › "Send test": one test card through a provider's workflow, no log row, no patient.
-// Fire-and-forget like the rest, so the result shows in the chat and the flow's run history, not here.
+// { ok, status } means the workflow accepted it; whether the card then posted shows in the chat and the run history.
 async function sendNotifyTest(provider, sentBy){
   var s = await loadNotifySettings();
   var route = s.routes[nfyNorm(provider)];
@@ -180,7 +193,7 @@ async function sendNotifyTest(provider, sentBy){
   var now = new Date(), msg = 'Test from ESK Tracker' + (sentBy ? ' (' + sentBy + ')' : '') + ' - ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   var payload = Object.assign(nfyCard(msg), { event: 'test', message: msg, level: 'standard', stage: 'test', vitals: '', reasons: ['test'],
     toggles: s.toggles, provider: provider, patient: '', bay: '', clinic: '', sentBy: sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' });
-  try { await nfyPost(route.flow, payload); return { ok: true, message: msg }; }
+  try { var r = await nfyPost(route.flow, payload); return r.ok ? { ok: true, message: msg, status: r.status, unconfirmed: !!r.unconfirmed } : { ok: false, reason: r.reason }; }
   catch (e) { return { ok: false, reason: 'Network error: ' + e.message }; }
 }
 

@@ -8,7 +8,7 @@ const mockSrc = read('tests/notify-settings.test.js').match(/^function workbook\
 const workbook = vm.runInNewContext('(' + mockSrc + ')');
 function setup(){
   const wb = workbook(), posts = [];
-  const C = { Excel: { run: fn => fn(wb.ctx), SheetVisibility: {} }, fetch: async (url, o) => { posts.push({ url, o, body: JSON.parse(o.body) }); return {}; }, console, Date, Math, JSON, String, Object, Array, RegExp, decodeURIComponent, window: {} };
+  const C = { Excel: { run: fn => fn(wb.ctx), SheetVisibility: {} }, fetch: async (url, o) => { posts.push({ url, o, body: JSON.parse(o.body) }); const f = C.__answer; if (f) return f(url, o); return { ok: true, status: 202, text: async () => '' }; }, console, Date, Math, JSON, String, Object, Array, RegExp, decodeURIComponent, window: {} };
   vm.createContext(C); vm.runInContext(read('notify-settings.js') + '\n' + read('notify.js'), C);
   return { wb, C, posts };
 }
@@ -32,10 +32,10 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual(s.routes['dr c'].flow, '', 'a chat link is not a workflow URL');
     assert.strictEqual(C.nfyFlowUrl(FLOW_B), FLOW_B); assert.strictEqual(C.nfyFlowUrl('https://evil.example/powerplatform.com/x'), '');
   });
-  await t('initial vitals go to that provider’s workflow as an Adaptive Card, in a simple text/plain no-cors request', async () => {
+  await t('initial vitals go to that provider’s workflow as an Adaptive Card, as JSON with CORS', async () => {
     const r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '128/82', hr: '74', spo2: '98%' } });
     assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'standard');
-    const p = posts.at(-1); assert.strictEqual(p.url, FLOW_A); assert.strictEqual(p.o.mode, 'no-cors'); assert(/text\/plain/.test(p.o.headers['Content-Type']));
+    const p = posts.at(-1); assert.strictEqual(p.url, FLOW_A); assert.strictEqual(p.o.mode, undefined, 'cors'); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
     assert.strictEqual(p.body.message, 'SMIJAN initial vitals 128/82, HR 74, SpO2 98% - Bay 2');
     assert.strictEqual(p.body.type, 'message'); const card = p.body.attachments[0]; assert.strictEqual(card.contentType, 'application/vnd.microsoft.card.adaptive');
     assert.strictEqual(card.content.type, 'AdaptiveCard'); assert.strictEqual(card.content.body[0].text, p.body.message, 'no red heading for a standard alert');
@@ -75,6 +75,16 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     await C.setNotifyConfig('SendGroupChat', 'FALSE'); k = posts.length; await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '190/100' } });
     assert.deepStrictEqual(posts.slice(k).map(p => p.url), [FLOW_ESC], 'group chat off: escalation only');
     await C.setNotifyConfig('SendGroupChat', 'TRUE'); await C.setNotifyConfig('EscalateEmergency', 'FALSE');
+  });
+  await t('the workflow’s answer comes back: 404 and a disabled workflow are reported; a blocked request falls back to no-cors', async () => {
+    C.__answer = async () => ({ ok: false, status: 404, text: async () => '{"error":{"code":"WorkflowNotFound","message":"x"}}' });
+    let r = await C.sendNotifyTest('Dr A', 'T'); assert.strictEqual(r.ok, false); assert(/answered 404 \(WorkflowNotFound\): the URL is wrong/.test(r.reason), r.reason);
+    C.__answer = async () => ({ ok: false, status: 400, text: async () => '{"error":{"code":"WorkflowDisabled","message":"The workflow is disabled."}}' });
+    r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(r.sent, false); assert(/turned off/.test(r.reason), r.reason);
+    let k = 0; C.__answer = async (u, o) => { if (o.mode !== 'no-cors') throw new TypeError('Failed to fetch'); k++; return {}; };
+    r = await C.sendNotifyTest('Dr A', 'T'); assert.strictEqual(r.ok, true); assert.strictEqual(r.unconfirmed, true); assert.strictEqual(k, 1);
+    assert(/text\/plain/.test(posts.at(-1).o.headers['Content-Type']));
+    C.__answer = null; r = await C.sendNotifyTest('Dr A', 'T'); assert.strictEqual(r.status, 202); assert(!r.unconfirmed);
   });
   await t('test send: one post, no log row, no patient', async () => {
     const before = (await C.readNotifyLogSince('2000')).length, k = posts.length;
