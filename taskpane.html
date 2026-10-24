@@ -5426,7 +5426,7 @@ async function bmHandle(m, send, close){
   const c = bpCheck(m.plan); if (c.err) return send({ ev: 'bmSaved', ok: false, err: c.err });
   const warn = bpLost(c.plan), r = await bpSave(c.plan);
   if (r.err) return send({ ev: 'bmSaved', ok: false, err: r.err });
-  send({ ev: 'bmSaved', ok: true, ...(warn ? { warn } : {}) }); toast('ok', 'Bay map saved for everyone in this workbook.');
+  send({ ev: 'bmSaved', ok: true, ...(warn ? { warn } : {}) });   // the builder says it was saved
 }
 // Edit in the Bay Map Builder. It floats over the page like the consent form: an Office dialog from the task pane; from full screen
 // or the demo (one Office dialog at a time) a blurred overlay with the builder in a frame. Same messages either way (bmHandle).
