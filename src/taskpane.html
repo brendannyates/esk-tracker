@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="notify-settings.js"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -645,6 +646,10 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .bkey .bsw[data-k="ready"]{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent)}
 /* provider view (?view=bays): one page, no rail; another provider's bay is a quiet hatched "In use" */
 .app.prov{display:block}
+.set-teams .nfy-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"p e" "c c" "on rm" "bad bad";gap:6px 12px;align-items:end;padding:12px 0;border-top:1px solid var(--line)}
+.set-teams .nfy-row>:nth-child(1){grid-area:p}.set-teams .nfy-row>:nth-child(2){grid-area:c}.set-teams .nfy-row>:nth-child(3){grid-area:e}.set-teams .nfy-row>:nth-child(4){grid-area:on;margin:0}.set-teams .nfy-row>:nth-child(5){grid-area:rm;justify-self:end}.set-teams .nfy-bad{grid-area:bad;margin:0}
+.set-teams .nfy-row .lbl{margin-top:0}.set-teams .set-sub{margin:16px 0 4px;font-size:14px}
+@media (min-width:1500px){.set-teams .nfy-row{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) minmax(0,1.2fr) auto auto;grid-template-areas:"p c e on rm" "bad bad bad bad bad"}}
 .app.prov .btn.ico{width:44px;min-width:44px;padding:0;justify-content:center}
 .app.prov .btn.ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .app.prov .btn.ico.on{color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
@@ -2967,6 +2972,7 @@ const madrsByClin = L => { const m = new Map(); for (const x of L){ if (!m.has(x
 // Settings › Provider emails: one "Name = email" per line; matches the rendering provider by name, then by last name.
 function provEmail(name){
   const n = String(name || '').trim().toLowerCase(); if (!n) return '';
+  const sheet = (S.nfy?.routes || []).find(r => r.email && r.provider.trim().toLowerCase() === n); if (sheet) return sheet.email;   // Settings sheet › provider group chats
   const L = String(CFG.provEmails || '').split(/\r?\n/).map(l => { const m = l.match(/^(.*?)\s*[=:<,]\s*([^\s<>]+@[^\s<>]+)>?\s*$/); return m ? [m[1].trim().toLowerCase(), m[2]] : null; }).filter(Boolean);
   const hit = L.find(([k]) => k === n) || L.find(([k]) => k && (n.includes(k) || k.includes(n))) || L.find(([k]) => { const last = n.replace(/,.*$/, '').split(/\s+/).pop(); return last.length > 2 && k.includes(last); });
   return hit ? hit[1] : '';
@@ -6071,9 +6077,86 @@ function settingsHTML(){
   const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
   if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
   return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
-  ${pageCols('two', you + imports + wb, clinic + shared)}${lists}
+  ${pageCols('two', you + imports + wb, clinic + shared + nfyCardHTML())}${lists}
   <div class="set-save${dirty ? ' dirty' : ''}"><span id="setState" class="small" role="status">${dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="grow"></span><button class="btn ghost mute" id="setDiscard" data-act="setDiscard" ${dirty ? '' : 'hidden'}>Discard</button><button class="btn primary" data-act="cfgSave">Save settings</button></div>`;
 }
+// ---------- Settings › Teams notifications: the Settings sheet (notify-settings.js) ----------
+// The tables live on the workbook's "Settings" sheet; this card reads and writes them so nobody edits the sheet by hand.
+// Only from the Excel panel (Excel.run); the full-screen view says so. S.nfy = what the sheet holds, S.nfyDraft = the provider rows
+// being edited ([{ provider, chatLink, email, enabled, was }], was = the name it had on the sheet, '' for a new row).
+const NFY_FLAGS = [['Enabled', 'Send Teams notifications', 'Master switch'], ['SendGroupChat', 'Post to the provider’s group chat'],
+  ['UrgentEmergencies', 'Emergencies as urgent (Teams priority)'], ['EscalateEmergency', 'Also post emergencies to the escalation chat'],
+  ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
+const nfyOn = v => String(v).toUpperCase() === 'TRUE' || v === true;
+const nfyChatOk = u => !u || /^https:\/\/teams\.(microsoft|live)\.com\//i.test(u) || /^19:[^@\s]+@thread\.(v2|tacv2|skype)$/i.test(u);
+const nfyMailOk = e => !e || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e);
+let _nfyBoot = false;
+TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.store.remote && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
+async function nfyLoad(){
+  if (!S.store?.live || S.store.remote || typeof readNotifySettings !== 'function') return;
+  try { const [st, d] = await Promise.all([notifySettingsStatus(), readNotifySettings()]);
+    S.nfy = { ...d, missing: st.filter(x => !x.present).map(x => x.table) }; S.nfyDraft = d.routes.map(r => ({ ...r, was: r.provider })); S.nfyErr = ''; }
+  catch (e){ S.nfyErr = e.message || String(e); }
+  if (S.view === 'settings') render();
+}
+function nfyCardHTML(){
+  const head = '<section class="card set-teams"><h3>Teams notifications</h3><p class="small muted set-intro">Saved on the workbook’s Settings sheet, for everyone.</p>';
+  if (!S.store?.live) return head + '<p class="small muted">Not in the demo.</p></section>';
+  if (S.store.remote) return head + '<p class="small muted">Change these from the Excel panel (close full screen first).</p></section>';
+  if (S.nfyErr) return head + `<div class="msg bad">Couldn’t read the Settings sheet: ${esc(S.nfyErr)}</div><button class="btn" data-act="nfyReload">Try again</button></section>`;
+  if (!S.nfy){ if (!S._nfyAsked){ S._nfyAsked = true; nfyLoad(); } return head + '<p class="small muted">Reading the Settings sheet…</p></section>'; }
+  if (S.nfy.missing.length) return head + `<p class="small">${S.nfy.missing.length === 4 ? 'Not set up in this workbook yet.' : `Missing: ${esc(S.nfy.missing.join(', '))}.`} This adds a <b>Settings</b> sheet with the notification tables. Nothing already in the workbook is changed.</p>
+    <button class="btn primary" data-act="nfySetup">Set up Teams notifications</button></section>`;
+  const c = S.nfy.config, hook = String(c.WebhookUrl || '').trim(), D = S.nfyDraft || [];
+  const flag = ([k, l, h]) => `<label class="check"><input type="checkbox" data-nfyc="${k}" ${nfyOn(c[k]) ? 'checked' : ''}><span class="l">${esc(l)}${h ? `<small>${esc(h)}</small>` : ''}</span></label>`;
+  const provs = [...new Set([...provNames(tdModel()), ...S.P.map(p => canonProv(p.provider || '')).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+  const row = (r, i) => { const bad = !nfyChatOk(r.chatLink) ? 'That isn’t a Teams chat link (https://teams.microsoft.com/…) or chat ID (19:…@thread.v2).' : !nfyMailOk(r.email) ? 'Check the email address.' : '';
+    return `<div class="nfy-row" role="group" aria-label="Provider ${i + 1}">
+      <div><label class="lbl" for="nfyP${i}">Provider</label><input id="nfyP${i}" class="fld" data-nfyr="${i}|provider" list="dlNfyProv" value="${esc(r.provider)}" autocomplete="off"></div>
+      <div><label class="lbl" for="nfyC${i}">Group chat link</label><input id="nfyC${i}" class="fld" data-nfyr="${i}|chatLink" value="${esc(r.chatLink)}" placeholder="https://teams.microsoft.com/l/chat/…" autocomplete="off" spellcheck="false"></div>
+      <div><label class="lbl" for="nfyE${i}">Email</label><input id="nfyE${i}" class="fld" type="email" data-nfyr="${i}|email" value="${esc(r.email)}" placeholder="name@mymhs.com" autocomplete="off"></div>
+      <label class="check nfy-on"><input type="checkbox" data-nfyr="${i}|enabled" ${r.enabled ? 'checked' : ''}><span class="l">On</span></label>
+      <button class="btn ghost sm" data-act="nfyDel" data-i="${i}" aria-label="Remove ${esc(r.provider || 'this provider')}">Remove</button>
+      ${bad ? `<div class="msg warn small nfy-bad">${bad}</div>` : ''}</div>`; };
+  const dirty = JSON.stringify(D.map(({ was, ...r }) => r)) !== JSON.stringify(S.nfy.routes) || D.some(r => r.was !== r.provider);
+  return head + `<h4 class="set-sub">Provider group chats</h4>
+    ${D.length ? D.map(row).join('') : '<p class="small muted">No providers yet.</p>'}${datalist('dlNfyProv', provs)}
+    <div class="row" style="margin-top:8px"><button class="btn" data-act="nfyAdd">+ Add provider</button><span class="grow"></span>${dirty ? '<span class="small warnText">Unsaved</span>' : ''}<button class="btn primary" data-act="nfySaveRoutes" ${dirty ? '' : 'disabled'}>Save providers</button></div>
+    <h4 class="set-sub">Flow</h4>
+    <div class="set-f wide"><label class="lbl" for="nfyHook">Teams webhook URL <span class="muted">(from the flow’s trigger card; ${hook ? 'saved, not shown' : 'not set'})</span></label>
+      <div class="row"><input id="nfyHook" class="fld grow" type="password" autocomplete="off" spellcheck="false" placeholder="${hook ? '•••• saved. Paste a new one to replace it' : 'Paste the HTTP URL'}"><button class="btn" data-act="nfyHookSave">Save</button></div>
+      <p class="small muted">Anyone who can open this workbook can read this URL on the Settings sheet, and anyone with the URL can post through the flow. Keep the workbook’s sharing tight.</p></div>
+    <div class="set-f wide"><label class="lbl" for="nfyEsc">Escalation chat <span class="muted">(charge RN, clinic lead)</span></label><div class="row"><input id="nfyEsc" class="fld grow" value="${esc(String(c.EscalationChat || ''))}" placeholder="Group chat link or 19:…@thread.v2" autocomplete="off" spellcheck="false"><button class="btn" data-act="nfyEscSave">Save</button></div></div>
+    <h4 class="set-sub">What gets sent</h4>${NFY_FLAGS.map(flag).join('')}
+    <p class="small muted">Initial vitals and emergencies always notify. Nothing is sent to Teams until the sending piece (notify.js) is added.</p></section>`;
+}
+async function nfyWrite(label, fn, ok){
+  try { busy(label); await fn(); toast('ok', ok); } catch (e){ toast('bad', esc(e.message || String(e))); } finally { busy(false); }
+  await nfyLoad();
+}
+async function nfySaveRoutes(){
+  const D = (S.nfyDraft || []).map(r => ({ ...r, provider: String(r.provider || '').trim() })), names = D.map(r => r.provider.toLowerCase());
+  const bad = D.find(r => !r.provider) ? 'Every row needs a provider name, or remove it.' : names.some((n, i) => names.indexOf(n) !== i) ? 'A provider is listed twice.'
+    : D.find(r => !nfyChatOk(r.chatLink)) ? 'Fix the group chat link marked below.' : D.find(r => !nfyMailOk(r.email)) ? 'Fix the email marked below.' : '';
+  if (bad) return toast('warn', bad);
+  const gone = S.nfy.routes.filter(r => !D.some(d => d.was && d.was.toLowerCase() === r.provider.toLowerCase() && d.provider.toLowerCase() === r.provider.toLowerCase()));
+  await nfyWrite('Saving provider chats…', async () => { for (const r of gone) await removeNotifyRoute(r.provider); for (const r of D) await upsertNotifyRoute(r.provider, r.chatLink, r.email, r.enabled); },
+    `Saved ${D.length} provider${D.length === 1 ? '' : 's'} to the Settings sheet.`);
+}
+Object.assign(ACT_SETTINGS, {
+  nfyReload: () => { S.nfy = null; S.nfyErr = ''; S._nfyAsked = false; render(); },
+  nfySetup: () => nfyWrite('Setting up the Settings sheet…', async () => { const r = await ensureNotifySettings(); if (r.blocked.length) throw new Error(`The Settings sheet already has something where these go, so they weren’t added: ${r.blocked.join(', ')}. Move it, then try again.`); }, 'Teams notification tables are ready on the Settings sheet.'),
+  nfyAdd: () => { (S.nfyDraft = S.nfyDraft || []).push({ provider: '', chatLink: '', email: '', enabled: true, was: '' }); render(); setTimeout(() => $(`#nfyP${S.nfyDraft.length - 1}`)?.focus(), 30); },
+  nfyDel: el => { S.nfyDraft.splice(+el.dataset.i, 1); render(); },
+  nfySaveRoutes: () => nfySaveRoutes(),
+  nfyHookSave: () => { const u = String($('#nfyHook')?.value || '').trim(); if (!/^https:\/\//i.test(u)) return toast('warn', 'Paste the full https:// URL from the flow’s trigger card.'); return nfyWrite('Saving the webhook…', () => setNotifyConfig('WebhookUrl', u), 'Webhook URL saved to the Settings sheet.'); },
+  nfyEscSave: () => { const u = String($('#nfyEsc')?.value || '').trim(); if (!nfyChatOk(u)) return toast('warn', 'That isn’t a Teams chat link or chat ID.'); return nfyWrite('Saving…', () => setNotifyConfig('EscalationChat', u), 'Escalation chat saved.'); },
+});
+// Provider rows type into S.nfyDraft (no re-render while typing, so focus stays); checkboxes save their config flag straight away.
+document.addEventListener('input', e => { const d = e.target.dataset?.nfyr; if (!d || !S.nfyDraft) return; const [i, k] = d.split('|'); if (!S.nfyDraft[+i]) return;
+  S.nfyDraft[+i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; const b = $('[data-act="nfySaveRoutes"]'); if (b) b.disabled = false; });
+document.addEventListener('change', e => { const k = e.target.dataset?.nfyc; if (k) nfyWrite('Saving…', () => setNotifyConfig(k, e.target.checked ? 'TRUE' : 'FALSE'), 'Saved.');
+  else if (e.target.dataset?.nfyr && S.view === 'settings') render(); });
 const setBackLabel = () => { const r = S.setReturn; return r && r !== 'settings' && PAGES[r] ? PAGES[r].label : ''; };
 Object.assign(PAGES.settings, {
   sub: () => CFG.me ? `Signed as ${esc(CFG.me)}` : 'No name yet',
