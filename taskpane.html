@@ -1241,8 +1241,12 @@ function parseScan(raw){
 
 // ---------- settings (this device only; no patient data) ----------
 const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5 };
-let CFG = (() => { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('eskCfg') || '{}')); } catch { return { ...DEF }; } })();
-function saveLocal(){ try { localStorage.setItem('eskCfg', JSON.stringify(CFG)); } catch {} applyTheme(); }
+// The demo keeps its own settings (eskCfgDemo), pre-filled with fake names, so it never touches a real person's Settings.
+const DEMO_CFG = { me: 'Taylor R.', sup: 'Provider A', pm: 'Jordan P.', prov: 'Provider A', genoaEmail: 'genoa.demo@example.com', cc: 'lead.demo@example.com', sig: 'Taylor R., ESK Clinic (demo)' };
+let CFG_KEY = /[?&]demo\b/.test(location.search) ? 'eskCfgDemo' : 'eskCfg';
+const loadCfg = () => { try { return Object.assign({}, DEF, CFG_KEY === 'eskCfgDemo' ? DEMO_CFG : {}, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch { return { ...DEF }; } };
+let CFG = loadCfg();
+function saveLocal(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); } catch {} applyTheme(); }
 function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
 
 // ---------- user profiles: a backup of everyone's Settings on the hidden "ESK User Settings" sheet ----------
@@ -2767,7 +2771,7 @@ function render(){
     }
     const body = provPageHTML(); S._pvSig = body; pvEvents();
     const tools = [S.mode === 'pane' && S.canFull ? '<button class="btn" data-act="full" title="Open full screen over Excel">Full screen</button><button class="btn" data-act="popOut" title="Open ESK Bays in its own browser window">Pop out</button>' : '',
-      S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
+      S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', S.mode === 'demo' ? `<button class="btn" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
     app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook.</div>'}
       <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
@@ -2796,7 +2800,7 @@ function render(){
       ${brand}
       <nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav>
       <div class="sec">
-        ${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
+        ${S.mode === 'demo' ? `<button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <button class="ni rt" data-act="refresh" title="Read the workbook again">Refresh</button>
         ${conn}</div>
     </aside>
@@ -3093,12 +3097,14 @@ function cancelledHTML(items){
   const id = 'cx:' + c[0].a.date;
   return `<details class="cxlist small noprint" data-open="${id}"${tdOpen(id, false) ? ' open' : ''}><summary>Cancelled · ${c.length}</summary>${c.map(i => `<div class="row" style="gap:8px;margin-top:4px"><span>${fmtT(i.a.time)}</span><b>${esc(nm(i.a.mrn))}</b><span class="muted">${i.a.marked ? 'marked in the tracker' : 'cancelled in NextGen'}</span>${i.a.marked ? `<button class="btn sm ghost" data-act="apptUncancel" data-k="${esc(i.a.key)}">Undo</button>` : ''}</div>`).join('')}</details>`;
 }
-// ---------- daily appointment list: the panel notes the day the Appt List (NextGen) table last changed ----------
+// ---------- daily appointment list: the panel notes the day and time the Appt List (NextGen) table last changed ----------
+// The upload reminder comes up every day at 4 PM (FRESH_AT) and stays until a list is uploaded after 4 PM that day.
+const FRESH_AT = 16 * 60;
 function apptSig(){ const s = JSON.stringify((S.tables.appts?.values || []).filter(r => r.some(v => v !== '' && v != null))); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h; }
 async function noteApptList(){
   const sig = apptSig(), prev = S.store.getDoc('eskApptList');
   if (prev && prev.sig === sig){ S.apptList = prev; return; }
-  S.apptList = { sig, on: prev ? isoOf(todaySerial()) : null };   // first time: there is no way to tell how old the list is
+  S.apptList = { sig, on: prev ? isoOf(todaySerial()) : null, at: prev ? nowMin() : null };   // first time: there is no way to tell how old the list is
   await S.store.setDoc('eskApptList', S.apptList);
 }
 // Steps to run a memorized NextGen PM report and bring it in (the appointment list, the REMS uploads DM report).
@@ -3111,10 +3117,12 @@ const nextgenHowTo = (summary, type, name, last, open) => `<details style="margi
       <li>Export the report by clicking the x symbol beside the bar graph icon <img src="assets/export-icon.png" alt="Export icon: spreadsheet x next to a bar graph" height="16">.</li>
       <li>${last}</li>
     </ol></details>`;
+// Due from 4 PM until a list uploaded today at or after 4 PM (an older record has no time, so it counts as before 4 PM).
+const freshDue = (A = S.apptList, now = nowMin(), T = todaySerial()) => now >= FRESH_AT && !(fromIso(A?.on) === T && (A?.at ?? -1) >= FRESH_AT);
 function freshHTML(){
   if (!S.store.live) return '';
-  const on = fromIso(S.apptList?.on); if ((on != null && on >= todaySerial()) || S.freshHidden === (S.apptList?.on || 'none')) return '';
-  return `<div class="msg warn noprint fresh" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day.</b>
+  const on = fromIso(S.apptList?.on); if (!freshDue() || S.freshHidden === isoOf(todaySerial())) return '';
+  return `<div class="msg warn noprint fresh" style="margin:8px 12px"><b>${on == null ? 'No record of when the appointment list was last updated.' : `The appointment list was last updated ${fmtD(on, 'full')}.`} Upload a fresh 1 ESK Ordering - B report every day after 4 PM.</b>
     ${nextgenHowTo('How to run the report', 'Appointment Reports', '1 ESK Ordering - B', 'Copy the file from your NextGen File Explorer, then select “⇪ Upload appt list” at the top and choose it. It replaces M5:S and below on the Appt List tab (MRN to Status, then Rendering); the formula columns after them are left alone.')}
     <div style="margin-top:6px"><button class="btn sm primary" data-act="upAppt">⇪ Upload appt list</button> <button class="btn sm ghost" data-act="freshHide">Dismiss</button></div></div>`;
 }
@@ -3242,11 +3250,11 @@ function itemState(i){
   if (!i.suggest) return i.inf.pharm === 'BESSE' ? 'onhand' : 'bad';
   return auditStatus(i.suggest)?.cls === 'warn' ? 'check' : 'onhand';
 }
-// ---------- in-clinic visit: start time, vitals/discharge timers, check-out, Tx report draft, rescue meds ----------
+// ---------- in-clinic visit: start time, vitals/discharge timers, check-out, Tx report draft, PRN meds ----------
 // Saved with the workbook (document setting "eskVisit"), keyed by appointment.
 const RESCUE = ['Zofran', 'Nifedipine', 'Captopril'];
 // PRN quick entry (Room time + Initial vitals, and the PRN med button from rooming to discharge). Saved to eskVisit[key].rescue,
-// the same list the Tx report reads, so it shows in the note, the Rescue tag and the "Rescue med logged" checklist item.
+// the same list the Tx report reads, so it shows in the note, the PRN tag and the "PRN logged" checklist item.
 // PRN totals on the Inventory: the visit's administered kit row gets the mg total per drug, in the column whose header names the drug
 // and "Administered" (e.g. "Zofran Administered (mg)", "Nefidipene Administered (mg)"; spelling of Nifedipine is forgiven).
 const PRN_TRACK = [{ med: /zofran|ondansetron/i, col: h => /zofran|ondansetron/.test(h) && /administ/.test(h), label: 'Zofran' },
@@ -3551,7 +3559,7 @@ function visitRowHTML(i){
   const edit = `<button class="linkbtn" data-act="vEdit" data-k="${k}" title="Move to another clinician or time; fix room or discharge times">edit</button>`;
   const med = i.adminKit ? `<span class="chip ok">Given ✓ ${esc(i.adminKit.adminRaw ?? i.inf.mg)} mg</span>` : kitRowHTML(i);
   if (a.date !== todaySerial()) return `<div class="vflow"><div class="vrow small">${med}<span class="grow"></span>${edit}</div></div>`;
-  const rescue = (v?.rescue || []).length ? `<span class="chip warn">Rescue: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : '';
+  const rescue = (v?.rescue || []).length ? `<span class="chip warn">PRN: ${esc(v.rescue.map(r => r.med).join(', '))}</span>` : '';
   if (v?.out) return `<div class="vflow"><div class="vrow small"><span class="chip ok">Discharged ${fmtT(v.out.at)}</span>${rescue}<span class="grow"></span>${txBtn(a.key, v)}${edit}</div>
     <details class="vtl small"><summary class="muted">Timeline</summary>${trackHTML(a.key, v)}${stepsHTML(i, v)}</details></div>`;
   return `<div class="vflow">${v && v.start != null ? trackHTML(a.key, v) : ''}${stepsHTML(i, v)}<div class="vrow small">${rescue}<span class="grow"></span>${txBtn(a.key, v)}${edit}</div></div>`;
@@ -3713,7 +3721,7 @@ function openCheckout(key){
       <div class="small" style="font-weight:800;margin-top:12px">Staff</div>
       <label class="lbl" style="margin-top:6px">NextGen Sedation Scale (staff-rated at discharge)</label><select class="fld" data-co="ngSed"><option value="">Choose…</option>${SED_NG.map(([n, l]) => `<option value="${n}" ${String(S.co.ngSed) === String(n) ? 'selected' : ''}>${n} = ${esc(l)}</option>`).join('')}</select>
       <label class="opt" style="margin-top:6px"><input type="checkbox" data-co="gait" ${S.co.gait ? 'checked' : ''}> Gait noted to be stable</label>
-      <div class="small" style="font-weight:800;margin-top:12px">Rescue medication given?</div><div id="coRx">${rescueHTML()}</div>
+      <div class="small" style="font-weight:800;margin-top:12px">PRN given?</div><div id="coRx">${rescueHTML()}</div>
     </div><div class="coout"><div id="coOut">${coOutWrap()}</div></div></div>
     <div class="row" style="margin-top:12px;justify-content:flex-end;flex-wrap:wrap"><span id="coSaved" class="small muted grow">${v.savedAt ? 'Draft saved ' + new Date(v.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Saves as you type — finish later anytime'}</span><button class="btn ghost" data-act="coClose">Close</button><button class="btn" data-act="coSave">Save draft</button><button class="btn" data-act="coCopy">Copy note</button>${fd ? `<button class="btn primary" data-act="coDone">${v.out ? 'Save &amp; copy note' : 'Discharge &amp; copy note'}</button>` : `<span class="small muted" title="Discharge appears once final vitals are due">Discharge at ${v.start != null ? fmtT(disAt(v.start)) : 'final vitals'}</span>`}</div>`, true);
 }
@@ -3740,7 +3748,7 @@ async function coPersist(checkout, quiet){
 const REMS_URL = 'https://spravatorems.com/Home/#Public';
 const DOC_ITEMS = [['tracker', 'ESK Tracker'], ['logs', 'Med logs'], ['tx', 'Tx report'], ['rems', 'REMS form']];
 const docGet = (key, t) => (S.docs || {})[key]?.[t] || null;
-const docItems = i => (visitGet(i.a.key)?.rescue || []).length ? [...DOC_ITEMS, ['medinv', 'Rescue med logged']] : DOC_ITEMS;
+const docItems = i => (visitGet(i.a.key)?.rescue || []).length ? [...DOC_ITEMS, ['medinv', 'PRN logged']] : DOC_ITEMS;
 const todosFor = key => (S.docs || {})[key]?._x || [];   // the PCT's own to-dos for this visit
 function docState(i){
   const given = !!i.adminKit; const o = {}; const L = docItems(i); const X = todosFor(i.a.key);
@@ -3767,7 +3775,7 @@ function docRowHTML(i){
     const medInv = (S.shared || {}).medInvUrl;
     const tip = g ? `Marked by ${esc(g.by || '—')} — click to undo` : 'Click to mark done';
     if (t === 'rems') return `<span class="doc split ${g ? 'on' : ''}"><button class="tick" data-act="docTog" data-k="${esc(i.a.key)}" data-t="rems" title="${tip}" aria-label="Mark REMS form done">${g ? '✓' : '○'}</button><a href="${REMS_URL}" target="_blank" rel="noopener" title="Open the SPRAVATO® REMS site">${l} ↗</a></span>`;
-    if (t === 'medinv' && medInv) return `<span class="doc split ${g ? 'on' : ''}"><button class="tick" data-act="docTog" data-k="${esc(i.a.key)}" data-t="medinv" title="${tip}" aria-label="Mark rescue med logged">${g ? '✓' : '○'}</button><a href="${esc(medInv)}" target="_blank" rel="noopener" title="Open the Medication Inventory Tracker">${l} ↗</a></span>`;
+    if (t === 'medinv' && medInv) return `<span class="doc split ${g ? 'on' : ''}"><button class="tick" data-act="docTog" data-k="${esc(i.a.key)}" data-t="medinv" title="${tip}" aria-label="Mark PRN logged">${g ? '✓' : '○'}</button><a href="${esc(medInv)}" target="_blank" rel="noopener" title="Open the Medication Inventory Tracker">${l} ↗</a></span>`;
     return `<button class="doc ${g ? 'on' : ''}" data-act="docTog" data-k="${esc(i.a.key)}" data-t="${t}" title="${g ? tip : t === 'tx' ? 'Completed in NextGen — click to mark done' : 'Click to mark done'}">${g ? '✓' : '○'} ${l}${t === 'tx' ? ' <span class="muted">(NextGen)</span>' : ''}</button>`;
   };
   return `<div class="docrow small"><span class="lab ${d.done ? 'okText' : given ? 'warnText' : 'muted'}">Documentation ${d.n}/${d.total}</span>${docItems(i).map(chip).join('')}</div>`;
@@ -4613,6 +4621,10 @@ function confirmClear(){ if (S._clr && Date.now() - S._clr < 4000){ S._clr = 0; 
 //   S.open                       { [id]: true|false } for every <details data-open="<id>">; a toggle listener keeps it, render() reads it back.
 const PAGES = {};
 const TICKS = [];
+// Appointment list reminder (freshDue), at 4 PM: the banner appears (re-render) and a toast, once a day per panel.
+TICKS.push(() => { if (!S.loaded || S.provView || !S.store?.live || formBusy()) return; const due = freshDue(), T = todaySerial();
+  if (due && S._freshToast !== T){ S._freshToast = T; toast('warn', 'It’s 4 PM: upload a fresh 1 ESK Ordering - B appointment list.'); }
+  if (due !== S._freshWas){ S._freshWas = due; render(); } });
 S.open = S.open || {};
 function formBusy(){ return !$('#modal').hidden || !$('#busy').hidden || !!S.editing; }
 function taskRow({ t = '', d = '', btn = '', done = false, id = '', body = '', open = false, tone = '', current = false, more = 'Show details' } = {}){
@@ -4646,7 +4658,7 @@ const tdType = a => a.isStart ? 'Start' : a.isEFU ? 'Follow-up' : (a.event || 'V
 const tdLive = due => `<span class="st ${dueCls(due, true)}" data-due="${due.at}" data-what="${esc(due.what)}" data-kind="${due.kind}" data-today="1">${esc(dueText(due, true))}</span>`;
 const tdM40 = v => ({ what: `${CFG.vitalsMin}-min vitals`, at: v40At(v), kind: 'v40' });
 const tdFin = v => ({ what: 'Final vitals', at: disAt(obsAt(v)), kind: 'dis' });
-const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'Rescue: ' + v.rescue.map(r => r.med).join(', ')) : '';
+const tdRescue = v => (v?.rescue || []).length ? tag('warn', 'PRN: ' + v.rescue.map(r => r.med).join(', ')) : '';
 
 // One queue row per visit: group, sort rank, dot tone, state line and up to two tags.
 function tdRow(i, now, on){
@@ -5202,7 +5214,7 @@ function schFold(key, label, open){ const id = 'sch:' + key, on = S.open && Obje
 // The first open task (top to bottom) gets the primary button; the rest are plain.
 const schBtn = key => schModel().first === key ? 'btn sm primary' : 'btn sm';
 
-// Documentation back-fill for past visits (Tx report, REMS form, rescue med); same toggles as Today.
+// Documentation back-fill for past visits (Tx report, REMS form, PRN); same toggles as Today.
 function schDocsHTML(i){
   const d = docState(i), key = esc(i.a.key), medInv = (S.shared || {}).medInvUrl;
   const it = ([t, l]) => {
@@ -5990,7 +6002,7 @@ const ACT = {
   apptReplace: () => apptReplace(),
   apptCancel: el => setCancelled(el.dataset.k, true),
   apptUncancel: el => setCancelled(el.dataset.k, false),
-  freshHide: () => { S.freshHidden = S.apptList?.on || 'none'; render(); },
+  freshHide: () => { S.freshHidden = isoOf(todaySerial()); render(); },
   settings: openSettings,
   close: closeModal,
   day: el => { const d = +el.dataset.d; S.day = d === 0 ? todaySerial() : S.day + d; S.todayMsg = null; render(); },
@@ -6146,7 +6158,8 @@ const ACT = {
     closeModal(); render();
   },
   profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
-  demo: () => { location.search = '?demo=1'; },
+  demo: el => startDemo(!!el.dataset.prov),
+  fsDemo: () => fsToggle(),
   dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
 Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_SETTINGS);
@@ -6364,10 +6377,11 @@ function notInExcelHTML(){
     <ol><li>Click <b>Download manifest</b> below — it’s set up for this web address.</li>
       <li>Open the workbook in Excel on the web → <b>Home → Add-ins → More Add-ins → My Add-ins → Upload My Add-in</b>, and choose the file.</li>
       <li>An <b>ESK Tracker</b> button appears on the Home tab.</li></ol>
-    <div class="row"><button class="btn primary" data-act="dlManifest">Download manifest</button><button class="btn" data-act="demo">Try the demo</button></div>
+    <div class="row"><button class="btn primary" data-act="dlManifest">Download manifest</button><button class="btn" data-act="demo">Try the ESK Tracker demo</button></div>
     <h3>Providers: ESK Bays</h3>
     <p class="small muted">A separate add-in that opens only the bay map, for one provider's patients. Install it the same way, in the same workbook.</p>
-    <div class="row"><button class="btn" data-act="dlManifest" data-prov="1">Download ESK Bays manifest</button></div>
+    <div class="row"><button class="btn" data-act="dlManifest" data-prov="1">Download ESK Bays manifest</button><button class="btn" data-act="demo" data-prov="1">Try the ESK Bays demo</button></div>
+    <p class="small muted">The demos use fake patients and open full screen (Esc leaves it). Nothing in them is saved.</p>
     <div class="small muted" style="margin-top:10px">The add-in keeps patient data in the workbook. This site only serves the app’s code.</div></div></main>`;
 }
 // prov: the "ESK Bays" provider add-in. Its own Id, names and button, opening taskpane.html?view=bays; installs beside ESK Tracker.
@@ -6557,13 +6571,46 @@ function openFull(pop){
   });
 }
 
+// ---------- demo (fake data): opens on Today (or the bay map) with fake Settings and today's visits already under way ----------
+// Seeded once loaded: Provider A's patients in Bays 1 and 2 (one dosed, with a nifedipine PRN given and a recheck; one waiting on
+// dose confirmation with a Zofran PRN waiting for the PCT), a Provider B visit in Bay 4 ("In use" in ESK Bays), one booked in Bay 3.
+async function seedDemo(){
+  const T = todaySerial(), now = nowMin(), at = m => Math.max(0, now - m), L = todayModel(T), by = id => L.find(i => i.a.mrn === id);
+  const vit = (bp, hr, o2, t) => ({ bp, hr, o2, at: t, by: CFG.me });
+  const a = by('900101'), b = by('900104'), c = by('900110'), d = by('900113');
+  S.visit = S.visit || {};
+  if (a){ const adm = at(70), k = a.suggest;
+    S.visit[a.a.key] = { start: at(78), adm, bay: '1', vit: { init: vit('132/84', '78', '98', at(78)), mid: vit('146/92', '84', '97', adm + 40) },
+      rechk: [{ bp: '138/86', hr: '80', o2: '98', at: hhmm(adm + 55), why: 'after nifedipine', by: CFG.me }],
+      prnOrd: [{ id: 'demo1', med: 'Nifedipine', dose: '10 mg PO', reason: 'BP', by: 'Provider A', at: adm + 42, ts: Date.now(), ack: { by: CFG.me, time: hhmm(adm + 45), ts: Date.now() } }],
+      rescue: [{ med: 'Nifedipine', dose: '10 mg PO', time: hhmm(adm + 45), reason: 'BP', ord: 'demo1' }],
+      ...(k ? { pc: { at: adm, sn: String(k.serial || '').slice(-4), lot: String(k.lot || ''), kit: k.id, by: 'Provider A', ts: Date.now() } } : {}) };
+    if (k){ const obj = { administeredmg: 84, dateadministered: { date: T }, treatingtechnician: CFG.me, supervisingphysician: 'Provider A' };
+      if (!k.mrn) obj.mrn = mrnVal(a.a.mrn); if (!k.comments) obj.comments = nm(a.a.mrn);
+      const { out } = changesFor('kits', obj); await S.store.update('kits', k.r, S.tables.kits.snap(k.r), out); } }
+  if (b) S.visit[b.a.key] = { start: at(12), bay: '2', vit: { init: vit('148/94', '90', '97', at(12)) },
+    prnOrd: [{ id: 'demo2', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', by: 'Provider A', at: at(4), ts: Date.now(), ack: null }] };
+  if (c) S.visit[c.a.key] = { start: at(25), adm: at(20), bay: '4', mv: { prov: 'Provider B', time: c.a.time }, vit: { init: vit('120/78', '70', '99', at(25)) } };
+  if (d) S.visit[d.a.key] = { bay: '3' };
+  await saveVisit(); S._pvSeen = null; await reload(true); closeModal(); render();
+}
+// Browser full screen for the demo (outside Excel there is no Office dialog). Esc or the same button leaves it.
+const fsOn = () => !!document.fullscreenElement;
+function fsToggle(){ const p = fsOn() ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.(); p?.catch?.(() => toast('warn', 'This browser didn’t allow full screen here.')); }
+document.addEventListener('fullscreenchange', () => { if (S.loaded) render(); });
+let startDemo;
 (function boot(){
   const demo = /[?&]demo\b/.test(location.search);
   S.provView = /[?&]view=bays\b/.test(location.search);   // the "ESK Bays" provider add-in
   S.mode = /[?&]mode=dialog\b/.test(location.search) ? 'dialog' : demo ? 'demo' : 'pane';
   const start = store => { S.store = store; useMsName(); return reload(true).then(() => store.watch?.(onWorkbookChange)); };
+  // From the "not in Excel" page: start the demo in place (no page load), so the same click can also go full screen.
+  startDemo = prov => { fsOn() || document.documentElement.requestFullscreen?.().catch(() => {});
+    if (typeof history.replaceState === 'function') history.replaceState(null, '', '?demo=1' + (prov ? '&view=bays' : ''));   // office.js blanks it; the URL is only for reloads
+    CFG_KEY = 'eskCfgDemo'; CFG = loadCfg(); applyTheme();
+    S.provView = !!prov; S.mode = 'demo'; S.askedName = true; S.view = 'today'; $('#app').innerHTML = ''; start(DemoStore()).then(seedDemo); };
   if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
-  if (demo){ start(DemoStore()); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
+  if (demo){ S.askedName = true; start(DemoStore()).then(seedDemo); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
   Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded && !S.provView) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
