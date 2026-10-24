@@ -72,7 +72,7 @@ async function loadNotifySettings(){
     // Office toggles. The add-in applies the stage ones; the channel ones ride in the payload and the flow applies them.
     var toggles = {
       group: flag('SendGroupChat', true), escalate: flag('EscalateEmergency', false), urgent: flag('UrgentEmergencies', true),
-      stages: { initial: true, recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) }
+      stages: { initial: flag('NotifyInitial', true), recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) }
     };
     var esc = nfyChatId(config.EscalationChat);
     // Provider | ChatLink | Email | Enabled, found by header (the add-in's Settings added Email, so Enabled is no longer the third column)

@@ -43,7 +43,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     const wb = workbook(), C = run(wb), r = await C.ensureNotifySettings();
     assert.deepStrictEqual([...r.created], ['tblNotifyConfig', 'tblNotifyRoutes', 'tblNotifyTemplates', 'tblNotifyLog']);
     const at = nm => { const x = wb.tables.find(y => y.name === nm); return [x.r0, x.c0, x.rows, x.cols].join(','); };
-    assert.strictEqual(at('tblNotifyConfig'), '0,0,12,2'); assert.strictEqual(at('tblNotifyRoutes'), '0,3,2,4'); assert.strictEqual(at('tblNotifyTemplates'), '0,8,3,3'); assert.strictEqual(at('tblNotifyLog'), '0,12,2,10');
+    assert.strictEqual(at('tblNotifyConfig'), '0,0,13,2'); assert.strictEqual(at('tblNotifyRoutes'), '0,3,2,4'); assert.strictEqual(at('tblNotifyTemplates'), '0,8,3,3'); assert.strictEqual(at('tblNotifyLog'), '0,12,2,10');
     assert.strictEqual(wb.get('Settings', 0, 5), 'Email'); assert.strictEqual(wb.get('Settings', 1, 0), 'WebhookUrl');
     const again = await C.ensureNotifySettings(); assert.strictEqual(again.created.length, 0); assert.strictEqual(again.existing.length, 4, 'safe to call again');
     const st = await C.notifySettingsStatus(); assert(st.every(x => x.present));
