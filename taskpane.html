@@ -5373,6 +5373,8 @@ async function bpSave(P){
   try { if (await S.store.setDoc('eskShared', sh) === false) throw new Error(); } catch (e){ return { err: e?.message || 'The workbook didn’t save the map. Try again.' }; }
   S.shared = sh; render(); return { ok: true };
 }
+// A turned-down saved map that still has its edit model: the Bay Map Builder can open that file and fix it.
+function bpFixable(){ bayPlan(); const e = _bp.err && S.shared?.bayPlan?.edit; return !!e && typeof e === 'object' && !Array.isArray(e); }
 // Settings › For everyone: the map in use and the ways to change it.
 function bayMapSetHTML(){
   const P = bayPlan(), own = P !== BP_DEFAULT, n = P.bays.length, at = own && P.savedAt ? new Date(P.savedAt) : null;
@@ -5380,7 +5382,7 @@ function bayMapSetHTML(){
   const by = own && (P.savedBy || when) ? `saved${P.savedBy ? ` by ${esc(P.savedBy)}` : ''}${when ? ` ${when}` : ''}` : '';
   const bmLink = '<a href="https://brendannyates.github.io/bay-map-builder/" target="_blank" rel="noopener">Bay Map Builder ↗</a>';
   const sum = own ? [esc(P.name || 'Clinic map'), `${n} bay${n === 1 ? '' : 's'}`, by].filter(Boolean).join(' · ') : `Built-in (${n} bays)`;
-  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} Download this map, open it in the ${bmLink} with Open a map file, fix it there and load it here again.</div>` : ''}
+  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} ${bpFixable() ? `Download this map, open it in the ${bmLink} with Open a map file, fix it there and load it here again.` : 'Load the file again.'}</div>` : ''}
     <div class="set-row"><button class="btn" data-act="bmFile">Load a map file…</button><button class="btn ghost" data-act="bmDown">Download this map</button>${own || _bp.err ? '<button class="btn ghost" data-act="bmReset">Use the built-in map</button>' : ''}</div>
     <div class="set-hint">The floor plan on Today and in ESK Bays. Draw your rooms, doors and bays in the ${bmLink}, click Download file, then Load a map file here.</div>`;
 }

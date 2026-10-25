@@ -152,7 +152,7 @@ await t('a bay that isn’t on the map still shows where the patient is: emergen
   const w = N.bayNextHTML(mk(row('w', '5', 'wait', 9)));
   assert(w.includes('<span class="where">Bay 5</span>') && w.includes('>Change bay</button>'), w);
 });
-await t('a turned-down saved map: Download keeps the stored file; Settings says fix it in the Bay Map Builder and load it again', () => {
+await t('a turned-down saved map: Download keeps the stored file; Settings says fix it in the Bay Map Builder when it has an edit model, else load the file again',() => {
   const edit = { v: 1, name: 'Clinic A rooms', items: [{ id: 'b1', k: 'bay', no: 'A', x: 100, y: 150, r: 58 }] };
   N.S.shared = { bayPlan: { ...plan(), walls: [{ d: '<svg onload=x>' }], edit } }; N.today = [];
   const h = N.bayMapSetHTML();
@@ -163,7 +163,9 @@ await t('a turned-down saved map: Download keeps the stored file; Settings says 
   assert.deepStrictEqual(JSON.parse(txt), JSON.parse(JSON.stringify(N.S.shared.bayPlan)), 'the stored map as it is, edit model and all');
   assert(/downloaded as it is/.test(N.toasts.at(-1)[1]));
   N.S.shared = { bayPlan: { ...plan(), name: 'a/b', walls: [{ d: 'x' }], edit: [1] } };
-  assert(/Bay Map Builder ↗<\/a> with Open a map file/.test(N.bayMapSetHTML()), 'same advice with no edit model');
+  const h2 = N.bayMapSetHTML(); assert(h2.includes('A wall is malformed. Load the file again.</div>') && !/with Open a map file/.test(h2), 'edit model isn’t an object: the builder can’t open it either');
+  N.S.shared = { bayPlan: { ...plan(), walls: [{ d: 'x' }], edit: undefined } }; assert(N.bayMapSetHTML().includes('A wall is malformed. Load the file again.</div>'), 'no edit model');
+  N.S.shared = { bayPlan: { ...plan(), name: 'a/b', walls: [{ d: 'x' }], edit: [1] } };
   N.downloads.length = 0; N.bpDownload(); assert.strictEqual(N.downloads[0][0], 'Bay map - a-b (can’t be used).json');
   N.S.shared = { bayPlan: plan() }; N.downloads.length = 0; N.bpDownload();
   assert.strictEqual(N.downloads[0][0], 'Bay map - Clinic A rooms.json'); assert.strictEqual(JSON.parse(N.downloads[0][1]).name, 'Clinic A rooms', 'a good saved map: the map in use');
