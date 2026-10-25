@@ -1,4 +1,5 @@
-// Bay map on Today: bay matching and the colour each bay gets.
+// Bay map on Today: bay matching and the colour each bay gets. Runs with the built-in drawing saved as the workbook's map
+// (there is no fallback: no saved map = no map, tested at the end).
 //   node tests/baymap.test.js
 // Runs the bay map block of src/taskpane.html in Node with stubbed timers. FICTIONAL codes only.
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert');
@@ -14,7 +15,8 @@ const tdPrimary = r => ({ act: 'vit', html: '<button data-act="vit" data-k="' + 
 const vitGet = (k, w) => (vit[k] || {})[w] || (w === 'fin' ? (fin.has(k) ? { bp: '120/80', at: 700 } : null) : w === 'mid' ? (k.endsWith('m') ? { bp: '130/80', at: 650 } : null) : null);
 const canonProv = s => String(s).trim(), PS = p => p !== 'BESSE', nm = m => m, esc = s => String(s), CFG = { bayMap: true, vitSysMax: 140, vitDiaMax: 90, vitHrMax: 110, vitHrMin: 50, vitO2Min: 92, vitEmSys: 180, vitEmDia: 120, vitalsMin: 40 };
 const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = r => [r.bp && 'BP ' + r.bp, r.hr && 'HR ' + r.hr].filter(Boolean).join(' · ');
-` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, pvMatch, pvKits, prnPend, prnAsk, prnAckOrders, techDue, bayUntil, vitOut, vitEm, emReadings });', C);
+` + src.slice(pa, pb) + src.slice(a, b) + '\nObject.assign(globalThis, { S, bayNo, bayState, bayMapModel, bayMapHTML, bayPick, bayPanelHTML, bayNextHTML, bayProvPanelHTML, bayLabel, BP_DEFAULT, pvMatch, pvKits, prnPend, prnAsk, prnAckOrders, techDue, bayUntil, vitOut, vitEm, emReadings });', C);
+C.S.shared = { bayPlan: C.BP_DEFAULT };
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok', name); };
 const row = (key, bay, grp, rank, extra = {}) => ({ key, grp, rank, a: { mrn: key.toUpperCase(), time: 600, active: true }, i: { adminKit: {}, inf: { mg: 84 } }, v: { start: 600, adm: 605, bay }, ...extra });
 
@@ -182,4 +184,56 @@ t('emergency BP: at or above 180 systolic or 120 diastolic; each reading and val
   assert.strictEqual(L[1].at, 660, 'recheck time read from HH:MM');
 });
 t('no visits today: no map', () => assert.strictEqual(C.bayMapHTML({ act: [], need: [], chair: [], wait: [] }), ''));
+t('no bay map saved: no card on Today; bays show as typed; Still to come has nothing that needs the map', () => {
+  C.S.shared = {};
+  const w = row('w', 'Bay 5', 'wait', 9); w.v = { bay: 'Bay 5' }; const n0 = row('n', '', 'wait', 9, { v: {} });
+  const m = { act: [1], need: [row('a', '2', 'need', 0)], chair: [row('c', 'Bay 3', 'chair', 4)], wait: [w, n0] };
+  assert.strictEqual(C.bayMapHTML(m, null), '', 'no Bay map card'); assert.strictEqual(C.bayMapHTML(m, { key: 'a' }), '');
+  assert.strictEqual(C.bayNo('2'), null); assert.strictEqual(C.bayLabel('Bay 3'), '3'); assert.strictEqual(C.bayLabel('2'), '2');
+  assert.strictEqual(C.bayMapModel(m).bays.length, 0); assert.strictEqual(C.bayPick(C.bayMapModel(m), null), null);
+  const h = C.bayNextHTML(m);
+  assert(/Bay 5<\/span><span><\/span>/.test(h) && /No bay yet<\/span><span><\/span>/.test(h), h);
+  assert(!/bayMove|Change bay|Choose a bay/.test(h), 'no map bay picker');
+  C.S.shared = { bayPlan: C.BP_DEFAULT }; assert(/data-act="bayMove"/.test(C.bayNextHTML(m)), 'with a map the picker is back');
+});
+t('ESK Bays with no bay map: a notice, the provider’s own roomed patients as a list, and the same panel as on the map', () => {
+  C.S.shared = {}; C.S.tSel = null;
+  const mine = (key, bay, grp, rank) => { const r = row(key, bay, grp, rank); r.a.rendering = 'Dr A'; return r; };
+  const other = (key, bay, grp, rank) => { const r = row(key, bay, grp, rank); r.a.rendering = 'Dr B'; return r; };
+  C.vit.pa = { init: { bp: '132/84', hr: 80, at: 600 } }; C.fin.add('pr');
+  const pa = mine('pa', 'Bay 4', 'need', 1); pa.i.adminKit = null; pa.v.pc = null;
+  const pq = mine('pq', '', 'chair', 4); pq.v.prnOrd = [{ id: 'r1', med: 'Zofran', dose: '4 mg ODT', reason: 'nausea', at: 620, ts: 1, req: { by: 'Pat T', at: 620, ts: 1 }, ok: null, no: null, ack: null }];
+  const wm = mine('wm', '7', 'wait', 9); wm.v = { bay: '7' };
+  const m = { act: [1], need: [pa, other('ob', '3', 'need', 0), mine('pr', '2', 'need', 3)], chair: [pq], wait: [other('wo', '1', 'wait', 9), wm] };
+  let h = C.bayMapHTML(m, null, 'Dr A');
+  assert(h.includes('<div class="msg info">No bay map in this workbook yet. A practice lead can load one in Settings › Bay map.</div>'), h);
+  assert(/<summary>Your patients <span class="muted">3 of your patients roomed · 1 ready to discharge<\/span>/.test(h) && !/class="bplan"/.test(h));
+  const items = [...h.matchAll(/<button class="bprow" data-act="bSel" data-k="(\w+)" data-state="(\w+)" aria-current="(\w+)"><span class="p">(\w+)<\/span><span class="where( none)?">([^<]*)<\/span><span class="s"><span class="dot"><\/span>([^<]*)<\/span>/g)].map(x => x.slice(1).map(y => y ?? '').join('|'));
+  assert.deepStrictEqual(items, ['pa|soon|true|PA||Bay 4|Initial 132/84 · HR 80', 'pr|ready|false|PR||Bay 2|Ready to discharge', 'pq|track|false|PQ| none|No bay|No initial vitals yet'], 'urgent first; bay as typed; the tag text');
+  assert(!/OB\b|WO\b/.test(h), 'other providers’ patients are not named');
+  assert(/class="bpanel" aria-label="Bay 4"/.test(h) && /data-act="pvDose" data-k="pa">Confirm dose/.test(h) && /Initial<\/span><span><b>132\/84 · HR 80<\/b>/.test(h), 'same provider panel: vitals and Confirm dose');
+  assert(/Still to come/.test(h) && /WM/.test(h) && /Bay 7/.test(h) && !/bayMove/.test(h));
+  C.S.tSel = 'pq'; h = C.bayMapHTML(m, null, 'Dr A');
+  assert(/data-k="pq" data-state="track" aria-current="true"/.test(h) && /class="bpanel" aria-label="No bay"/.test(h), 'picked from the list');
+  assert(/data-act="pvOk" data-k="pq" data-o="r1">Approve/.test(h) && /data-act="pvNo" data-k="pq"/.test(h) && /data-act="pvPrn" data-k="pq">Indicate PRN/.test(h), 'PRN approve / decline and indicate');
+  h = C.bayMapHTML({ act: [1], need: [other('ob', '3', 'need', 0)], chair: [], wait: [] }, null, 'Dr A');
+  assert(/None of your patients are roomed yet/.test(h) && !/bpanel/.test(h) && !/OB\b/.test(h));
+  assert.strictEqual(C.bayMapHTML(m, null), '', 'Today: still no card');
+  C.S.tSel = null; C.fin.delete('pr'); delete C.vit.pa; C.S.shared = { bayPlan: C.BP_DEFAULT };
+});
+t('ESK Bays name picker: says "on the map" only when there is a map', () => {
+  const pp = src.indexOf('const provNames ='), pq = src.indexOf("// The pane's tip:");
+  assert(pp > 0 && pq > pp, 'provider page markers');
+  vm.runInContext(`let tdM = null; const tdModel = () => tdM, emBannerHTML = () => '', pvHealthHTML = () => '', syncLagText = () => '';
+` + src.slice(pp, pq) + '\nObject.assign(globalThis, { provPageHTML, setTd: m => { tdM = m; } });', C);
+  const r = row('pz', '', 'wait', 9); r.a.rendering = 'Dr A';
+  C.setTd({ act: [], need: [], chair: [], wait: [], items: [r] });
+  assert(/Only your patients are shown on the map\. This is remembered/.test(C.provPageHTML()), 'with a map');
+  C.S.shared = {};
+  const h = C.provPageHTML();
+  assert(/Only your patients are shown\. This is remembered/.test(h) && !/on the map/.test(h), 'no map: no "on the map"');
+  C.setTd({ act: [], need: [], chair: [], wait: [], items: [] });
+  assert(/Nobody is scheduled for ESK today/.test(C.provPageHTML()));
+  C.S.shared = { bayPlan: C.BP_DEFAULT };
+});
 console.log(n + ' passed');
