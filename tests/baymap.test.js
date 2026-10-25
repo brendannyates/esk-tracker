@@ -221,4 +221,19 @@ t('ESK Bays with no bay map: a notice, the provider’s own roomed patients as a
   assert.strictEqual(C.bayMapHTML(m, null), '', 'Today: still no card');
   C.S.tSel = null; C.fin.delete('pr'); delete C.vit.pa; C.S.shared = { bayPlan: C.BP_DEFAULT };
 });
+t('ESK Bays name picker: says "on the map" only when there is a map', () => {
+  const pp = src.indexOf('const provNames ='), pq = src.indexOf("// The pane's tip:");
+  assert(pp > 0 && pq > pp, 'provider page markers');
+  vm.runInContext(`let tdM = null; const tdModel = () => tdM, emBannerHTML = () => '', pvHealthHTML = () => '', syncLagText = () => '';
+` + src.slice(pp, pq) + '\nObject.assign(globalThis, { provPageHTML, setTd: m => { tdM = m; } });', C);
+  const r = row('pz', '', 'wait', 9); r.a.rendering = 'Dr A';
+  C.setTd({ act: [], need: [], chair: [], wait: [], items: [r] });
+  assert(/Only your patients are shown on the map\. This is remembered/.test(C.provPageHTML()), 'with a map');
+  C.S.shared = {};
+  const h = C.provPageHTML();
+  assert(/Only your patients are shown\. This is remembered/.test(h) && !/on the map/.test(h), 'no map: no "on the map"');
+  C.setTd({ act: [], need: [], chair: [], wait: [], items: [] });
+  assert(/Nobody is scheduled for ESK today/.test(C.provPageHTML()));
+  C.S.shared = { bayPlan: C.BP_DEFAULT };
+});
 console.log(n + ' passed');

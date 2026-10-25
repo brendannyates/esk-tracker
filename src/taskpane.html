@@ -5492,7 +5492,7 @@ const provNames = m => [...new Set(m.items.filter(i => i.a.active).map(i => cano
 function provPageHTML(){
   const m = tdModel(), L = provNames(m), me = CFG.prov && L.includes(CFG.prov) ? CFG.prov : '';
   const pick = `<label class="lbl" for="provSel">Provider</label><select id="provSel" class="fld"><option value="">Choose your name…</option>${L.map(p => `<option ${p === me ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
-  if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? 'Only your patients are shown on the map. This is remembered on this computer.' : 'Nobody is scheduled for ESK today.'}</p></div>`;
+  if (!me) return `<div class="card pvpick">${pick}<p class="small muted">${L.length ? `Only your patients are shown${bayPlan() ? ' on the map' : ''}. This is remembered on this computer.` : 'Nobody is scheduled for ESK today.'}</p></div>`;
   return `${emBannerHTML()}${pvHealthHTML()}<div class="pvbar">${pick}</div>${bayMapHTML(m, null, me) || '<div class="card"><p class="muted">Nobody is scheduled for ESK today.</p></div>'}${syncLagText() ? `<p class="small muted">${syncLagText()}</p>` : ''}`;
 }
 // The pane's tip: pin the Excel tab, then pop ESK Bays out. The window saves through the pane, so the tab has to stay open.
