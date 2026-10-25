@@ -1,5 +1,6 @@
 // Bay map plans: the built-in map draws as before, bpCheck guards every saved map, a clinic's own map draws and matches bays,
-// and Settings › Bay map shows which map is in use. FICTIONAL codes only.
+// and Settings › Bay map shows which map is in use and loads, downloads or resets it. The Bay Map Builder is its own page:
+// the tracker only takes the file it downloads. FICTIONAL codes only.
 //   node tests/bayplan.test.js
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert'), { execSync } = require('child_process');
 const root = path.join(__dirname, '..');
@@ -21,7 +22,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fromHHMM = t => { const m = /^(\\d+):(\\d+)$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; }, rkText = () => '';
 const todaySerial = () => 1, todayModel = () => today.map(([key, bay]) => ({ a: { key, active: true }, bay })), visitGet = k => ({ bay: today.find(x => x[0] === k)?.[1] });
 const render = () => {}, toast = (k, h) => toasts.push([k, h]), downloads = [], downloadText = (n, t) => (downloads.push([n, t]), true);
-` + s.slice(fa, fb) + s.slice(pa, pb) + s.slice(a, b) + '\nObject.assign(globalThis, { S, bayMapHTML, bayMapModel, bayPick, bayNo, ' + (s.includes('function bayPlan(') ? 'bayPlan, bpCheck, BP_DEFAULT, bayMapSetHTML, bmHandle, bpLost, bpOpenHTML, BP_MAX, bayLabel, bayNextHTML, bpDownload, downloads' : 'bayState') + ' });', C);
+let modal = null; const openModal = h => { modal = h; }, closeModal = () => { modal = null; }, getModal = () => modal;
+` + s.slice(fa, fb) + s.slice(pa, pb) + s.slice(a, b) + '\nObject.assign(globalThis, { S, bayMapHTML, bayMapModel, bayPick, bayNo, ' + (s.includes('function bayPlan(') ? 'bayPlan, bpCheck, BP_DEFAULT, bayMapSetHTML, bpLost, bpOpenHTML, BP_MAX, bayLabel, bayNextHTML, bpDownload, downloads, bpReadFile, getModal' : 'bayState') + ' });', C);
   return C;
 }
 const N = load(src);
@@ -98,27 +100,43 @@ await t('a saved map bpCheck turns down: the built-in map draws and Settings say
 await t('Settings › Bay map: built-in or the saved map with who saved it', () => {
   N.S.shared = {}; let h = N.bayMapSetHTML();
   assert(h.includes('<dt>Bay map</dt><dd>Built-in (5 bays)</dd>') && !/bmReset/.test(h) && !/msg warn/.test(h));
-  assert(/data-act="bmEdit">Edit in the Bay Map Builder/.test(h) && /data-act="bmFile">Load a map file…/.test(h) && /data-act="bmDown">Download this map/.test(h));
+  assert(/data-act="bmFile">Load a map file…/.test(h) && /data-act="bmDown">Download this map/.test(h) && !/bmEdit/.test(h));
+  assert(h.includes('Draw your rooms, doors and bays in the <a href="https://brendannyates.github.io/bay-map-builder/" target="_blank" rel="noopener">Bay Map Builder ↗</a>, click Download file, then Load a map file here.'), h);
   N.S.shared = { bayPlan: { ...plan(), name: 'Rooms <b>A</b>' } }; h = N.bayMapSetHTML();
   assert(h.includes('<dd>Rooms &lt;b&gt;A&lt;/b&gt; · 3 bays · saved by Sam U Oct 24, 2026</dd>'), h); assert(/data-act="bmReset">Use the built-in map/.test(h));
   assert(/\$\{bayMapSetHTML\(\)\}/.test(src.slice(src.indexOf('function settingsHTML('), src.indexOf('const imports = ', src.indexOf('function settingsHTML(')))), 'on the For everyone card');
   assert(/list="dlBayIds"/.test(src) && /datalist\('dlBayIds', bayPlan\(\)\.bays\.map\(b => b\.id\)\)/.test(src), 'Plan bays offers the map’s bay numbers');
 });
-await t('builder messages: bmReady gets the map and today’s bays; bmSave checks, warns about lost bays, saves stamped; bmClose closes', async () => {
-  N.S.shared = { vitRange: { vitSysMax: 150 } }; N.today = [['k1', 'Bay 4'], ['k2', '7'], ['k3', ''], ['k4', '4']]; N.saved.length = 0;
-  const out = []; let closed = 0; const send = o => out.push(JSON.parse(JSON.stringify(o))), close = () => closed++;
-  await N.bmHandle({ ev: 'bmReady' }, send, close);
-  assert.deepStrictEqual(out[0], { ev: 'bmLoad', plan: null, bays: ['4', '7'] }, 'built-in goes as null');
-  await N.bmHandle({ ev: 'bmSave', plan: { ...plan(), bays: [] } }, send, close);
-  assert.deepStrictEqual(out[1], { ev: 'bmSaved', ok: false, err: 'The map has no bays.' }); assert.strictEqual(N.saved.length, 0);
-  await N.bmHandle({ ev: 'bmSave', plan: plan() }, send, close);
-  assert.strictEqual(out[2].ok, true); assert(/Today’s visits use bays 4, 7, which aren’t on this map/.test(out[2].warn), out[2].warn);
+// The ACT handlers for the preview's Save and for Use the built-in map, run in the same context.
+vm.runInContext('const ACT = {' + src.split('\n').filter(l => /^  bm(ResetGo|Use): /.test(l)).join('\n') + '};\nglobalThis.ACT = ACT;', N);
+const file = (x, size) => ({ size: size ?? 100, text: async () => typeof x === 'string' ? x : JSON.stringify(x) });
+await t('Load a map file: bad files never reach the preview; a good one previews, warns about lost bays, saves stamped on Save', async () => {
+  N.S.shared = { vitRange: { vitSysMax: 150 } }; N.today = [['k1', 'Bay 4'], ['k2', '7'], ['k3', ''], ['k4', '4']]; N.saved.length = 0; N.toasts.length = 0;
+  assert(N.ACT.bmUse && N.ACT.bmResetGo, 'handlers found');
+  await N.bpReadFile(file('{not json')); assert(/isn’t a bay map\. Choose the \.json file the Bay Map Builder downloaded/.test(N.toasts.at(-1)[1]));
+  await N.bpReadFile(file(plan(), 3e6)); assert(/too large/.test(N.toasts.at(-1)[1]));
+  await N.bpReadFile(file({ ...plan(), bays: [] })); assert.deepStrictEqual([...N.toasts.at(-1)], ['bad', 'The map has no bays.']);
+  await N.bpReadFile(file({ ...plan(), walls: [{ d: 'M0 0"/><script>' }] })); assert(/wall is malformed/.test(N.toasts.at(-1)[1]));
+  assert.strictEqual(N.getModal(), null, 'no preview for a bad file'); assert.strictEqual(N.S.bpNew, undefined); assert.strictEqual(N.saved.length, 0);
+  await N.bpReadFile(file(plan())); const m = N.getModal();
+  assert(m.includes('<h2>Use this bay map?</h2>') && m.includes('Clinic A rooms · 3 bays · ZZ1') && m.includes('data-act="bmUse">Save<') && m.includes('data-act="close">Cancel<'), m);
+  assert(/Today’s visits use bays 4, 7, which aren’t on this map/.test(m), 'lost bays warned'); assert.strictEqual((m.match(/class="bay" data-state="open"/g) || []).length, 3);
+  assert.strictEqual(N.S.bpNew.name, 'Clinic A rooms'); assert.strictEqual(N.saved.length, 0, 'nothing saved until Save');
+  await N.ACT.bmUse(); assert.strictEqual(N.getModal(), null); assert.strictEqual(N.S.bpNew, null);
   const [k, v] = N.saved[0]; assert.strictEqual(k, 'eskShared'); assert.strictEqual(v.vitRange.vitSysMax, 150, 'other shared settings kept');
-  assert.strictEqual(v.bayPlan.savedBy, 'Pat T'); assert(!isNaN(new Date(v.bayPlan.savedAt))); assert.strictEqual(N.S.shared.bayPlan.name, 'Clinic A rooms');
-  await N.bmHandle({ ev: 'bmReady' }, send, close); assert.strictEqual(out[3].plan.name, 'Clinic A rooms', 'the saved map goes back to the builder');
-  assert.deepStrictEqual(out[3].bays, ['4', '7']);
-  N.S.store.setDoc = async () => false; await N.bmHandle({ ev: 'bmSave', plan: plan() }, send, close); assert(out[4].ok === false && /didn’t save/.test(out[4].err));
-  await N.bmHandle({ ev: 'bmClose' }, send, close); await N.bmHandle({ ev: 'other' }, send, close); assert.strictEqual(closed, 1); assert.strictEqual(out.length, 5);
+  assert.strictEqual(v.bayPlan.savedBy, 'Pat T'); assert(!isNaN(new Date(v.bayPlan.savedAt))); assert.strictEqual(N.bayPlan().name, 'Clinic A rooms');
+  assert.deepStrictEqual([...N.toasts.at(-1)], ['ok', 'Bay map saved for everyone in this workbook.']);
+  await N.ACT.bmUse(); assert.strictEqual(N.saved.length, 1, 'Save twice saves once');
+  N.today = [['k1', 'A']]; await N.bpReadFile(file(plan())); assert(!/msg warn/.test(N.getModal()), 'every bay on the map: no warning');
+  const set = N.S.store.setDoc; N.S.store.setDoc = async () => false; await N.ACT.bmUse(); N.S.store.setDoc = set;
+  assert(N.toasts.at(-1)[0] === 'bad' && /didn’t save/.test(N.toasts.at(-1)[1])); assert.strictEqual(N.saved.length, 1);
+});
+await t('Use the built-in map: drops the saved map for everyone and keeps the other shared settings', async () => {
+  N.S.shared = { vitRange: { vitSysMax: 150 }, bayPlan: plan() }; N.saved.length = 0;
+  assert(/data-act="bmReset">Use the built-in map/.test(N.bayMapSetHTML()));
+  await N.ACT.bmResetGo(); const [, v] = N.saved[0]; assert(!('bayPlan' in v) && v.vitRange.vitSysMax === 150);
+  assert.strictEqual(N.bayPlan(), N.BP_DEFAULT); assert.deepStrictEqual([...N.toasts.at(-1)], ['ok', 'The built-in bay map is back.']);
+  assert(!/bmReset/.test(N.bayMapSetHTML()), 'nothing to reset now');
 });
 await t('a bay that isn’t on the map still shows where the patient is: emergency banner and alert, provider feed, Still to come', () => {
   N.S.shared = { bayPlan: plan() };
@@ -134,22 +152,30 @@ await t('a bay that isn’t on the map still shows where the patient is: emergen
   const w = N.bayNextHTML(mk(row('w', '5', 'wait', 9)));
   assert(w.includes('<span class="where">Bay 5</span>') && w.includes('>Change bay</button>'), w);
 });
-await t('a turned-down saved map: the builder gets its edit model, Download keeps the stored file, Settings says what works', async () => {
+await t('a turned-down saved map: Download keeps the stored file; Settings says fix it in the Bay Map Builder and load it again', () => {
   const edit = { v: 1, name: 'Clinic A rooms', items: [{ id: 'b1', k: 'bay', no: 'A', x: 100, y: 150, r: 58 }] };
   N.S.shared = { bayPlan: { ...plan(), walls: [{ d: '<svg onload=x>' }], edit } }; N.today = [];
-  const out = [], send = o => out.push(JSON.parse(JSON.stringify(o)));
-  await N.bmHandle({ ev: 'bmReady' }, send, () => {});
-  assert.deepStrictEqual(out[0], { ev: 'bmLoad', plan: { schema: 'mhs-bay-map', v: 1, edit }, bays: [] });
-  assert(/Open it in the Bay Map Builder to fix it, or load the file again\./.test(N.bayMapSetHTML()));
+  const h = N.bayMapSetHTML();
+  assert(h.includes('A wall is malformed. Download this map, open it in the <a href="https://brendannyates.github.io/bay-map-builder/" target="_blank" rel="noopener">Bay Map Builder ↗</a> with Open a map file, fix it there and load it here again.</div>'), h);
+  assert(/data-act="bmDown">Download this map/.test(h) && /data-act="bmFile">Load a map file…/.test(h) && /data-act="bmReset"/.test(h));
   N.downloads.length = 0; N.toasts.length = 0; N.bpDownload();
   const [fn, txt] = N.downloads[0]; assert.strictEqual(fn, 'Bay map - Clinic A rooms (can’t be used).json');
-  assert.deepStrictEqual(JSON.parse(txt), JSON.parse(JSON.stringify(N.S.shared.bayPlan)), 'the stored map, as it is');
+  assert.deepStrictEqual(JSON.parse(txt), JSON.parse(JSON.stringify(N.S.shared.bayPlan)), 'the stored map as it is, edit model and all');
   assert(/downloaded as it is/.test(N.toasts.at(-1)[1]));
-  N.S.shared = { bayPlan: { ...plan(), name: 'a/b', walls: [{ d: 'x' }], edit: [1] } }; out.length = 0;
-  await N.bmHandle({ ev: 'bmReady' }, send, () => {}); assert.strictEqual(out[0].plan, null, 'no usable edit model: the builder starts from the built-in');
-  const h = N.bayMapSetHTML(); assert(/Load the file again\.<\/div>/.test(h) && !/Bay Map Builder to fix/.test(h));
+  N.S.shared = { bayPlan: { ...plan(), name: 'a/b', walls: [{ d: 'x' }], edit: [1] } };
+  assert(/Bay Map Builder ↗<\/a> with Open a map file/.test(N.bayMapSetHTML()), 'same advice with no edit model');
   N.downloads.length = 0; N.bpDownload(); assert.strictEqual(N.downloads[0][0], 'Bay map - a-b (can’t be used).json');
+  N.S.shared = { bayPlan: plan() }; N.downloads.length = 0; N.bpDownload();
+  assert.strictEqual(N.downloads[0][0], 'Bay map - Clinic A rooms.json'); assert.strictEqual(JSON.parse(N.downloads[0][1]).name, 'Clinic A rooms', 'a good saved map: the map in use');
   N.S.shared = {}; N.downloads.length = 0; N.bpDownload(); assert.strictEqual(N.downloads[0][0], 'Bay map - ESK rooms (built-in).json', 'no saved map: the built-in');
+});
+await t('the Bay Map Builder is its own page: no opener, no messages, no frame CSS, in src and root', () => {
+  for (const [f, s] of [['src', src], ['root', fs.readFileSync(path.join(root, 'taskpane.html'), 'utf8')]]){
+    for (const w of ['bmHandle', 'bmReady', 'bmLoad', 'bmSave', 'bmClose', 'bmEdit', 'BAY_BUILDER_URL', 'openBayBuilder', 'bpBroken', '#cfloat.bm', "className = 'bm'", 'from=esk', 'Edit in the Bay Map Builder'])
+      assert(!s.includes(w), f + ' still has ' + w);
+    assert.strictEqual((s.match(/github\.io\/bay-map-builder\//g) || []).length, 1, f + ': one plain link to the builder');
+    assert(!/displayDialogAsync\([^)]*bay-map/.test(s) && !/<iframe[^>]*Bay Map/.test(s), f);
+  }
 });
 await t('narrow maps: tags are one line no wider than 0.19 of the map, the size the builder plans for', () => {
   const r = /@container \(max-width:560px\)\{([^\n]*)\}\n/.exec(src)?.[1] || '';

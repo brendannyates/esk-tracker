@@ -409,7 +409,6 @@ details.fold>summary h2::after{content:"▸";margin-left:auto;color:var(--muted)
 .sheet h2{margin:0 0 6px;font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
 #cfloat{position:fixed;inset:0;z-index:25;background:var(--scrim);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:2vh 2vw}
 #cfloat iframe{width:min(920px,100%);height:100%;border:0;border-radius:16px;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.3)}
-#cfloat.bm iframe{width:100%;background:var(--bg)}
 .bmprev{margin:12px 0 4px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:calc(100% - 24px);max-width:520px}
 #toast .msg{margin:0;box-shadow:var(--shadow),0 4px 16px rgba(0,0,0,.12);pointer-events:auto;width:100%}
@@ -5355,8 +5354,7 @@ async function bayPut(key, b, mode){
   if (mode === 'seat') return openStart(key);
   render(); toast('ok', b ? `Bay ${esc(b)} saved.` : 'Bay cleared.');
 }
-// ----- Settings › Bay map: which floor plan everyone sees, loaded from a file or the Bay Map Builder -----
-const BAY_BUILDER_URL = 'https://brendannyates.github.io/bay-map-builder/?from=esk';
+// ----- Settings › Bay map: which floor plan everyone sees, loaded from a file the Bay Map Builder (its own web page) downloads -----
 // The Bay # of each of today's visits (without "Bay"), as the current map's id when it matches, else as typed.
 function bpToday(){
   try { return [...new Set(todayModel(todaySerial()).filter(i => i.a.active).map(i => { const s = String(visitGet(i.a.key)?.bay ?? '').trim().replace(/^bay\s*/i, ''); return s && (bayNo(s) || s); }).filter(Boolean))]; }
@@ -5376,16 +5374,15 @@ async function bpSave(P){
   S.shared = sh; render(); return { ok: true };
 }
 // Settings › For everyone: the map in use and the ways to change it.
-// The edit model of a saved map bpCheck turned down, if it has one: the builder can usually open and fix it.
-function bpBroken(){ bayPlan(); const e = _bp.err && S.shared?.bayPlan?.edit; return e && typeof e === 'object' && !Array.isArray(e) ? e : null; }
 function bayMapSetHTML(){
   const P = bayPlan(), own = P !== BP_DEFAULT, n = P.bays.length, at = own && P.savedAt ? new Date(P.savedAt) : null;
   const when = at && !isNaN(at) ? at.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const by = own && (P.savedBy || when) ? `saved${P.savedBy ? ` by ${esc(P.savedBy)}` : ''}${when ? ` ${when}` : ''}` : '';
+  const bmLink = '<a href="https://brendannyates.github.io/bay-map-builder/" target="_blank" rel="noopener">Bay Map Builder ↗</a>';
   const sum = own ? [esc(P.name || 'Clinic map'), `${n} bay${n === 1 ? '' : 's'}`, by].filter(Boolean).join(' · ') : `Built-in (${n} bays)`;
-  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} ${bpBroken() ? 'Open it in the Bay Map Builder to fix it, or load the file again.' : 'Load the file again.'}</div>` : ''}
-    <div class="set-row"><button class="btn" data-act="bmEdit">Edit in the Bay Map Builder</button><button class="btn ghost" data-act="bmFile">Load a map file…</button><button class="btn ghost" data-act="bmDown">Download this map</button>${own || _bp.err ? '<button class="btn ghost" data-act="bmReset">Use the built-in map</button>' : ''}</div>
-    <div class="set-hint">The floor plan on Today and in ESK Bays. Draw your rooms, doors and bays in the Bay Map Builder, then save it here.</div>`;
+  return `${factsDL([['Bay map', sum]])}${_bp.err ? `<div class="msg warn">The saved bay map can’t be used, so the built-in one shows: ${esc(_bp.err)} Download this map, open it in the ${bmLink} with Open a map file, fix it there and load it here again.</div>` : ''}
+    <div class="set-row"><button class="btn" data-act="bmFile">Load a map file…</button><button class="btn ghost" data-act="bmDown">Download this map</button>${own || _bp.err ? '<button class="btn ghost" data-act="bmReset">Use the built-in map</button>' : ''}</div>
+    <div class="set-hint">The floor plan on Today and in ESK Bays. Draw your rooms, doors and bays in the ${bmLink}, click Download file, then Load a map file here.</div>`;
 }
 // A map drawn with every bay open: the preview before a map is saved.
 const bpOpenHTML = P => bplanHTML(P, P.bays.map(b => ({ ...b, st: 'open', title: 'Open', s: 'Nobody booked' })), (b, pos) => `<div class="bay" data-state="open" style="${pos}"></div>`);
@@ -5393,7 +5390,7 @@ function bpPreview(P){
   const n = P.bays.length, lost = bpLost(P); S.bpNew = P;
   openModal(`<h2>Use this bay map?</h2><div class="small muted">${esc(P.name || 'Bay map')} · ${n} bay${n === 1 ? '' : 's'}${P.clinic ? ` · ${esc(P.clinic)}` : ''}. Everyone who opens this workbook sees it on Today and in ESK Bays.</div>
     <div class="bmprev">${bpOpenHTML(P)}</div>${lost ? `<div class="msg warn">${esc(lost)}</div>` : ''}
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bmSave">Save</button></div>`, true);
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bmUse">Save</button></div>`, true);
 }
 // Load a map file: anything bpCheck turns down never gets as far as the preview.
 async function bpReadFile(f){
@@ -5416,40 +5413,6 @@ function bpDownload(){
 function bpResetAsk(){
   openModal(`<h2>Use the built-in map?</h2><p class="muted">The two ESK rooms with bays 1 to 5 come back for everyone in this workbook. Download this map first if you may want it again.</p>
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bmResetGo">Use the built-in map</button></div>`);
-}
-// What the builder sends (bmReady, bmSave, bmClose) and our answers. send(obj) answers it; close() shuts it.
-async function bmHandle(m, send, close){
-  if (m?.ev === 'bmReady'){ const P = bayPlan(), e = bpBroken();   // a turned-down map goes as its edit model so it can be fixed
-    return send({ ev: 'bmLoad', plan: P !== BP_DEFAULT ? P : e ? { schema: BP_SCHEMA, v: 1, edit: e } : null, bays: bpToday() }); }
-  if (m?.ev === 'bmClose') return close();
-  if (m?.ev !== 'bmSave') return;
-  const c = bpCheck(m.plan); if (c.err) return send({ ev: 'bmSaved', ok: false, err: c.err });
-  const warn = bpLost(c.plan), r = await bpSave(c.plan);
-  if (r.err) return send({ ev: 'bmSaved', ok: false, err: r.err });
-  send({ ev: 'bmSaved', ok: true, ...(warn ? { warn } : {}) });   // the builder says it was saved
-}
-// Edit in the Bay Map Builder. It floats over the page like the consent form: an Office dialog from the task pane; from full screen
-// or the demo (one Office dialog at a time) a blurred overlay with the builder in a frame. Same messages either way (bmHandle).
-function openBayBuilder(){
-  const url = BAY_BUILDER_URL, origin = new URL(url).origin;
-  const viaFrame = () => {
-    if ($('#cfloat')) return;
-    const ov = document.createElement('div'); ov.id = 'cfloat'; ov.className = 'bm'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Bay Map Builder');
-    ov.innerHTML = `<iframe title="Bay Map Builder" src="${url}"></iframe>`; document.body.appendChild(ov);
-    const fr = ov.querySelector('iframe'); let ready = false;
-    const done = () => { clearTimeout(t); window.removeEventListener('message', onMsg); document.removeEventListener('keydown', onKey); ov.remove(); };
-    const onKey = e => { if (e.key === 'Escape') done(); }; document.addEventListener('keydown', onKey);
-    const onMsg = e => { if (e.source !== fr.contentWindow || e.origin !== origin) return; if (e.data?.ev === 'bmReady') ready = true; bmHandle(e.data, o => fr.contentWindow.postMessage(o, origin), done); };
-    window.addEventListener('message', onMsg);
-    const t = setTimeout(() => { if (!ready){ done(); toast('bad', 'The Bay Map Builder didn’t open. Check the connection and try again, or use Load a map file.'); } }, 20000);
-  };
-  if (S.mode !== 'pane' || !window.Office?.context?.ui?.displayDialogAsync) return viaFrame();
-  Office.context.ui.displayDialogAsync(url, { height: 96, width: 96, displayInIframe: true }, res => {
-    if (res.status !== Office.AsyncResultStatus.Succeeded) return viaFrame();   // e.g. the full-screen view is already open
-    const dlg = res.value, close = () => { try { dlg.close(); } catch {} };
-    const rx = makeRx(m => bmHandle(m, o => sendChunks(s => dlg.messageChild(s), o), close));
-    dlg.addEventHandler(Office.EventType.DialogMessageReceived, a => rx(a.message));
-  });
 }
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset?.sec === 'bmap' && !!CFG.bayMap !== d.open){ CFG.bayMap = d.open; saveLocal(); } }, true);
 const ACT_TODAY = {
@@ -6755,12 +6718,11 @@ const ACT = {
   mpApply: () => openMpApply(),
   mpWrite: () => mpWrite(),
   capEdit: () => openCap(),
-  bmEdit: () => openBayBuilder(),
   bmFile: () => $('#bpFile').click(),
   bmDown: () => bpDownload(),
   bmReset: () => bpResetAsk(),
   bmResetGo: async () => { closeModal(); const r = await bpSave(null); toast(r.err ? 'bad' : 'ok', r.err ? esc(r.err) : 'The built-in bay map is back.'); },
-  bmSave: async () => { const P = S.bpNew; S.bpNew = null; closeModal(); if (!P) return; const r = await bpSave(P); toast(r.err ? 'bad' : 'ok', r.err ? esc(r.err) : 'Bay map saved for everyone in this workbook.'); },
+  bmUse: async () => { const P = S.bpNew; S.bpNew = null; closeModal(); if (!P) return; const r = await bpSave(P); toast(r.err ? 'bad' : 'ok', r.err ? esc(r.err) : 'Bay map saved for everyone in this workbook.'); },
   capSave: () => capSave(),
   accExport: () => openAccExport(),
   accXlsx: () => accXlsx(),
