@@ -143,8 +143,20 @@ async function ensureNotifySettings(options){
         await ctx.sync();
         for (var i = 0; i < plan.addColumns.length; i++) {
           var c = plan.addColumns[i];
-          try { rt.columns.add(null, null, c); await ctx.sync(); upgraded.push('tblNotifyRoutes: column ' + c + ' added'); }
-          catch (e) { blocked.push('tblNotifyRoutes column ' + c + ' (the cells to the right of the table are in use)'); }
+          // Inserting a table column shifts cells to the right, which Excel refuses when another table (tblNotifyTemplates)
+          // shares those rows. So when the column just right of the table is empty, write the header there and grow the table
+          // over it instead; only fall back to inserting when that column holds something.
+          try {
+            var tr = rt.getRange(), next = tr.getColumnsAfter(1); next.load('values');
+            await ctx.sync();
+            if (next.values.every(function(r){ return r.every(function(v){ return v === '' || v == null; }); })) {
+              next.getCell(0, 0).values = [[c]];
+              rt.resize(tr.getResizedRange(0, 1));
+            } else rt.columns.add(null, null, c);
+            await ctx.sync();
+            upgraded.push('tblNotifyRoutes: column ' + c + ' added');
+          }
+          catch (e) { blocked.push('tblNotifyRoutes column ' + c + ' (the column right of the provider table is in use: type ' + c + ' as a new header there, or move what\u2019s there)'); }
         }
       }
       if (plan.addConfig.length) {
