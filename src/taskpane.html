@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=55"></script>
-<script src="notify.js?v=55"></script>
+<script src="notify-settings.js?v=56"></script>
+<script src="notify.js?v=56"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -3419,6 +3419,13 @@ async function prnSyncKit(key){
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
 // Vitals ranges (Settings › Vitals ranges, shared as eskShared.vitRange). vitOut(x) = what's past them, e.g. ['BP 152/96'], [] when fine.
 const VIT_RANGE = ['vitSysMax', 'vitDiaMax', 'vitHrMax', 'vitHrMin', 'vitO2Min', 'vitEmSys', 'vitEmDia'];
+// Workbook settings an admin sets for everyone (Settings › Workbook settings, PIN): order emails, MADRS reminders, timing.
+// Saved as eskShared.clinicCfg; vitals ranges stay eskShared.vitRange. A workbook without them keeps each person's own values.
+const CLINIC_SHARED = ['email', 'genoaEmail', 'cc', 'helpEmail', 'leadEmail', 'provEmails', 'vitalsMin', 'disAfter', 'schedDays', 'genoaDays'];
+function applySharedCfg(){
+  const sh = S.shared || {}; Object.assign(CFG, sh.vitRange || {});
+  const c = sh.clinicCfg; if (c && typeof c === 'object') for (const k of CLINIC_SHARED) if (k in c && c[k] != null) CFG[k] = c[k];
+}
 function vitOut(x, R = CFG){
   if (!x) return [];
   const out = [], bp = String(x.bp || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/), hr = parseFloat(x.hr), o2 = parseFloat(x.o2);
@@ -6557,12 +6564,18 @@ function settingsHTML(){
     ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
   </section>`;
   const sumV = (+val('sV40', CFG.vitalsMin) || DEF.vitalsMin) + (+val('sDis', CFG.disAfter) || DEF.disAfter);
-  const clinic = `<section class="card set-clinic"><h3>Clinic</h3><p class="small muted set-intro">Your copy of the clinic settings. Filled in from the team the first time; changes here are yours.</p>
+  const clinic = `<section class="card set-clinic"><h3>Clinic</h3><p class="small muted set-intro">Yours: filled in from the team the first time; changes here are yours.</p>
     <div class="set-grid">
       ${f('sClinic', 'Clinic code')}
       ${f('sLoc', 'Location name (audit sheet)', { ph: locName() })}
       ${f('sPm', 'Practice manager (default)', { list: 'dlPm2', wide: true })}
     </div>
+  </section>`;
+  // Workbook settings: admin only (PIN). Unlocked: the fields (saved for everyone) and Teams notifications. Locked: what's set, read-only.
+  const sharedNote = (S.shared || {}).clinicCfg ? 'Set for everyone in this workbook.' : 'Not set for this workbook yet: each person still uses their own copy until an admin saves these.';
+  const vr = k => CFG[k] ?? DEF[k], dash = v => String(v ?? '').trim() ? esc(String(v)) : '<span class="muted">not set</span>';
+  const adminWb = adminOn()
+    ? `<section class="card set-adminwb"><h3>Workbook settings <span class="muted small">admin</span></h3><p class="small muted set-intro">${sharedNote} Changes save for everyone when you press Save.</p>
     <h2 class="set-sec">Order emails</h2>
     <div class="set-grid">
       ${f('sEmail', 'Besse order email')}
@@ -6595,7 +6608,13 @@ function settingsHTML(){
       ${f('sEmDia', 'Emergency: diastolic at or above', { num: true })}
       <div class="set-hint wide">A reading past any of these alerts the provider in ESK Bays. A BP at or above the emergency limits sets off the emergency alarm for the provider and every PCT screen. Shared: one set for everyone. Set them with the medical director.</div>
     </div>
-  </section>`;
+  </section>${nfyCardHTML()}`
+    : `<section class="card set-adminwb"><h3>Workbook settings</h3><p class="small muted set-intro">Order emails, MADRS reminders, timing, vitals ranges and Teams notifications are set by the practice lead or an admin, for everyone in this workbook. Unlock <b>Admin</b> to change them.</p>
+    ${factsDL([['Besse order email', dash(CFG.email)], ['Genoa order email', dash(CFG.genoaEmail)], ['Always cc', dash(CFG.cc)],
+      ['MADRS cc', [CFG.helpEmail, CFG.leadEmail].filter(x => String(x || '').trim()).map(esc).join(', ') || '<span class="muted">not set</span>'],
+      ['Timing', `2nd vitals ${vr('vitalsMin')} min after the dose · final ${vr('disAfter')} min after that · booked through ${vr('schedDays')} days`],
+      ['Vitals ranges', `BP above ${vr('vitSysMax')}/${vr('vitDiaMax')} · pulse ${vr('vitHrMin')}–${vr('vitHrMax')} · O2 below ${vr('vitO2Min')}% · emergency at ${vr('vitEmSys')}/${vr('vitEmDia')}`]])}
+    <p class="small muted">${sharedNote}</p></section>`;
   const c = capOf(), tmplWk = Object.values(c.tmpl).reduce((s, x) => s + tmplSum(x), 0), chairWk = BLOCKS.reduce((s, b) => s + chairBlock(c, b.split('|')[1]), 0);
   const shared = `<section class="card set-shared"><h3>For everyone in this workbook</h3><p class="small muted set-intro">Saved in the workbook, so everyone who opens it sees the same.</p>
     <div class="set-grid">
@@ -6613,7 +6632,7 @@ function settingsHTML(){
   const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
   if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
   return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
-  ${pageCols('two', you + imports + wb + adminCardHTML(), clinic + shared + nfyCardHTML())}${lists}
+  ${pageCols('two', you + imports + wb + adminCardHTML(), clinic + adminWb + shared)}${lists}
   <div class="set-save${dirty ? ' dirty' : ''}"><span id="setState" class="small" role="status">${dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="grow"></span><button class="btn ghost mute" id="setDiscard" data-act="setDiscard" ${dirty ? '' : 'hidden'}>Discard</button><button class="btn primary" data-act="cfgSave">Save settings</button></div>`;
 }
 // ---------- Settings › Teams notifications: the Settings sheet (notify-settings.js) ----------
@@ -7034,7 +7053,13 @@ const ACT = {
     if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sn = $('#sSnd'); if (sn){ const o = sndParse(sn.value); if (sndFormat(o) !== sndFormat((S.shared || {}).soundLinks)){ if (Object.values(o).some(u => !/^https:\/\//i.test(u))) return toast('warn', 'Sound links should start with https://'); S.shared = { ...(S.shared || {}), soundLinks: o }; for (const k of Object.keys(soundUrl)) delete soundUrl[k]; await S.store.setDoc('eskShared', S.shared); } }
-    { const vr = Object.fromEntries(VIT_RANGE.map(k => [k, CFG[k]])); if (JSON.stringify(vr) !== JSON.stringify((S.shared || {}).vitRange || {})){ S.shared = { ...(S.shared || {}), vitRange: vr }; await S.store.setDoc('eskShared', S.shared); } }   // vitals ranges: one set for everyone
+    if (adminOn() && $('#sV40')){   // workbook settings (admin, PIN): order emails, MADRS reminders, timing and vitals ranges, one set for everyone
+      const vr = Object.fromEntries(VIT_RANGE.map(k => [k, CFG[k]])), cc = Object.fromEntries(CLINIC_SHARED.map(k => [k, CFG[k] ?? '']));
+      if (JSON.stringify(vr) !== JSON.stringify((S.shared || {}).vitRange || {}) || JSON.stringify(cc) !== JSON.stringify(Object.fromEntries(CLINIC_SHARED.map(k => [k, ((S.shared || {}).clinicCfg || {})[k] ?? '']))) || !(S.shared || {}).clinicCfg){
+        S.shared = { ...(S.shared || {}), vitRange: vr, clinicCfg: { ...cc, by: CFG.me || '', at: new Date().toISOString() } };
+        await S.store.setDoc('eskShared', S.shared); }
+    }
+    applySharedCfg();   // a person's own copy never overrides what the workbook sets
     const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; CFG.vitAhead = +($('#sVitA')?.value ?? 5); if (vn.checked && !alertsWinOk()) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
@@ -7263,7 +7288,7 @@ function applyDocs(){
   const g = k => S.store.getDoc(k), fresh = g('eskVisit');
   if (fresh) S.visit = visitMerge(S.visit || {}, S._vlogBase || (S._vlogBase = {}), JSON.parse(JSON.stringify(fresh)));
   S.cancel = g('eskCancel') || S.cancel || {}; S.test = g('eskTest') || null; S.pull = g('eskPull') || S.pull || {}; S.tasks = g('eskTasks') || S.tasks || {}; S.snooze = g('eskSnooze') || S.snooze || {};
-  S.notes = g('eskNotes') || S.notes || {}; S.docs = g('eskDocs') || S.docs || {}; S.shared = g('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {});
+  S.notes = g('eskNotes') || S.notes || {}; S.docs = g('eskDocs') || S.docs || {}; S.shared = g('eskShared') || S.shared || {}; applySharedCfg();
   try { derive(); } catch (e){ console.error(e); }
   S.store.markDocs?.(); S.syncedAt = Date.now(); syncLagNote();
   prnAlertsNow(); if (S.provView) pvEvents();
@@ -7288,7 +7313,7 @@ async function reload1(quiet){
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
-    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.test = S.store.getDoc('eskTest') || null; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S._vlogRows = d.vlog || []; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; Object.assign(CFG, S.shared.vitRange || {}); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
+    S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.test = S.store.getDoc('eskTest') || null; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S._vlogRows = d.vlog || []; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; applySharedCfg(); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
