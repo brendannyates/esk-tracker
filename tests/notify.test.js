@@ -47,6 +47,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70, HR: 69, SpO2: 99%', 'Sent By: Tech T']);
     assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[3].inlines[0].isSubtle, true); assert.strictEqual(flags(b.card).length, 0, 'nothing flagged');
     assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
+    assert.deepStrictEqual([...b.card.body.map(x => !!x.separator)], [false, true, true, true], 'a separator line between sections');
     const e = b.card.msteams.entities[0]; assert.strictEqual(e.text, '<at>Alex Able</at>'); assert.strictEqual(e.mentioned.id, 'dra@example.com'); assert.strictEqual(e.mentioned.name, 'Alex Able');
     assert(!texts(b.card).some(x => /^Provider/.test(x)), 'no Provider row');
     assert.strictEqual(b.message, 'SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70, HR: 69, SpO2: 99%<br>Sent By: Tech T');

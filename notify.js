@@ -29,7 +29,7 @@ function nfyVitals(v){
     .filter(Boolean).join(', ');
 }
 
-// ---- The card. Reads as (option C: plain card, only the flag words colored):
+// ---- The card. Reads as (option C: plain card, only the flag words colored, a separator line between sections):
 //   <at>Provider Name</at> GRECAR is ready in Bay 2         title: the tblNotifyTemplates row, @mention when MentionProvider is on
 //   Stage: Recheck Vitals *EMERGENCY* at or above 180/120   an emergency is flagged next to the stage, *EMERGENCY* in red
 //   BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%        vitals on one line; HIGH in red over 140/90, LOW in blue under 92% SpO2
@@ -88,9 +88,11 @@ function nfyLines(d){
 // The <at> text in the title must match the entity text exactly, which is why both come from the same string.
 function nfyCard(lines, mention){
   var body = lines.map(function(l, i){
-    var spacing = i === 0 ? 'Default' : 'Medium';   // room between the title and each line
-    if (l.md != null) { var b = { type: 'TextBlock', text: l.md, wrap: true, spacing: spacing }; if (i === 0) b.weight = 'Bolder'; return b; }
-    return { type: 'RichTextBlock', inlines: l.runs, spacing: spacing };
+    var spacing = i === 0 ? 'Default' : 'Medium';   // room between the title and each line, with a separator line in it
+    var b = l.md != null ? { type: 'TextBlock', text: l.md, wrap: true, spacing: spacing } : { type: 'RichTextBlock', inlines: l.runs, spacing: spacing };
+    if (i === 0 && l.md != null) b.weight = 'Bolder';
+    if (i > 0) b.separator = true;
+    return b;
   });
   var card = { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body };
   if (mention && mention.id) {
