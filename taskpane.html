@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=54"></script>
-<script src="notify.js?v=54"></script>
+<script src="notify-settings.js?v=55"></script>
+<script src="notify.js?v=55"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -5219,19 +5219,35 @@ function bayState(r){
   return vitGet(key, 'fin') ? { st: 'ready', s: 'Ready to discharge' } : { st: 'soon', s: 'Final vitals due' };
 }
 // Provider view (prov = a canonical Rendering Provider): only that provider's patients are named. Anyone else's bay is "In use"
-// (curtain drawn, lantern lit, nothing else), their bookings aren't shown, and the tag shows initial vitals instead of the next step.
+// (curtain drawn, lantern lit, nothing else), their bookings aren't shown, and the tag shows the latest event (vitals, recheck, PRN)
+// instead of the next step.
 const rowProv = r => canonProv(r.a.rendering || r.i.p?.provider || '');
 const vitTxt = x => [x.bp, x.hr && `HR ${x.hr}`, x.o2 && `O2 ${x.o2}`].filter(Boolean).join(' · ');
+// The most recent thing that happened in the chair: the initial / 40-min / final vitals, a recheck, or a PRN given; null if nothing yet.
+// { s: tag text (BP and HR fit; the panel shows O2), t: minutes since midnight }. A tie goes to the later kind in this order.
+function provLatest(r){
+  const v = r.v || {}, bh = x => [x.bp, x.hr && `HR ${x.hr}`].filter(Boolean).join(' · '), ev = [];
+  for (const [w, lab] of [['init', 'Initial'], ['mid', `${CFG.vitalsMin || 40}-min`], ['fin', 'Final']]){ const x = vitGet(r.key, w); if (x) ev.push({ t: x.at ?? -1, s: `${lab} ${bh(x)}`.trim() }); }
+  for (const x of v.rechk || []) if (x.bp || x.hr || x.o2) ev.push({ t: x.at ? fromHHMM(x.at) ?? -1 : -1, s: `Recheck ${bh(x) || (x.o2 ? `O2 ${x.o2}%` : '')}`.trim() });
+  for (const x of v.prnOrd || []) if (x.ack && !x.cx && !x.no) ev.push({ t: x.ack.time ? fromHHMM(x.ack.time) ?? -1 : -1, s: `${[x.med, x.dose].filter(Boolean).join(' ')} given` });
+  let best = null; for (const e of ev) if (!best || e.t >= best.t) best = e;
+  return best;
+}
+// Provider's tag: ready once the final vitals are in; otherwise the latest event (vitals, recheck or PRN). Overdue isn't shown to providers.
 function provBayS(r){
   if (vitGet(r.key, 'fin')) return { st: 'ready', s: 'Ready to discharge' };
-  const x = vitGet(r.key, 'init'); return { s: x ? `Initial ${[x.bp, x.hr && `HR ${x.hr}`].filter(Boolean).join(' · ')}` : 'No initial vitals yet' };   // the tag has room for BP and HR; the panel shows O2
+  const e = provLatest(r); return { s: e ? e.s : 'No initial vitals yet', at: e && e.t >= 0 ? e.t : null };
 }
 // When a bay should free up: the final vitals time (discharge), from the dose time, or from the room time until there is one.
 const bayUntil = v => v?.out ? null : obsAt(v) != null ? disAt(obsAt(v)) : v?.start != null ? disAt(v.start) : null;
 // A roomed visit's state on its bay (prov: the provider's tag text and lead).
 function bayRowState(r, prov){
   const bs = bayState(r);
-  return { row: r, ...bs, ...(prov ? { ts: prnAsk(r.v).length ? 'PRN approval needed' : prnPend(r.v).length ? 'PRN waiting for the PCT' : r.rank === 2 && r.v?.pc ? 'Administered, the tech signs it' : bs.s, ...provBayS(r) } : {}), title: nm(r.a.mrn) };
+  if (!prov) return { row: r, ...bs, title: nm(r.a.mrn) };
+  const p = provBayS(r), st = p.st || (bs.st === 'late' ? 'track' : bs.st);   // providers don't get "overdue": the tech handles vitals timing
+  const ts = prnAsk(r.v).length ? 'PRN approval needed' : prnPend(r.v).length ? 'PRN waiting for the PCT' : r.rank === 2 && r.v?.pc ? 'Administered, the tech signs it'
+    : p.st === 'ready' ? p.s : `${p.s}${p.at != null ? ` · ${fmtT(p.at)}` : ''}`;
+  return { row: r, ...bs, st, s: p.s, ts, title: nm(r.a.mrn) };
 }
 function bayMapModel(m, prov){
   const mine = r => !prov || rowProv(r) === prov, on = [...m.need, ...m.chair];
@@ -5261,7 +5277,7 @@ function bayMapHTML(m, sel, prov){
   return `<details class="card bmap noprint" data-sec="bmap"${CFG.bayMap || prov ? ' open' : ''}><summary>Bay map <span class="muted">${head}</span></summary>
     <div class="bwrap"><div class="bleft">
     ${bplanHTML(P, M.bays, bay)}
-    <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li><li><span class="bsw" data-k="late"></span>Vitals overdue</li><li><span class="bsw" data-k="ready"></span>Ready to discharge</li>${key}</ul>
+    <ul class="bkey" aria-label="Key"><li><span class="bsw" data-k="open"></span>Open</li><li><span class="bsw" data-k="track"></span>In chair</li><li><span class="bsw" data-k="soon"></span>Due soon or needs a step</li>${prov ? '' : '<li><span class="bsw" data-k="late"></span>Vitals overdue</li>'}<li><span class="bsw" data-k="ready"></span>Ready to discharge</li>${key}</ul>
     ${off}</div>${cur ? (prov ? bayProvPanelHTML(cur) : bayPanelHTML(cur)) : ''}${bayNextHTML(m, prov)}</div></details>`;
 }
 // ESK Bays with no bay map: the provider's own roomed patients as a list (the bay as typed, the tag text the map would show).
