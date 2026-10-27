@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=53"></script>
-<script src="notify.js?v=53"></script>
+<script src="notify-settings.js?v=54"></script>
+<script src="notify.js?v=54"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -84,6 +84,10 @@ h3:first-child{margin-top:0}
 .rail .n.quiet,.nav .badge.neutral{background:var(--surface2);color:var(--muted)}
 .rail .sec{display:flex;flex-direction:column;gap:2px;margin-top:auto;padding-top:14px}
 .navwrap{display:contents}.navarr{display:none}
+.tbtns{display:flex;align-items:center;gap:2px}.rail .sec .ni.ico{display:none}   /* wide: sun/moon and refresh sit right of the search box */
+.tbtn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:12px;background:transparent;color:var(--muted);cursor:pointer}
+.tbtn:hover{background:var(--surface2);color:var(--ink)}.tbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tbtn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .pres{position:relative;display:flex;align-items:center}.pres:empty{display:none}.rail .sec .pres-chip{display:none}
 .pres-btn{display:flex;align-items:center;height:44px;padding:0 6px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
 .pres-btn:hover{background:var(--surface2)}.pres-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -108,7 +112,7 @@ h3:first-child{margin-top:0}
 .pbar h1 span{color:var(--muted);font-weight:400;font-size:17px;margin-left:.25em}
 .pbar .sub{margin-top:3px;color:var(--muted)}
 .pbar .sub strong{color:var(--bad);font-weight:500}
-.pbar .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:0 1 auto;min-width:0}
+.pbar .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:0 1 auto;min-width:0;margin-left:auto}   /* stays at the right edge when it wraps under the title */
 input.search,input.fld.search{width:300px;flex:0 1 300px;min-width:180px;min-height:44px;padding:0 14px;border:0;border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
 .search::placeholder{color:var(--muted)}
 main{padding:4px 28px 32px;max-width:1500px;margin:0 auto}
@@ -137,6 +141,7 @@ main>.alert{margin:0 0 16px}
   .rail .navarr[hidden]{display:none}
   .rail .navarr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   .rail .sec>.ni.ico{width:36px;padding:0;justify-content:center}
+  .rail .sec .ni.ico{display:flex}.pbar .tbtns{display:none}   /* narrow pane: they stay in the top row */
   .rail .sec .pres-chip{display:flex}.pres-chip:empty{display:none}.pbar .pres-wide{display:none}
   .pres-chip .pres-btn{height:36px;gap:6px;padding:0 10px 0 4px;background:var(--surface2);font-size:13px;font-weight:500;white-space:nowrap}
   .pres-chip .pres-av{width:26px;height:26px;font-size:10px;border-color:var(--surface2)}.pres-chip .pres-av+.pres-av{margin-left:-7px}
@@ -2938,7 +2943,7 @@ function render(){
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
       ${emBannerHTML()}${S.unsaved ? '<div class="msg bad noprint" role="alert" style="margin:8px 12px"><b>A visit change hasn’t reached the workbook yet.</b> The tracker keeps trying; keep this panel open.</div>' : ''}${freshHTML()}
       <header class="pbar"><div class="ptitle"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
-        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"></div></header>
+        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"><div class="tbtns"><button type="button" class="tbtn" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button><button type="button" class="tbtn" data-act="refresh" aria-label="Refresh" title="Refresh: read the workbook again">${NAV_IC.refresh}</button></div></div></header>
       <main id="main" class="pg-${S.view}">${body}</main>
     </div></div>`;
   { const nv = app.querySelector('.rail .nav'), cur = nv && nv.querySelector('[aria-current="page"]');   // pane: keep the current area visible in the scrolling nav row
