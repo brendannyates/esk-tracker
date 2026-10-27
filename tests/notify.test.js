@@ -15,7 +15,7 @@ function setup(){
 }
 const FLOW = 'https://default00.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aaa/triggers/manual/paths/invoke?api-version=1&sig=TEST';
 const CHAT_A = '19:aaa@thread.v2', CHAT_C = '19:ccc@thread.v2';
-const base = { provider: 'Dr A', patient: 'SMIJAN', bay: '2', clinic: 'SRL', sentBy: 'Tech T' };
+const base = { provider: 'Dr A', patient: 'SMIJAN', bay: '2', clinic: 'SRL', sentBy: 'Tech T', sn: '2404' };
 const texts = card => card.body.map(b => b.text != null ? b.text : b.inlines.map(r => r.text).join(''));
 const flags = card => card.body.flatMap(b => b.inlines || []).filter(r => r.weight === 'Bolder').map(r => r.text + '|' + r.color);
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
@@ -44,13 +44,13 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     const p = posts.at(-1); assert.strictEqual(p.url, FLOW); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
     const b = p.body; assert.strictEqual(b.event, 'vitals'); assert.deepStrictEqual([...b.chats], [CHAT_A]); assert.strictEqual(b.mentionId, 'dra@example.com');
     assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.card.body[0].type, 'TextBlock'); assert.strictEqual(b.card.body[1].type, 'RichTextBlock'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
-    assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70, HR: 69, SpO2: 99%', 'Sent By: Tech T']);
+    assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70, HR: 69, SpO2: 99%', 'SN: 2404 | Sent By: Tech T']);
     assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[3].inlines[0].isSubtle, true); assert.strictEqual(flags(b.card).length, 0, 'nothing flagged');
     assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
     assert.deepStrictEqual([...b.card.body.map(x => !!x.separator)], [false, true, true, true], 'a separator line between sections');
     const e = b.card.msteams.entities[0]; assert.strictEqual(e.text, '<at>Alex Able</at>'); assert.strictEqual(e.mentioned.id, 'dra@example.com'); assert.strictEqual(e.mentioned.name, 'Alex Able');
     assert(!texts(b.card).some(x => /^Provider/.test(x)), 'no Provider row');
-    assert.strictEqual(b.message, 'SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70, HR: 69, SpO2: 99%<br>Sent By: Tech T');
+    assert.strictEqual(b.message, 'SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70, HR: 69, SpO2: 99%<br>SN: 2404 | Sent By: Tech T'); assert.strictEqual(b.sn, '2404');
     assert.strictEqual(b.patient, 'SMIJAN'); assert.strictEqual(b.source, 'ESK Tracker');
   });
   await t('later vitals in range: nothing sent; HIGH and LOW flags sit on the vital that tripped', async () => {
@@ -87,7 +87,8 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
   });
   await t('free text cannot format the card: markdown characters in the title are escaped; other lines are plain text; old HTML templates lose their tags', async () => {
     await C.onVitalsSaved({ ...base, patient: 'SMI_JAN*', sentBy: 'T**', stage: 'initial', vitals: { bp: '120/80' } });
-    const x = texts(posts.at(-1).body.card); assert(x[0].endsWith('SMI\\_JAN\\* is ready in Bay 2'), x[0]); assert.strictEqual(x.at(-1), 'Sent By: T**', 'plain-text runs show it as typed');
+    const x = texts(posts.at(-1).body.card); assert(x[0].endsWith('SMI\\_JAN\\* is ready in Bay 2'), x[0]); assert.strictEqual(x.at(-1), 'SN: 2404 | Sent By: T**', 'plain-text runs show it as typed');
+    await C.onVitalsSaved({ ...base, sn: '', stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(texts(posts.at(-1).body.card).at(-1), 'Sent By: Tech T', 'no SN known: Sent By alone');
     assert.strictEqual(C.nfyRender('<b>EMERGENCY</b> {patient} - Bay {bay}', { patient: 'SMIJAN', bay: 2 }), 'EMERGENCY SMIJAN - Bay 2');
   });
   await t('every send is logged for the in-app alerts; a disabled provider or one without a chat gets nothing', async () => {

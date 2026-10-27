@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=49"></script>
-<script src="notify.js?v=49"></script>
+<script src="notify-settings.js?v=50"></script>
+<script src="notify.js?v=50"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -3513,9 +3513,16 @@ function nfyVitalsChanged(base, cur){
     (v.rechk || []).forEach((x, i) => { if ((x.bp || x.hr || x.o2) && J(x) !== J((b.rechk || [])[i])) out.push({ key, stage: 'recheck', v: x }); }); }
   return out;
 }
+// Last four of the visit's kit serial: the kit administered that day, else the kit pulled for the visit, else the one the provider confirmed.
+function nfyKitSn(a, v){
+  if (a.test) return testSN(a).slice(-4);
+  const pid = S.pull[isoOf(a.date)]?.[a.key];
+  const k = S.K.find(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date) || (pid ? S.K.find(k => k.id === pid) : null);
+  return k ? String(k.serial || '').trim().slice(-4) : String(v?.pc?.sn || '');
+}
 function nfyData(key, stage, x){
   const a = S.A.find(y => y.key === key), v = visitGet(key) || {}; if (!a) return null;
-  return { provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: a.test ? 'TEST-' + a.mrn : lasfirOf(nm(a.mrn)), bay: bayLabel(v.bay), clinic: CFG.clinic || '', sentBy: CFG.me || '',
+  return { provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: a.test ? 'TEST-' + a.mrn : lasfirOf(nm(a.mrn)), bay: bayLabel(v.bay), clinic: CFG.clinic || '', sentBy: CFG.me || '', sn: nfyKitSn(a, v),
     vitals: { bp: x.bp || '', hr: x.hr || '', spo2: x.o2 ? x.o2 + '%' : '' }, visit: { vitalsCount: 1, adminTime: null }, stage };
 }
 async function nfyOnSaved(key, stage, x){
