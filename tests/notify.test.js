@@ -16,7 +16,8 @@ function setup(){
 const FLOW = 'https://default00.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aaa/triggers/manual/paths/invoke?api-version=1&sig=TEST';
 const CHAT_A = '19:aaa@thread.v2', CHAT_C = '19:ccc@thread.v2';
 const base = { provider: 'Dr A', patient: 'SMIJAN', bay: '2', clinic: 'SRL', sentBy: 'Tech T' };
-const texts = card => card.body.map(b => b.text);
+const texts = card => card.body.map(b => b.text != null ? b.text : b.inlines.map(r => r.text).join(''));
+const flags = card => card.body.flatMap(b => b.inlines || []).filter(r => r.weight === 'Bolder').map(r => r.text + '|' + r.color);
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 
 (async () => {
@@ -42,13 +43,13 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'standard'); assert.strictEqual(r.message, 'SMIJAN is ready in Bay 2');
     const p = posts.at(-1); assert.strictEqual(p.url, FLOW); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
     const b = p.body; assert.strictEqual(b.event, 'vitals'); assert.deepStrictEqual([...b.chats], [CHAT_A]); assert.strictEqual(b.mentionId, 'dra@example.com');
-    assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.card.body[0].type, 'TextBlock', 'a standard card has no colored container'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
-    assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70', 'HR: 69, SpO2: 99%', 'Sent By: Tech T']);
-    assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[4].isSubtle, true);
-    assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
+    assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.card.body[0].type, 'TextBlock'); assert.strictEqual(b.card.body[1].type, 'RichTextBlock'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
+    assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70, HR: 69, SpO2: 99%', 'Sent By: Tech T']);
+    assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[3].inlines[0].isSubtle, true); assert.strictEqual(flags(b.card).length, 0, 'nothing flagged');
+    assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
     const e = b.card.msteams.entities[0]; assert.strictEqual(e.text, '<at>Alex Able</at>'); assert.strictEqual(e.mentioned.id, 'dra@example.com'); assert.strictEqual(e.mentioned.name, 'Alex Able');
     assert(!texts(b.card).some(x => /^Provider/.test(x)), 'no Provider row');
-    assert.strictEqual(b.message, '&lt;at&gt;Alex Able&lt;/at&gt; SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70<br>HR: 69, SpO2: 99%<br>Sent By: Tech T'.replace('&lt;at&gt;Alex Able&lt;/at&gt; ', ''));
+    assert.strictEqual(b.message, 'SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70, HR: 69, SpO2: 99%<br>Sent By: Tech T');
     assert.strictEqual(b.patient, 'SMIJAN'); assert.strictEqual(b.source, 'ESK Tracker');
   });
   await t('later vitals in range: nothing sent; HIGH and LOW flags sit on the vital that tripped', async () => {
@@ -56,10 +57,12 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '138/88', spo2: '96%' } })).sent, false);
     assert.strictEqual(posts.length, k, 'no post');
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '142/87', hr: '69', spo2: '99%' } })).sent, true);
-    assert.strictEqual(texts(posts.at(-1).body.card)[2], 'BP: 142/87 **HIGH** (over 140/90)');
+    assert.strictEqual(texts(posts.at(-1).body.card)[2], 'BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%');
+    assert.deepStrictEqual([...flags(posts.at(-1).body.card)], ['HIGH|Attention'], 'HIGH in red');
     assert.strictEqual(texts(posts.at(-1).body.card)[1], 'Stage: 40-min Vitals');
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'discharge', vitals: { bp: '128/82', hr: '80', spo2: '90%' } })).sent, true);
-    assert.strictEqual(texts(posts.at(-1).body.card)[3], 'HR: 80, SpO2: 90% **LOW** (under 92%)');
+    assert.strictEqual(texts(posts.at(-1).body.card)[2], 'BP: 128/82, HR: 80, SpO2: 90% LOW (under 92%)');
+    assert.deepStrictEqual([...flags(posts.at(-1).body.card)], ['LOW|Accent'], 'LOW in blue');
     assert(/<b>LOW<\/b>/.test(posts.at(-1).body.message), 'HTML twin is bold too');
   });
   await t('emergency at 180/120: emergency title, EMERGENCY on the BP line, goes even with that stage turned off', async () => {
@@ -67,9 +70,10 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '150/95' } })).sent, false, 'recheck alerts off');
     const r = await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '184/122', hr: '96', spo2: '96%' } });
     assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'emergency'); const b = posts.at(-1).body;
-    assert.strictEqual(b.card.body.length, 1); assert.strictEqual(b.card.body[0].type, 'Container'); assert.strictEqual(b.card.body[0].style, 'attention', 'emergency card is red');
-    b.card.body = b.card.body[0].items; assert(/BP: 184\/122 \*<b>EMERGENCY<\/b>\* \(at or above/.test(b.message), 'HTML twin shows the asterisks');
-    assert.strictEqual(b.level, 'emergency'); assert.deepStrictEqual([...texts(b.card)].slice(0, 3), ['<at>Alex Able</at> EMERGENCY: SMIJAN in Bay 2', 'Stage: Recheck Vitals', 'BP: 184/122 \\***EMERGENCY**\\* (at or above 180/120)']);
+    assert.strictEqual(b.level, 'emergency'); assert(!b.card.body.some(x => x.type === 'Container'), 'plain card, only the word is colored');
+    assert.deepStrictEqual([...texts(b.card)].slice(0, 3), ['<at>Alex Able</at> EMERGENCY: SMIJAN in Bay 2', 'Stage: Recheck Vitals *EMERGENCY* at or above 180/120', 'BP: 184/122, HR: 96, SpO2: 96%']);
+    assert.deepStrictEqual([...flags(b.card)], ['*EMERGENCY*|Attention'], 'asterisks shown as written, in red');
+    assert(/Stage: Recheck Vitals <b>\*EMERGENCY\*<\/b> at or above 180\/120<br>BP: 184\/122, HR: 96/.test(b.message), b.message);
     await C.setNotifyConfig('NotifyRecheck', 'TRUE');
   });
   await t('MentionProvider off, or no MentionId: no mention, title stays plain', async () => {
@@ -80,9 +84,9 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     await C.onVitalsSaved({ ...base, provider: 'Dr C', stage: 'initial', vitals: { bp: '120/80' } });
     b = posts.at(-1).body; assert.deepStrictEqual([...b.chats], [CHAT_C]); assert.strictEqual(b.card.msteams, undefined);
   });
-  await t('free text cannot format the card: markdown characters in a name are escaped; old HTML templates lose their tags', async () => {
+  await t('free text cannot format the card: markdown characters in the title are escaped; other lines are plain text; old HTML templates lose their tags', async () => {
     await C.onVitalsSaved({ ...base, patient: 'SMI_JAN*', sentBy: 'T**', stage: 'initial', vitals: { bp: '120/80' } });
-    const x = texts(posts.at(-1).body.card); assert(x[0].endsWith('SMI\\_JAN\\* is ready in Bay 2'), x[0]); assert.strictEqual(x.at(-1), 'Sent By: T\\*\\*');
+    const x = texts(posts.at(-1).body.card); assert(x[0].endsWith('SMI\\_JAN\\* is ready in Bay 2'), x[0]); assert.strictEqual(x.at(-1), 'Sent By: T**', 'plain-text runs show it as typed');
     assert.strictEqual(C.nfyRender('<b>EMERGENCY</b> {patient} - Bay {bay}', { patient: 'SMIJAN', bay: 2 }), 'EMERGENCY SMIJAN - Bay 2');
   });
   await t('every send is logged for the in-app alerts; a disabled provider or one without a chat gets nothing', async () => {

@@ -29,59 +29,68 @@ function nfyVitals(v){
     .filter(Boolean).join(', ');
 }
 
-// ---- The card (nfy-card logic from the build sheet). Reads as:
-//   <at>Provider Name</at> GRECAR is ready in Bay 2       title: the tblNotifyTemplates row, @mention when MentionProvider is on
-//   Stage: Initial Vitals
-//   BP: 142/87 **HIGH** (over 140/90)                    flag on the vital that tripped: HIGH over 140/90, *EMERGENCY* at or above 180/120, LOW under 92% SpO2
-//                                                        (an emergency card sits on Teams' red background; the rest stay plain)
-//   HR: 69, SpO2: 99%
+// ---- The card. Reads as (option C: plain card, only the flag words colored):
+//   <at>Provider Name</at> GRECAR is ready in Bay 2         title: the tblNotifyTemplates row, @mention when MentionProvider is on
+//   Stage: Recheck Vitals *EMERGENCY* at or above 180/120   an emergency is flagged next to the stage, *EMERGENCY* in red
+//   BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%        vitals on one line; HIGH in red over 140/90, LOW in blue under 92% SpO2
 //   Sent By: John C.
-// Lines for vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
+// Vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
+// The title is a markdown TextBlock (it carries the mention); the other lines are RichTextBlocks of plain-text runs, which is
+// what lets a single word be colored, and means their text is shown exactly as written (no markdown).
+var NFY_FLAG_COLOR = { high: 'Attention', emergency: 'Attention', low: 'Accent' };   // Teams theme colors: red, and the accent blue
 
-// Cards render markdown, not HTML. Neutralise the characters that would format free text.
+// Cards render markdown in TextBlocks, not HTML. Neutralise the characters that would format free text in the title.
 function nfyMd(s){ return String(s == null ? '' : s).replace(/[\\*_]/g, '\\$&'); }
-// Title template -> plain text; tokens are markdown-escaped. Any HTML left in an old template row is dropped.
+// Title template -> markdown text; tokens are markdown-escaped. Any HTML left in an old template row is dropped.
 function nfyRender(tpl, d){
   return String(tpl).replace(/<[^>]*>/g, '').replace(/\{(\w+)\}/g, function(_, k){ return nfyMd(d[k] == null ? '' : d[k]); })
     .replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').replace(/^[\s:,-]+/, '').trim();
 }
-function nfyBpLine(raw){
-  var T = NOTIFY_THRESHOLDS, bp = nfyParseBp(raw), txt = String(raw == null ? '' : raw).trim();
-  if (!txt) return '';
-  if (!bp) return 'BP: ' + nfyMd(txt);
-  var shown = 'BP: ' + bp.sys + '/' + bp.dia;
-  if (bp.sys >= T.emergency.sys || bp.dia >= T.emergency.dia) return shown + ' \\***EMERGENCY**\\* (at or above ' + T.emergency.sys + '/' + T.emergency.dia + ')';   // reads *EMERGENCY*, asterisks shown
-  if (bp.sys > T.alert.sys || bp.dia > T.alert.dia) return shown + ' **HIGH** (over ' + T.alert.sys + '/' + T.alert.dia + ')';
-  return shown;
+function nfyRun(text, o){
+  var r = { type: 'TextRun', text: String(text) };
+  if (o && o.bold) r.weight = 'Bolder';
+  if (o && o.color) r.color = o.color;
+  if (o && o.subtle) r.isSubtle = true;
+  return r;
 }
-function nfyHrSpLine(v){
-  var T = NOTIFY_THRESHOLDS, parts = [];
-  if (String(v.hr == null ? '' : v.hr).trim()) parts.push('HR: ' + nfyMd(v.hr));
+function nfyIsEmergencyBp(bp){ var T = NOTIFY_THRESHOLDS; return !!bp && (bp.sys >= T.emergency.sys || bp.dia >= T.emergency.dia); }
+// Runs for the vitals line: BP (HIGH flagged here; an emergency is flagged on the stage line instead), HR, SpO2 (LOW), Temp.
+function nfyVitalsRuns(v){
+  var T = NOTIFY_THRESHOLDS, parts = [], txt = String(v.bp == null ? '' : v.bp).trim(), bp = nfyParseBp(v.bp);
+  if (txt) {
+    if (!bp) parts.push([nfyRun('BP: ' + txt)]);
+    else if (!nfyIsEmergencyBp(bp) && (bp.sys > T.alert.sys || bp.dia > T.alert.dia))
+      parts.push([nfyRun('BP: ' + bp.sys + '/' + bp.dia + ' '), nfyRun('HIGH', { bold: true, color: NFY_FLAG_COLOR.high }), nfyRun(' (over ' + T.alert.sys + '/' + T.alert.dia + ')')]);
+    else parts.push([nfyRun('BP: ' + bp.sys + '/' + bp.dia)]);
+  }
+  if (String(v.hr == null ? '' : v.hr).trim()) parts.push([nfyRun('HR: ' + String(v.hr).trim())]);
   var sp = nfyParseSpo2(v.spo2);
-  if (sp != null) parts.push('SpO2: ' + sp + '%' + (sp < T.spo2Min ? ' **LOW** (under ' + T.spo2Min + '%)' : ''));
-  else if (String(v.spo2 == null ? '' : v.spo2).trim()) parts.push('SpO2: ' + nfyMd(v.spo2));
-  if (String(v.temp == null ? '' : v.temp).trim()) parts.push('Temp: ' + nfyMd(v.temp));
-  return parts.join(', ');
+  if (sp != null) parts.push(sp < T.spo2Min ? [nfyRun('SpO2: ' + sp + '% '), nfyRun('LOW', { bold: true, color: NFY_FLAG_COLOR.low }), nfyRun(' (under ' + T.spo2Min + '%)')] : [nfyRun('SpO2: ' + sp + '%')]);
+  else if (String(v.spo2 == null ? '' : v.spo2).trim()) parts.push([nfyRun('SpO2: ' + String(v.spo2).trim())]);
+  if (String(v.temp == null ? '' : v.temp).trim()) parts.push([nfyRun('Temp: ' + String(v.temp).trim())]);
+  var out = []; parts.forEach(function(p, i){ if (i) out.push(nfyRun(', ')); out.push.apply(out, p); });
+  return out;
 }
-// d: { title, stage, vitals: { bp, hr, spo2, temp }, sentBy }  ->  markdown lines, title first
+// d: { title, stage, vitals: { bp, hr, spo2, temp }, sentBy }  ->  lines: the title { md }, then { runs } for the rest
 function nfyLines(d){
-  var v = d.vitals || {}, out = [d.title];
-  if (d.stage) out.push('Stage: ' + (NFY_STAGE_LABEL[d.stage] || nfyMd(d.stage)));
-  var bp = nfyBpLine(v.bp); if (bp) out.push(bp);
-  var hs = nfyHrSpLine(v);  if (hs) out.push(hs);
-  if (d.sentBy) out.push('Sent By: ' + nfyMd(d.sentBy));
+  var v = d.vitals || {}, T = NOTIFY_THRESHOLDS, out = [{ md: d.title }], stage = [];
+  if (d.stage) stage.push(nfyRun('Stage: ' + (NFY_STAGE_LABEL[d.stage] || d.stage)));
+  if (nfyIsEmergencyBp(nfyParseBp(v.bp))) {
+    if (stage.length) stage.push(nfyRun(' '));
+    stage.push(nfyRun('*EMERGENCY*', { bold: true, color: NFY_FLAG_COLOR.emergency }), nfyRun(' at or above ' + T.emergency.sys + '/' + T.emergency.dia));
+  }
+  if (stage.length) out.push({ runs: stage });
+  var vr = nfyVitalsRuns(v); if (vr.length) out.push({ runs: vr });
+  if (d.sentBy) out.push({ runs: [nfyRun('Sent By: ' + String(d.sentBy).trim(), { subtle: true })] });
   return out;
 }
 // mention: { name, id } or null. id is the provider's email (UPN); if Teams shows the name as plain text, use the Entra object ID instead.
 // The <at> text in the title must match the entity text exactly, which is why both come from the same string.
-// emergency: true puts the whole card on Teams' red "attention" background (a theme color, so it reads in light and dark mode);
-// every other card stays plain.
-function nfyCard(lines, mention, emergency){
-  var body = lines.map(function(t, i){
-    var b = { type: 'TextBlock', text: t, wrap: true, spacing: i === 0 ? 'Default' : 'Medium' };   // room between the title and each line
-    if (i === 0) b.weight = 'Bolder';
-    if (i === lines.length - 1 && /^Sent By: /.test(t)) b.isSubtle = true;
-    return b;
+function nfyCard(lines, mention){
+  var body = lines.map(function(l, i){
+    var spacing = i === 0 ? 'Default' : 'Medium';   // room between the title and each line
+    if (l.md != null) { var b = { type: 'TextBlock', text: l.md, wrap: true, spacing: spacing }; if (i === 0) b.weight = 'Bolder'; return b; }
+    return { type: 'RichTextBlock', inlines: l.runs, spacing: spacing };
   });
   var card = { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body };
   if (mention && mention.id) {
@@ -89,21 +98,22 @@ function nfyCard(lines, mention, emergency){
     body[0].text = at + ' ' + body[0].text;
     card.msteams = { entities: [{ type: 'mention', text: at, mentioned: { id: mention.id, name: mention.name } }] };
   }
-  if (emergency) card.body = [{ type: 'Container', style: 'attention', bleed: true, items: body }];
   return card;
 }
-// HTML twin of the same lines, for a fallback flow that posts a plain message instead of the card.
+function nfyEscHtml(t){ return String(t).replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+// HTML twin of the same lines, for a fallback flow that posts a plain message instead of the card (flag words in bold).
 function nfyHtml(lines){
-  return lines.map(function(t){
-    // escaped characters (\* \_ \\) are set aside first so they never count as bold markers
-    return t.replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; })
-            .replace(/\\([\\*_])/g, function(_, c){ return '\u0000' + c.charCodeAt(0) + '\u0000'; })
-            .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-            .replace(/\u0000(\d+)\u0000/g, function(_, n){ return String.fromCharCode(+n); });
+  return lines.map(function(l){
+    if (l.md == null) return l.runs.map(function(r){ var t = nfyEscHtml(r.text); return r.weight === 'Bolder' ? '<b>' + t + '</b>' : t; }).join('');
+    // markdown title: escaped characters (\* \_ \\) are set aside first so they never count as bold markers
+    return nfyEscHtml(l.md)
+      .replace(/\\([\\*_])/g, function(_, c){ return '\u0000' + c.charCodeAt(0) + '\u0000'; })
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/\u0000(\d+)\u0000/g, function(_, n){ return String.fromCharCode(+n); });
   }).join('<br>');
 }
-// Markdown line -> plain text, for toasts.
-function nfyPlain(t){ return nfyHtml([String(t == null ? '' : t)]).replace(/<\/?b>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
+// Markdown title -> plain text, for toasts.
+function nfyPlain(t){ return nfyHtml([{ md: String(t == null ? '' : t) }]).replace(/<\/?b>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
 
 // Real JSON with CORS: the trigger answers the preflight (Allow-Origin *, content-type allowed), so the flow reads the body as-is
 // and the add-in sees its answer: 202 = accepted. Returns { ok, status } or { ok: false, status, reason }.
@@ -234,7 +244,7 @@ async function sendToProviderChat(data){
   var title = nfyRender(tpl, Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data, { vitals: vitalsText, reasons: (data.reasons || []).join('; ') }));
   var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sentBy: data.sentBy });
   var mention = nfyMention(s, route, data.provider);
-  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention, level === 'emergency'), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
+  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
                   level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '',
                   sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
 
