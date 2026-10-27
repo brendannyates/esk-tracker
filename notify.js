@@ -33,7 +33,7 @@ function nfyVitals(v){
 //   <at>Provider Name</at> GRECAR is ready in Bay 2         title: the tblNotifyTemplates row, @mention when MentionProvider is on
 //   Stage: Recheck Vitals *EMERGENCY* at or above 180/120   an emergency is flagged next to the stage, *EMERGENCY* in red
 //   BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%        vitals on one line; HIGH in red over 140/90, LOW in blue under 92% SpO2
-//   Sent By: John C.
+//   SN: 2404 | Sent By: John C.                          greyed: last four of the kit's serial number (when known), then the sender
 // Vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
 // The title is a markdown TextBlock (it carries the mention); the other lines are RichTextBlocks of plain-text runs, which is
 // what lets a single word be colored, and means their text is shown exactly as written (no markdown).
@@ -71,7 +71,7 @@ function nfyVitalsRuns(v){
   var out = []; parts.forEach(function(p, i){ if (i) out.push(nfyRun(', ')); out.push.apply(out, p); });
   return out;
 }
-// d: { title, stage, vitals: { bp, hr, spo2, temp }, sentBy }  ->  lines: the title { md }, then { runs } for the rest
+// d: { title, stage, vitals: { bp, hr, spo2, temp }, sn, sentBy }  ->  lines: the title { md }, then { runs } for the rest
 function nfyLines(d){
   var v = d.vitals || {}, T = NOTIFY_THRESHOLDS, out = [{ md: d.title }], stage = [];
   if (d.stage) stage.push(nfyRun('Stage: ' + (NFY_STAGE_LABEL[d.stage] || d.stage)));
@@ -81,7 +81,10 @@ function nfyLines(d){
   }
   if (stage.length) out.push({ runs: stage });
   var vr = nfyVitalsRuns(v); if (vr.length) out.push({ runs: vr });
-  if (d.sentBy) out.push({ runs: [nfyRun('Sent By: ' + String(d.sentBy).trim(), { subtle: true })] });
+  var foot = [], sn = String(d.sn == null ? '' : d.sn).trim(), by = String(d.sentBy == null ? '' : d.sentBy).trim();
+  if (sn) foot.push('SN: ' + sn);
+  if (by) foot.push('Sent By: ' + by);
+  if (foot.length) out.push({ runs: [nfyRun(foot.join(' | '), { subtle: true })] });
   return out;
 }
 // mention: { name, id } or null. id is the provider's email (UPN); if Teams shows the name as plain text, use the Entra object ID instead.
@@ -190,6 +193,7 @@ async function loadNotifySettings(){
 
 // data: { provider, patient (LASFIR), bay, clinic, sentBy,
 //         vitals: { bp:'120/80', hr:'72', spo2:'98%', temp:'98.2' },   whatever was taken
+//         sn:     last four of the kit's serial number, shown at the bottom of the card (optional)
 //         visit:  { vitalsCount: 0, adminTime: null },                  where the patient is in the visit
 //         stage:  optional override of the computed stage }
 
@@ -244,10 +248,10 @@ async function sendToProviderChat(data){
 
   var now = new Date();
   var title = nfyRender(tpl, Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data, { vitals: vitalsText, reasons: (data.reasons || []).join('; ') }));
-  var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sentBy: data.sentBy });
+  var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sn: data.sn, sentBy: data.sentBy });
   var mention = nfyMention(s, route, data.provider);
   var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
-                  level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '',
+                  level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '', sn: String(data.sn || ''),
                   sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
 
   // 1) Log row: drives the in-app flag + sound for provider view, and is the audit trail.
