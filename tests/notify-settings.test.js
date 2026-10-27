@@ -14,8 +14,9 @@ function workbook(){
     const o = { _load(){ return o; }, load(){ return o; },
       get values(){ return Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => get(sh, r0 + i, c0 + j))); },
       set values(v){ v.forEach((row, i) => row.forEach((x, j) => set(sh, r0 + i, c0 + j, x))); },
-      rowCount: nr,
+      rowCount: nr, _nc: nc,
       getCell: (i, j) => block(sh, r0 + i, c0 + j, 1, 1),
+      getColumnsAfter: k => block(sh, r0, c0 + nc, nr, k),
       getResizedRange: (dr, dc) => block(sh, r0, c0, nr + dr, nc + dc) };
     return o; };
   const range = (sh, addr) => { const [a, b] = addr.split(':'), [r0, c0] = A1(a), [r1, c1] = A1(b || a); return block(sh, r0, c0, r1 - r0 + 1, c1 - c0 + 1); };
@@ -26,8 +27,11 @@ function workbook(){
       getItemAt: i => ({ delete(){ const r = t.r0 + 1 + i; for (let k = r; k < t.r0 + t.rows - 1; k++) for (let j = 0; j < t.cols; j++) set(t.sheet, k, t.c0 + j, get(t.sheet, k + 1, t.c0 + j));
         for (let j = 0; j < t.cols; j++) set(t.sheet, t.r0 + t.rows - 1, t.c0 + j, ''); t.rows--; } }) },
     columns: { getItemAt: i => ({ set name(n){ set(t.sheet, t.r0, t.c0 + i, n); } }),
+      // like Excel: inserting shifts cells right, refused when the next column holds anything or another table shares these rows
       add: (_, __, name) => { for (let i = 0; i < t.rows; i++) if (get(t.sheet, t.r0 + i, t.c0 + t.cols) !== '') throw new Error('cells in the way');
+        if (tables.some(o => o !== t && o.sheet === t.sheet && o.c0 > t.c0 && o.r0 < t.r0 + t.rows && o.r0 + o.rows > t.r0)) throw new Error('This operation is attempting to shift cells in a table');
         set(t.sheet, t.r0, t.c0 + t.cols, name); t.cols++; } },
+    resize: r => { t.cols = r._nc; },
     set name(n){ t.name = n; }, get name(){ return t.name; } });
   const sheetApi = name => ({ name, getRange: a => range(name, a), getUsedRange: () => ({ format: { autofitColumns(){} } }), set visibility(v){ sheetApi.vis = v; },
     tables: { add: (addr, _h) => { const [a, b] = addr.split(':'), [r0, c0] = A1(a), [r1, c1] = A1(b); const t = { name: 'Table' + (tables.length + 1), sheet: name, r0, c0, rows: r1 - r0 + 1, cols: c1 - c0 + 1 }; tables.push(t); return tableApi(t); } } });
@@ -79,6 +83,11 @@ function oldLayout(wb){
     assert.strictEqual(d.routes[0].mentionId, 'dra@example.com'); assert.strictEqual(d.routes[0].email, 'dra@example.com'); assert.strictEqual(d.routes[0].chatId, '', 'an old workflow URL is not a chat');
     assert.strictEqual(wb.get('Settings', 2, 9), 'EMERGENCY: {patient} in Bay {bay}'); assert.strictEqual(d.needsUpgrade, false);
     assert.strictEqual((await C.ensureNotifySettings()).upgraded.length, 0, 'second run changes nothing');
+  });
+  await t('older workbook, templates table one column to the right (San Rafael layout): MentionName fills the empty column', async () => {
+    const wb = workbook(); oldLayout(wb); const C = run(wb); const r = await C.ensureNotifySettings();
+    assert.strictEqual(r.blocked.length, 0, r.blocked.join()); assert.strictEqual(wb.get('Settings', 0, 7), 'MentionName');
+    assert.strictEqual(wb.tables.find(x => x.name === 'tblNotifyRoutes').cols, 5); assert.strictEqual(wb.get('Settings', 0, 8), 'Event', 'templates table untouched');
   });
   await t('older workbook with a table right next to the routes: the column is not forced in, and that is reported', async () => {
     const wb = workbook(); oldLayout(wb); wb.set('Settings', 0, 7, 'x'); const C = run(wb);
