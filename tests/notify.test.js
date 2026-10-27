@@ -42,7 +42,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'standard'); assert.strictEqual(r.message, 'SMIJAN is ready in Bay 2');
     const p = posts.at(-1); assert.strictEqual(p.url, FLOW); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
     const b = p.body; assert.strictEqual(b.event, 'vitals'); assert.deepStrictEqual([...b.chats], [CHAT_A]); assert.strictEqual(b.mentionId, 'dra@example.com');
-    assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
+    assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.card.body[0].type, 'TextBlock', 'a standard card has no colored container'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
     assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70', 'HR: 69, SpO2: 99%', 'Sent By: Tech T']);
     assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[4].isSubtle, true);
     assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
@@ -67,7 +67,9 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '150/95' } })).sent, false, 'recheck alerts off');
     const r = await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '184/122', hr: '96', spo2: '96%' } });
     assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'emergency'); const b = posts.at(-1).body;
-    assert.strictEqual(b.level, 'emergency'); assert.deepStrictEqual([...texts(b.card)].slice(0, 3), ['<at>Alex Able</at> EMERGENCY: SMIJAN in Bay 2', 'Stage: Recheck Vitals', 'BP: 184/122 **EMERGENCY** (at or above 180/120)']);
+    assert.strictEqual(b.card.body.length, 1); assert.strictEqual(b.card.body[0].type, 'Container'); assert.strictEqual(b.card.body[0].style, 'attention', 'emergency card is red');
+    b.card.body = b.card.body[0].items; assert(/BP: 184\/122 \*<b>EMERGENCY<\/b>\* \(at or above/.test(b.message), 'HTML twin shows the asterisks');
+    assert.strictEqual(b.level, 'emergency'); assert.deepStrictEqual([...texts(b.card)].slice(0, 3), ['<at>Alex Able</at> EMERGENCY: SMIJAN in Bay 2', 'Stage: Recheck Vitals', 'BP: 184/122 \\***EMERGENCY**\\* (at or above 180/120)']);
     await C.setNotifyConfig('NotifyRecheck', 'TRUE');
   });
   await t('MentionProvider off, or no MentionId: no mention, title stays plain', async () => {

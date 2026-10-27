@@ -32,7 +32,8 @@ function nfyVitals(v){
 // ---- The card (nfy-card logic from the build sheet). Reads as:
 //   <at>Provider Name</at> GRECAR is ready in Bay 2       title: the tblNotifyTemplates row, @mention when MentionProvider is on
 //   Stage: Initial Vitals
-//   BP: 142/87 **HIGH** (over 140/90)                    flag on the vital that tripped: HIGH over 140/90, EMERGENCY at or above 180/120, LOW under 92% SpO2
+//   BP: 142/87 **HIGH** (over 140/90)                    flag on the vital that tripped: HIGH over 140/90, *EMERGENCY* at or above 180/120, LOW under 92% SpO2
+//                                                        (an emergency card sits on Teams' red background; the rest stay plain)
 //   HR: 69, SpO2: 99%
 //   Sent By: John C.
 // Lines for vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
@@ -49,7 +50,7 @@ function nfyBpLine(raw){
   if (!txt) return '';
   if (!bp) return 'BP: ' + nfyMd(txt);
   var shown = 'BP: ' + bp.sys + '/' + bp.dia;
-  if (bp.sys >= T.emergency.sys || bp.dia >= T.emergency.dia) return shown + ' **EMERGENCY** (at or above ' + T.emergency.sys + '/' + T.emergency.dia + ')';
+  if (bp.sys >= T.emergency.sys || bp.dia >= T.emergency.dia) return shown + ' \\***EMERGENCY**\\* (at or above ' + T.emergency.sys + '/' + T.emergency.dia + ')';   // reads *EMERGENCY*, asterisks shown
   if (bp.sys > T.alert.sys || bp.dia > T.alert.dia) return shown + ' **HIGH** (over ' + T.alert.sys + '/' + T.alert.dia + ')';
   return shown;
 }
@@ -73,7 +74,9 @@ function nfyLines(d){
 }
 // mention: { name, id } or null. id is the provider's email (UPN); if Teams shows the name as plain text, use the Entra object ID instead.
 // The <at> text in the title must match the entity text exactly, which is why both come from the same string.
-function nfyCard(lines, mention){
+// emergency: true puts the whole card on Teams' red "attention" background (a theme color, so it reads in light and dark mode);
+// every other card stays plain.
+function nfyCard(lines, mention, emergency){
   var body = lines.map(function(t, i){
     var b = { type: 'TextBlock', text: t, wrap: true, spacing: i === 0 ? 'Default' : 'Medium' };   // room between the title and each line
     if (i === 0) b.weight = 'Bolder';
@@ -86,17 +89,21 @@ function nfyCard(lines, mention){
     body[0].text = at + ' ' + body[0].text;
     card.msteams = { entities: [{ type: 'mention', text: at, mentioned: { id: mention.id, name: mention.name } }] };
   }
+  if (emergency) card.body = [{ type: 'Container', style: 'attention', bleed: true, items: body }];
   return card;
 }
 // HTML twin of the same lines, for a fallback flow that posts a plain message instead of the card.
 function nfyHtml(lines){
   return lines.map(function(t){
+    // escaped characters (\* \_ \\) are set aside first so they never count as bold markers
     return t.replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; })
-            .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\\([\\*_])/g, '$1');
+            .replace(/\\([\\*_])/g, function(_, c){ return '\u0000' + c.charCodeAt(0) + '\u0000'; })
+            .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+            .replace(/\u0000(\d+)\u0000/g, function(_, n){ return String.fromCharCode(+n); });
   }).join('<br>');
 }
 // Markdown line -> plain text, for toasts.
-function nfyPlain(t){ return String(t == null ? '' : t).replace(/\*\*(.+?)\*\*/g, '$1').replace(/\\([\\*_])/g, '$1'); }
+function nfyPlain(t){ return nfyHtml([String(t == null ? '' : t)]).replace(/<\/?b>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
 
 // Real JSON with CORS: the trigger answers the preflight (Allow-Origin *, content-type allowed), so the flow reads the body as-is
 // and the add-in sees its answer: 202 = accepted. Returns { ok, status } or { ok: false, status, reason }.
@@ -227,7 +234,7 @@ async function sendToProviderChat(data){
   var title = nfyRender(tpl, Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data, { vitals: vitalsText, reasons: (data.reasons || []).join('; ') }));
   var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sentBy: data.sentBy });
   var mention = nfyMention(s, route, data.provider);
-  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
+  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention, level === 'emergency'), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
                   level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '',
                   sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
 
