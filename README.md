@@ -17,3 +17,10 @@ Source is in `src/`. Run `python3 build.py` to rebuild into `dist/`, then copy t
 
 ## Visit log
 Every visit action (room time, dose time, bay, initial / 40-min / final vitals, rechecks, PRN meds, discharge, moves) is written to the hidden **ESK Visit Log** sheet as it's saved, one row per change, with the MRN, the time and who recorded it. It's a backup: if a visit's vitals or times go missing from the tracker (for example two people saving at once), the next refresh fills the blanks back in from the log. It never overwrites what's there. A patient's rows stay until the day of their next appointment, then they're cleared.
+
+## Teams notifications
+Vitals cards go to each provider's Teams group chat through one Power Automate flow, **ESK Tracker to Teams**, shared by every office (built from blank, not the Teams Workflows template, so there's no "used a Workflow template" footer). The add-in decides whether to send, builds the card (title, stage, vitals with a bold HIGH / EMERGENCY / LOW flag, sent by, and an @mention of the provider) and names the chat; the flow only posts it as Workflows.
+
+Set it up in **Settings › Teams notifications**: paste the flow's HTTP URL once, then for each provider their group chat link (the chat's Teams web address), the name to @mention and their work email. A workbook set up for the older one-workflow-per-provider setup shows an **Update for the new Teams flow** button that converts its Settings sheet in place. **Send test** posts a sample card to a provider's chat.
+
+Thresholds are constants in `notify.js`: emergency at or above 180/120, HIGH over 140/90, LOW under 92% SpO2.

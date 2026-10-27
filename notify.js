@@ -2,12 +2,14 @@
 // onVitalsSaved(data)           call when vitals are saved: picks the stage from the visit, applies the rules, sends when warranted
 // sendToProviderChatButton()    the "Send to Provider Chat" button: always sends, still marks an emergency when the numbers say so
 // startProviderAlerts()         provider view: flags the bay map and plays a sound on new log rows for that provider
-// Each provider has their own Teams workflow ("Send webhook alerts to a chat"): its URL sits in tblNotifyRoutes, and the post is an
-// Adaptive Card that workflow can show as it is. The same post also carries the plain fields (message, level, vitals...) for a custom flow.
+// One Power Automate flow for every office ("ESK Tracker to Teams", built from blank, not the Teams template): its trigger URL is
+// tblNotifyConfig › WebhookUrl. The add-in decides whether to send, builds the Adaptive Card (title, Stage, flagged vitals, Sent By,
+// @mention of the provider) and names the group chat(s); the flow only forwards the card to each chat as the Flow bot.
 // Tables are found by name anywhere in the workbook, so they can live on the Settings sheet.
 var NOTIFY_TABLES = { config: 'tblNotifyConfig', routes: 'tblNotifyRoutes', templates: 'tblNotifyTemplates', log: 'tblNotifyLog' };
-var NOTIFY_VITALS = [["bp",""],["hr","HR"],["spo2","SpO2"],["temp","Temp"]];   // [field, label] in print order; blank label prints the value alone. Keys bp and spo2 feed the rules.
+var NOTIFY_VITALS = [["bp",""],["hr","HR"],["spo2","SpO2"],["temp","Temp"]];   // [field, label] for the log row and toasts. Keys bp and spo2 feed the rules.
 var NOTIFY_THRESHOLDS = {"emergency":{"sys":180,"dia":120},"alert":{"sys":140,"dia":90},"spo2Min":92};   // hardcoded on purpose: change here, not in the workbook
+var NFY_STAGE_LABEL = {"initial":"Initial Vitals","recheck":"Recheck Vitals","40-min":"40-min Vitals","discharge":"Discharge Vitals"};
 var NOTIFY_POST_DOSE_MIN = 60;   // minutes after administration that still count as the 40-min check
 
 function nfyTruthy(v){ return v === true || /^(true|yes|y|1)$/i.test(String(v == null ? '' : v).trim()); }
@@ -17,25 +19,108 @@ function nfyFlowUrl(v){
   var s = String(v == null ? '' : v).trim();
   return /^https:\/\/[^\/\s?#]+\.(?:powerplatform\.com|logic\.azure\.com)(?::\d+)?\/\S+$/i.test(s) ? s : '';
 }
-// Plain text for the card and the toast: <b>x</b> becomes **x** (Adaptive Card markdown), other tags go.
-function nfyText(tpl, d){
-  return String(tpl).replace(/\{(\w+)\}/g, function(_, k){ return d[k] == null ? '' : String(d[k]); })
-    .replace(/<\/?b>/gi, '**').replace(/<[^>]*>/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
+function nfyParseBp(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})\s*\/\s*(\d{2,3})/); return m ? { sys: +m[1], dia: +m[2] } : null; }
+function nfyParseSpo2(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})/); return m ? +m[1] : null; }
+// Prints only the fields that were taken: { bp:'120/80', hr:'72' } -> "120/80, HR 72"   (log row, toasts, a {vitals} token)
+function nfyVitals(v){
+  if (v == null) return '';
+  if (typeof v !== 'object') return String(v).trim();
+  return NOTIFY_VITALS.map(function(f){ var val = String(v[f[0]] == null ? '' : v[f[0]]).trim(); return val ? (f[1] ? f[1] + ' ' + val : val) : ''; })
+    .filter(Boolean).join(', ');
 }
-// What the Teams workflow template expects: { type: 'message', attachments: [ Adaptive Card ] }. Emergencies get a red heading.
-function nfyCard(text, facts, emergency){
-  var body = [];
-  if (emergency) body.push({ type: 'TextBlock', text: 'EMERGENCY', weight: 'Bolder', size: 'Large', color: 'Attention' });
-  body.push({ type: 'TextBlock', text: text, wrap: true });
-  var f = (facts || []).filter(function(x){ return x[1]; }).map(function(x){ return { title: x[0], value: String(x[1]) }; });
-  if (f.length) body.push({ type: 'FactSet', facts: f });
-  return { type: 'message', attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', contentUrl: null,
-    content: { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body } }] };
+
+// ---- The card. Reads as (option C: plain card, only the flag words colored, a separator line between sections):
+//   <at>Provider Name</at> GRECAR is ready in Bay 2         title: the tblNotifyTemplates row, @mention when MentionProvider is on
+//   Stage: Recheck Vitals *EMERGENCY* at or above 180/120   an emergency is flagged next to the stage, *EMERGENCY* in red
+//   BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%        vitals on one line; HIGH in red over 140/90, LOW in blue under 92% SpO2
+//   Sent By: John C.
+// Vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
+// The title is a markdown TextBlock (it carries the mention); the other lines are RichTextBlocks of plain-text runs, which is
+// what lets a single word be colored, and means their text is shown exactly as written (no markdown).
+var NFY_FLAG_COLOR = { high: 'Attention', emergency: 'Attention', low: 'Accent' };   // Teams theme colors: red, and the accent blue
+
+// Cards render markdown in TextBlocks, not HTML. Neutralise the characters that would format free text in the title.
+function nfyMd(s){ return String(s == null ? '' : s).replace(/[\\*_]/g, '\\$&'); }
+// Title template -> markdown text; tokens are markdown-escaped. Any HTML left in an old template row is dropped.
+function nfyRender(tpl, d){
+  return String(tpl).replace(/<[^>]*>/g, '').replace(/\{(\w+)\}/g, function(_, k){ return nfyMd(d[k] == null ? '' : d[k]); })
+    .replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').replace(/^[\s:,-]+/, '').trim();
 }
-// Real JSON with CORS: the trigger answers the preflight (Allow-Origin *, content-type allowed), so the workflow reads the body as-is
+function nfyRun(text, o){
+  var r = { type: 'TextRun', text: String(text) };
+  if (o && o.bold) r.weight = 'Bolder';
+  if (o && o.color) r.color = o.color;
+  if (o && o.subtle) r.isSubtle = true;
+  return r;
+}
+function nfyIsEmergencyBp(bp){ var T = NOTIFY_THRESHOLDS; return !!bp && (bp.sys >= T.emergency.sys || bp.dia >= T.emergency.dia); }
+// Runs for the vitals line: BP (HIGH flagged here; an emergency is flagged on the stage line instead), HR, SpO2 (LOW), Temp.
+function nfyVitalsRuns(v){
+  var T = NOTIFY_THRESHOLDS, parts = [], txt = String(v.bp == null ? '' : v.bp).trim(), bp = nfyParseBp(v.bp);
+  if (txt) {
+    if (!bp) parts.push([nfyRun('BP: ' + txt)]);
+    else if (!nfyIsEmergencyBp(bp) && (bp.sys > T.alert.sys || bp.dia > T.alert.dia))
+      parts.push([nfyRun('BP: ' + bp.sys + '/' + bp.dia + ' '), nfyRun('HIGH', { bold: true, color: NFY_FLAG_COLOR.high }), nfyRun(' (over ' + T.alert.sys + '/' + T.alert.dia + ')')]);
+    else parts.push([nfyRun('BP: ' + bp.sys + '/' + bp.dia)]);
+  }
+  if (String(v.hr == null ? '' : v.hr).trim()) parts.push([nfyRun('HR: ' + String(v.hr).trim())]);
+  var sp = nfyParseSpo2(v.spo2);
+  if (sp != null) parts.push(sp < T.spo2Min ? [nfyRun('SpO2: ' + sp + '% '), nfyRun('LOW', { bold: true, color: NFY_FLAG_COLOR.low }), nfyRun(' (under ' + T.spo2Min + '%)')] : [nfyRun('SpO2: ' + sp + '%')]);
+  else if (String(v.spo2 == null ? '' : v.spo2).trim()) parts.push([nfyRun('SpO2: ' + String(v.spo2).trim())]);
+  if (String(v.temp == null ? '' : v.temp).trim()) parts.push([nfyRun('Temp: ' + String(v.temp).trim())]);
+  var out = []; parts.forEach(function(p, i){ if (i) out.push(nfyRun(', ')); out.push.apply(out, p); });
+  return out;
+}
+// d: { title, stage, vitals: { bp, hr, spo2, temp }, sentBy }  ->  lines: the title { md }, then { runs } for the rest
+function nfyLines(d){
+  var v = d.vitals || {}, T = NOTIFY_THRESHOLDS, out = [{ md: d.title }], stage = [];
+  if (d.stage) stage.push(nfyRun('Stage: ' + (NFY_STAGE_LABEL[d.stage] || d.stage)));
+  if (nfyIsEmergencyBp(nfyParseBp(v.bp))) {
+    if (stage.length) stage.push(nfyRun(' '));
+    stage.push(nfyRun('*EMERGENCY*', { bold: true, color: NFY_FLAG_COLOR.emergency }), nfyRun(' at or above ' + T.emergency.sys + '/' + T.emergency.dia));
+  }
+  if (stage.length) out.push({ runs: stage });
+  var vr = nfyVitalsRuns(v); if (vr.length) out.push({ runs: vr });
+  if (d.sentBy) out.push({ runs: [nfyRun('Sent By: ' + String(d.sentBy).trim(), { subtle: true })] });
+  return out;
+}
+// mention: { name, id } or null. id is the provider's email (UPN); if Teams shows the name as plain text, use the Entra object ID instead.
+// The <at> text in the title must match the entity text exactly, which is why both come from the same string.
+function nfyCard(lines, mention){
+  var body = lines.map(function(l, i){
+    var spacing = i === 0 ? 'Default' : 'Medium';   // room between the title and each line, with a separator line in it
+    var b = l.md != null ? { type: 'TextBlock', text: l.md, wrap: true, spacing: spacing } : { type: 'RichTextBlock', inlines: l.runs, spacing: spacing };
+    if (i === 0 && l.md != null) b.weight = 'Bolder';
+    if (i > 0) b.separator = true;
+    return b;
+  });
+  var card = { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body };
+  if (mention && mention.id) {
+    var at = '<at>' + mention.name + '</at>';
+    body[0].text = at + ' ' + body[0].text;
+    card.msteams = { entities: [{ type: 'mention', text: at, mentioned: { id: mention.id, name: mention.name } }] };
+  }
+  return card;
+}
+function nfyEscHtml(t){ return String(t).replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+// HTML twin of the same lines, for a fallback flow that posts a plain message instead of the card (flag words in bold).
+function nfyHtml(lines){
+  return lines.map(function(l){
+    if (l.md == null) return l.runs.map(function(r){ var t = nfyEscHtml(r.text); return r.weight === 'Bolder' ? '<b>' + t + '</b>' : t; }).join('');
+    // markdown title: escaped characters (\* \_ \\) are set aside first so they never count as bold markers
+    return nfyEscHtml(l.md)
+      .replace(/\\([\\*_])/g, function(_, c){ return '\u0000' + c.charCodeAt(0) + '\u0000'; })
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/\u0000(\d+)\u0000/g, function(_, n){ return String.fromCharCode(+n); });
+  }).join('<br>');
+}
+// Markdown title -> plain text, for toasts.
+function nfyPlain(t){ return nfyHtml([{ md: String(t == null ? '' : t) }]).replace(/<\/?b>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
+
+// Real JSON with CORS: the trigger answers the preflight (Allow-Origin *, content-type allowed), so the flow reads the body as-is
 // and the add-in sees its answer: 202 = accepted. Returns { ok, status } or { ok: false, status, reason }.
 // If the browser blocks the request anyway, it falls back to a text/plain no-cors post, which can't be confirmed ({ ok, unconfirmed }).
-var NFY_HTTP_HINT = { 401: 'the URL is incomplete or out of date (paste it again from the trigger card), or the workflow isn’t set to Anyone', 403: 'the workflow isn’t set to Anyone, or the tenant blocks it', 404: 'the URL is wrong or the workflow was deleted', 409: 'the workflow is turned off', 429: 'too many requests, try again in a minute' };
+var NFY_HTTP_HINT = { 401: 'the URL is incomplete or out of date (paste it again from the flow’s trigger), or the flow isn’t set to Anyone', 403: 'the flow isn’t set to Anyone, or the tenant blocks it', 404: 'the URL is wrong or the flow was deleted', 409: 'the flow is turned off', 429: 'too many requests, try again in a minute' };
 async function nfyPost(url, payload){
   var r;
   try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); }
@@ -45,19 +130,10 @@ async function nfyPost(url, payload){
   }
   if (r.ok) return { ok: true, status: r.status };
   var t = ''; try { t = await r.text(); } catch (e) {}
-  var code = (t.match(/"code"\s*:\s*"([^"]+)"/) || [])[1], hint = NFY_HTTP_HINT[r.status] || (/disabled/i.test(t) ? 'the workflow is turned off' : '');
-  return { ok: false, status: r.status, reason: 'The Teams workflow answered ' + r.status + (code ? ' (' + code + ')' : '') + (hint ? ': ' + hint : '') };
+  var code = (t.match(/"code"\s*:\s*"([^"]+)"/) || [])[1], hint = NFY_HTTP_HINT[r.status] || (/disabled/i.test(t) ? 'the flow is turned off' : '');
+  return { ok: false, status: r.status, reason: 'The Teams flow answered ' + r.status + (code ? ' (' + code + ')' : '') + (hint ? ': ' + hint : '') };
 }
 function nfyId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-function nfyParseBp(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})\s*\/\s*(\d{2,3})/); return m ? { sys: +m[1], dia: +m[2] } : null; }
-function nfyParseSpo2(v){ var m = String(v == null ? '' : v).match(/(\d{2,3})/); return m ? +m[1] : null; }
-// Prints only the fields that were taken: { bp:'120/80', hr:'72' } -> "120/80, HR 72"
-function nfyVitals(v){
-  if (v == null) return '';
-  if (typeof v !== 'object') return String(v).trim();
-  return NOTIFY_VITALS.map(function(f){ var val = String(v[f[0]] == null ? '' : v[f[0]]).trim(); return val ? (f[1] ? f[1] + ' ' + val : val) : ''; })
-    .filter(Boolean).join(', ');
-}
 
 // Stage from where the patient is in the visit. visit = { vitalsCount, adminTime }  (map these two from your row)
 //   initial    no vitals recorded yet for this visit
@@ -95,21 +171,20 @@ async function loadNotifySettings(){
     await ctx.sync();
     var config = {};    cfg.values.forEach(function(r){ config[String(r[0]).trim()] = r[1]; });
     function flag(key, dflt){ var v = config[key]; return (v == null || String(v).trim() === '') ? dflt : nfyTruthy(v); }
-    // Office toggles. The add-in applies the stage ones; the channel ones ride in the payload and the flow applies them.
-    var toggles = {
-      group: flag('SendGroupChat', true), escalate: flag('EscalateEmergency', false), urgent: flag('UrgentEmergencies', true),
+    var toggles = {   // office stage toggles, applied here; emergencies ignore them
       stages: { initial: flag('NotifyInitial', true), recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) }
     };
-    var esc = nfyFlowUrl(config.EscalationChat);   // EscalationChat now holds the escalation chat's workflow URL
-    // Provider | FlowUrl | Email | Enabled, found by header (older sheets call the second column ChatLink)
-    var hd = rts.values[0].map(nfyNorm), col = function(n, d){ var i = hd.indexOf(n); return i < 0 ? d : i; };
-    var cP = col('provider', 0), cC = col('flowurl', col('chatlink', 1)), cE = col('email', -1), cOn = col('enabled', hd.length - 1);
+    // Provider | ChatLink | MentionName | MentionId | Enabled, found by header (older sheets: FlowUrl / Email)
+    var col = {}; rts.values[0].forEach(function(h, i){ col[nfyNorm(h)] = i; });
+    function cell(r, name){ var i = col[name]; return i == null ? '' : String(r[i] == null ? '' : r[i]).trim(); }
     var routes = {};    rts.values.slice(1).forEach(function(r){
-      if (!nfyTruthy(r[cOn]) || !String(r[cP]).trim()) return;
-      routes[nfyNorm(r[cP])] = { flow: nfyFlowUrl(r[cC]), email: cE < 0 ? '' : String(r[cE] == null ? '' : r[cE]).trim() };
+      var prov = cell(r, 'provider'); if (!prov) return;
+      var chat = nfyChatId(cell(r, 'chatlink') || cell(r, 'flowurl'));
+      routes[nfyNorm(prov)] = { chats: ((col.enabled == null || nfyTruthy(cell(r, 'enabled'))) && chat) ? [chat] : [], enabled: col.enabled == null || nfyTruthy(cell(r, 'enabled')),
+                                mentionName: cell(r, 'mentionname'), mentionId: cell(r, 'mentionid') || cell(r, 'email') };
     });
     var templates = {}; tpl.values.forEach(function(r){ if (nfyTruthy(r[2])) templates[String(r[0]).trim()] = String(r[1]); });
-    return { config: config, routes: routes, templates: templates, toggles: toggles, escalation: esc };
+    return { config: config, routes: routes, templates: templates, toggles: toggles, webhook: nfyFlowUrl(config.WebhookUrl), mention: flag('MentionProvider', true) };
   });
 }
 
@@ -132,7 +207,7 @@ async function onVitalsSaved(data){
   return r;
 }
 
-// The "Send to Provider Chat" button. Always sends; the message still says EMERGENCY when the numbers say so.
+// The "Send to Provider Chat" button. Always sends; the card still flags EMERGENCY when the numbers say so.
 async function sendToProviderChatButton(data){
   var stage = data.stage || nfyStage(data.visit);
   var d = nfyEvaluate(stage, data.vitals);
@@ -141,59 +216,66 @@ async function sendToProviderChatButton(data){
   return r;
 }
 
-// Core send: log row, then the provider's workflow (and the escalation workflow for an emergency when that's on).
+// Who to @mention for a route, or null (MentionProvider off, or no MentionId on the provider's row).
+function nfyMention(s, route, provider){
+  return (s.mention && route && route.mentionId) ? { name: route.mentionName || provider, id: route.mentionId } : null;
+}
+// Why a provider can't be posted to, or '' when they can.
+function nfyRouteProblem(s, provider){
+  if (!s.webhook) return 'The Teams flow URL isn’t set (Settings › Teams notifications)';
+  var route = s.routes[nfyNorm(provider)];
+  if (!route) return 'No group chat set for ' + provider + ' (Settings › Teams notifications)';
+  if (!route.enabled) return provider + ' is turned off in Settings › Teams notifications';
+  if (!route.chats.length) return 'No group chat link for ' + provider + ' (paste the chat’s Teams web address in Settings › Teams notifications)';
+  return '';
+}
+
+// Core send: log row, then the one flow, which posts the card to the provider's group chat.
 async function sendToProviderChat(data){
   var s = await loadNotifySettings();
   if (!nfyTruthy(s.config.Enabled)) return { ok: false, reason: 'Notifications are off (tblNotifyConfig > Enabled)' };
+  var problem = nfyRouteProblem(s, data.provider); if (problem) return { ok: false, reason: problem };
   var route = s.routes[nfyNorm(data.provider)];
-  if (!route || !route.flow)
-    return { ok: false, reason: 'No Teams workflow URL set for ' + data.provider + ' (Settings › Teams notifications)' };
   var level = data.level === 'emergency' ? 'emergency' : 'standard';
-  var T = s.toggles, willEscalate = level === 'emergency' && T.escalate && !!s.escalation;
-  if (!T.group && !willEscalate)
-    return { ok: false, reason: 'Group chat posting is off for this office (SendGroupChat in tblNotifyConfig)' };
   var tpl = s.templates[level] || s.templates.standard;
   if (!tpl) return { ok: false, reason: 'No "' + level + '" row in tblNotifyTemplates' };
-  var vitals = nfyVitals(data.vitals);
-  if (!vitals) return { ok: false, reason: 'No vitals entered' };
+  var vitalsText = nfyVitals(data.vitals);
+  if (!vitalsText) return { ok: false, reason: 'No vitals entered' };
 
   var now = new Date();
-  var d = Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data,
-                        { vitals: vitals, reasons: (data.reasons || []).join('; ') });
-  var message = nfyText(tpl, d);
-  var payload = Object.assign(nfyCard(message, [['Provider', d.provider], ['Stage', d.stage], ['Why', d.reasons], ['Sent by', d.sentBy]], level === 'emergency'), {
-    event: 'vitals', message: message.replace(/\*\*/g, ''),
-    level: level, stage: d.stage || '', vitals: vitals, reasons: data.reasons || [],
-    toggles: s.toggles,
-    provider: d.provider || '', patient: d.patient || '', bay: String(d.bay || ''), clinic: d.clinic || '',
-    sentBy: d.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker'
-  });
+  var title = nfyRender(tpl, Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data, { vitals: vitalsText, reasons: (data.reasons || []).join('; ') }));
+  var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sentBy: data.sentBy });
+  var mention = nfyMention(s, route, data.provider);
+  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
+                  level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '',
+                  sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
 
   // 1) Log row: drives the in-app flag + sound for provider view, and is the audit trail.
-  try { await appendNotifyLog(payload); } catch (e) { console.warn('notify log', e); }
+  try { await appendNotifyLog({ provider: data.provider || '', patient: payload.patient, bay: payload.bay, stage: payload.stage, vitals: vitalsText, level: level, sentBy: payload.sentBy, sentAt: payload.sentAt }); }
+  catch (e) { console.warn('notify log', e); }
 
-  // 2) Teams, through the provider's workflow (and the escalation one).
+  // 2) Teams, through the flow.
   try {
-    var a = T.group ? await nfyPost(route.flow, payload) : { ok: true };
+    var a = await nfyPost(s.webhook, payload);
     if (!a.ok) return { ok: false, reason: a.reason };
-    var b = willEscalate ? await nfyPost(s.escalation, payload) : { ok: true };
-    if (!b.ok) return { ok: false, reason: 'Sent to ' + data.provider + ', but the escalation workflow failed. ' + b.reason };
-    return { ok: true, message: payload.message, unconfirmed: !!(a.unconfirmed || b.unconfirmed) };
+    return { ok: true, message: nfyPlain(title), unconfirmed: !!a.unconfirmed };
   } catch (e) {
     return { ok: false, reason: 'Network error: ' + e.message };
   }
 }
 
-// Settings › Teams notifications › "Send test": one test card through a provider's workflow, no log row, no patient.
-// { ok, status } means the workflow accepted it; whether the card then posted shows in the chat and the run history.
+// Settings › Teams notifications › "Send test": one test card to a provider's chat (with their @mention when that's on), no log row, no patient.
+// { ok, status } means the flow accepted it; whether the card then posted shows in the chat and the flow's run history.
 async function sendNotifyTest(provider, sentBy){
   var s = await loadNotifySettings();
-  var route = s.routes[nfyNorm(provider)];
-  if (!route || !route.flow) return { ok: false, reason: 'No Teams workflow URL saved for ' + provider };
-  var now = new Date(), msg = 'Test from ESK Tracker' + (sentBy ? ' (' + sentBy + ')' : '') + ' - ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  var payload = Object.assign(nfyCard(msg), { event: 'test', message: msg, level: 'standard', stage: 'test', vitals: '', reasons: ['test'],
-    toggles: s.toggles, provider: provider, patient: '', bay: '', clinic: '', sentBy: sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' });
-  try { var r = await nfyPost(route.flow, payload); return r.ok ? { ok: true, message: msg, status: r.status, unconfirmed: !!r.unconfirmed } : { ok: false, reason: r.reason }; }
+  var problem = nfyRouteProblem(s, provider); if (problem) return { ok: false, reason: problem };
+  var route = s.routes[nfyNorm(provider)], now = new Date();
+  var title = 'Test from ESK Tracker - ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  var lines = nfyLines({ title: title, stage: '', vitals: { bp: '142/87', hr: '69', spo2: '99%' }, sentBy: sentBy });
+  var mention = nfyMention(s, route, provider);
+  var payload = { event: 'test', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
+                  level: 'standard', stage: 'test', patient: '', bay: '', clinic: '', sentBy: sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
+  try { var r = await nfyPost(s.webhook, payload); return r.ok ? { ok: true, message: title, status: r.status, unconfirmed: !!r.unconfirmed, mentioned: !!mention } : { ok: false, reason: r.reason }; }
   catch (e) { return { ok: false, reason: 'Network error: ' + e.message }; }
 }
 
@@ -278,7 +360,7 @@ function nfyBeep(level){                  // two short tones; three for an emerg
 //                                 vitals: { bp: ui.bp, hr: ui.hr, spo2: ui.spo2, temp: ui.temp },
 //                                 visit:  { vitalsCount: row.vitalsCount, adminTime: row.adminTime } });
 //   showToast(r.sent ? 'Sent to provider chat: ' + r.message : r.reason);
-//     -> "Sent to provider chat: SMIJAN initial vitals 120/80 - Bay 2"
+//     -> "Sent to provider chat: SMIJAN is ready in Bay 2"
 //     -> "40-min vitals within limits, nothing sent"
 //
 // "Send to Provider Chat" button, same data:
