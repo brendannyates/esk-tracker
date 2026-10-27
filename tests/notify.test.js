@@ -1,7 +1,8 @@
 // Teams notifications (notify.js) on top of the Settings sheet (notify-settings.js), with the mocked Excel from notify-settings.test.js.
 //   node tests/notify.test.js
 // Checks the rules (initial always; later only past 140/90 or under SpO2 92; emergency at 180/120), the office toggles, the provider
-// table read by header (Email column present), and what's posted to each provider's workflow. fetch is captured; nothing leaves the machine.
+// table read by header, the card (title, Stage, flagged vitals, Sent By, @mention) and the payload posted to the one flow.
+// fetch is captured; nothing leaves the machine.
 const fs = require('fs'), path = require('path'), vm = require('vm'), assert = require('assert');
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 const mockSrc = read('tests/notify-settings.test.js').match(/^function workbook\(\)\{[\s\S]*?^\}$/m)[0];
@@ -12,53 +13,80 @@ function setup(){
   vm.createContext(C); vm.runInContext(read('notify-settings.js') + '\n' + read('notify.js'), C);
   return { wb, C, posts };
 }
-const FLOW_A = 'https://default00.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aaa/triggers/manual/paths/invoke?api-version=1&sig=TEST';
-const FLOW_B = 'https://prod-01.westus.logic.azure.com:443/workflows/bbb/triggers/manual/paths/invoke?sig=TEST';
-const FLOW_ESC = 'https://default00.11.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/esc/triggers/manual/paths/invoke?sig=TEST';
+const FLOW = 'https://default00.11.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aaa/triggers/manual/paths/invoke?api-version=1&sig=TEST';
+const CHAT_A = '19:aaa@thread.v2', CHAT_C = '19:ccc@thread.v2';
 const base = { provider: 'Dr A', patient: 'SMIJAN', bay: '2', clinic: 'SRL', sentBy: 'Tech T' };
+const texts = card => card.body.map(b => b.text);
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 
 (async () => {
-  const { C, posts, wb } = setup();
+  const { C, posts } = setup();
   await C.ensureNotifySettings();
-  await C.upsertNotifyRoute('Dr A', FLOW_A, 'dra@example.com', true);
-  await C.upsertNotifyRoute('Dr B', FLOW_B, 'drb@example.com', false);
-  await C.upsertNotifyRoute('Dr C', 'https://teams.microsoft.com/l/chat/19:c@thread.v2/0', '', true);
+  await t('no flow URL yet: nothing posted, and the reason says where to set it', async () => {
+    await C.upsertNotifyRoute({ provider: 'Dr A', chatLink: 'https://teams.microsoft.com/l/chat/19%3Aaaa%40thread.v2/0', mentionName: 'Alex Able', mentionId: 'dra@example.com', enabled: true });
+    const r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(r.sent, false); assert(/flow URL isn’t set/.test(r.reason)); assert.strictEqual(posts.length, 0);
+  });
+  await C.setNotifyConfig('WebhookUrl', FLOW);
+  await C.upsertNotifyRoute({ provider: 'Dr B', chatLink: '19:bbb@thread.v2', mentionName: '', mentionId: '', enabled: false });
+  await C.upsertNotifyRoute({ provider: 'Dr C', chatLink: CHAT_C, mentionName: '', mentionId: '', enabled: true });
+  await C.upsertNotifyRoute({ provider: 'Dr D', chatLink: 'https://x.environment.api.powerplatform.com/old?sig=1', mentionName: '', mentionId: '', enabled: true });
 
-  await t('provider table read by header: Email in column 3 does not hide Enabled', async () => {
+  await t('provider table read by header: chat id from the link, mention fields, Enabled', async () => {
     const s = await C.loadNotifySettings();
-    assert.strictEqual(s.routes['dr a'].flow, FLOW_A); assert.strictEqual(s.routes['dr a'].email, 'dra@example.com');
-    assert.strictEqual(s.routes['dr b'], undefined, 'Dr B is off');
-    assert.strictEqual(s.routes['dr c'].flow, '', 'a chat link is not a workflow URL');
-    assert.strictEqual(C.nfyFlowUrl(FLOW_B), FLOW_B); assert.strictEqual(C.nfyFlowUrl('https://evil.example/powerplatform.com/x'), '');
+    assert.strictEqual(s.webhook, FLOW); assert.strictEqual(s.mention, true);
+    assert.deepStrictEqual([...s.routes['dr a'].chats], [CHAT_A]); assert.strictEqual(s.routes['dr a'].mentionId, 'dra@example.com'); assert.strictEqual(s.routes['dr a'].mentionName, 'Alex Able');
+    assert.strictEqual(s.routes['dr b'].chats.length, 0, 'Dr B is off'); assert.strictEqual(s.routes['dr d'].chats.length, 0, 'an old workflow URL is not a chat');
   });
-  await t('initial vitals go to that provider’s workflow as an Adaptive Card, as JSON with CORS', async () => {
-    const r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '128/82', hr: '74', spo2: '98%' } });
-    assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'standard');
-    const p = posts.at(-1); assert.strictEqual(p.url, FLOW_A); assert.strictEqual(p.o.mode, undefined, 'cors'); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
-    assert.strictEqual(p.body.message, 'SMIJAN initial vitals 128/82, HR 74, SpO2 98% - Bay 2');
-    assert.strictEqual(p.body.type, 'message'); const card = p.body.attachments[0]; assert.strictEqual(card.contentType, 'application/vnd.microsoft.card.adaptive');
-    assert.strictEqual(card.content.type, 'AdaptiveCard'); assert.strictEqual(card.content.body[0].text, p.body.message, 'no red heading for a standard alert');
-    assert.strictEqual(p.body.patient, 'SMIJAN');
+  await t('initial vitals: one post to the flow with {event, chats, card} and the card as the build sheet lays it out', async () => {
+    const r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '116/70', hr: '69', spo2: '99%' } });
+    assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'standard'); assert.strictEqual(r.message, 'SMIJAN is ready in Bay 2');
+    const p = posts.at(-1); assert.strictEqual(p.url, FLOW); assert.strictEqual(p.o.headers['Content-Type'], 'application/json');
+    const b = p.body; assert.strictEqual(b.event, 'vitals'); assert.deepStrictEqual([...b.chats], [CHAT_A]); assert.strictEqual(b.mentionId, 'dra@example.com');
+    assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
+    assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70', 'HR: 69, SpO2: 99%', 'Sent By: Tech T']);
+    assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[4].isSubtle, true);
+    const e = b.card.msteams.entities[0]; assert.strictEqual(e.text, '<at>Alex Able</at>'); assert.strictEqual(e.mentioned.id, 'dra@example.com'); assert.strictEqual(e.mentioned.name, 'Alex Able');
+    assert(!texts(b.card).some(x => /^Provider/.test(x)), 'no Provider row');
+    assert.strictEqual(b.message, '&lt;at&gt;Alex Able&lt;/at&gt; SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70<br>HR: 69, SpO2: 99%<br>Sent By: Tech T'.replace('&lt;at&gt;Alex Able&lt;/at&gt; ', ''));
+    assert.strictEqual(b.patient, 'SMIJAN'); assert.strictEqual(b.source, 'ESK Tracker');
   });
-  await t('later vitals in range: nothing sent; past 140/90 or under SpO2 92: sent', async () => {
+  await t('later vitals in range: nothing sent; HIGH and LOW flags sit on the vital that tripped', async () => {
     const k = posts.length;
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '138/88', spo2: '96%' } })).sent, false);
     assert.strictEqual(posts.length, k, 'no post');
-    assert.strictEqual((await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '150/92' } })).sent, true);
-    assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'discharge', vitals: { bp: '130/80', spo2: '90%' } })).sent, true);
+    assert.strictEqual((await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '142/87', hr: '69', spo2: '99%' } })).sent, true);
+    assert.strictEqual(texts(posts.at(-1).body.card)[2], 'BP: 142/87 **HIGH** (over 140/90)');
+    assert.strictEqual(texts(posts.at(-1).body.card)[1], 'Stage: 40-min Vitals');
+    assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'discharge', vitals: { bp: '128/82', hr: '80', spo2: '90%' } })).sent, true);
+    assert.strictEqual(texts(posts.at(-1).body.card)[3], 'HR: 80, SpO2: 90% **LOW** (under 92%)');
+    assert(/<b>LOW<\/b>/.test(posts.at(-1).body.message), 'HTML twin is bold too');
   });
-  await t('emergency at 180/120 goes as emergency, even with that stage turned off', async () => {
+  await t('emergency at 180/120: emergency title, EMERGENCY on the BP line, goes even with that stage turned off', async () => {
     await C.setNotifyConfig('NotifyRecheck', 'FALSE');
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '150/95' } })).sent, false, 'recheck alerts off');
-    const r = await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '182/100' } });
-    assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'emergency'); const b = posts.at(-1).body; assert(/^EMERGENCY SMIJAN/.test(b.message), 'plain text, no tags');
-    assert.strictEqual(b.attachments[0].content.body[0].color, 'Attention'); assert(/\*\*EMERGENCY\*\*/.test(b.attachments[0].content.body[1].text), '<b> becomes markdown bold');
+    const r = await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '184/122', hr: '96', spo2: '96%' } });
+    assert.strictEqual(r.sent, true); assert.strictEqual(r.level, 'emergency'); const b = posts.at(-1).body;
+    assert.strictEqual(b.level, 'emergency'); assert.deepStrictEqual([...texts(b.card)].slice(0, 3), ['<at>Alex Able</at> EMERGENCY: SMIJAN in Bay 2', 'Stage: Recheck Vitals', 'BP: 184/122 **EMERGENCY** (at or above 180/120)']);
+    await C.setNotifyConfig('NotifyRecheck', 'TRUE');
   });
-  await t('every send is logged for the in-app alerts; a disabled provider gets nothing', async () => {
-    const log = (await C.readNotifyLogSince('2000')).filter(r => r.provider === 'Dr A'); assert(log.length >= 4);
-    const r = await C.onVitalsSaved({ ...base, provider: 'Dr B', stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(r.sent, false); assert(/No Teams workflow URL/.test(r.reason));
-    assert(/No Teams workflow URL/.test((await C.onVitalsSaved({ ...base, provider: 'Dr C', stage: 'initial', vitals: { bp: '120/80' } })).reason), 'chat link only');
+  await t('MentionProvider off, or no MentionId: no mention, title stays plain', async () => {
+    await C.setNotifyConfig('MentionProvider', 'FALSE');
+    await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' } });
+    let b = posts.at(-1).body; assert.strictEqual(texts(b.card)[0], 'SMIJAN is ready in Bay 2'); assert.strictEqual(b.card.msteams, undefined); assert.strictEqual(b.mentionId, '');
+    await C.setNotifyConfig('MentionProvider', 'TRUE');
+    await C.onVitalsSaved({ ...base, provider: 'Dr C', stage: 'initial', vitals: { bp: '120/80' } });
+    b = posts.at(-1).body; assert.deepStrictEqual([...b.chats], [CHAT_C]); assert.strictEqual(b.card.msteams, undefined);
+  });
+  await t('free text cannot format the card: markdown characters in a name are escaped; old HTML templates lose their tags', async () => {
+    await C.onVitalsSaved({ ...base, patient: 'SMI_JAN*', sentBy: 'T**', stage: 'initial', vitals: { bp: '120/80' } });
+    const x = texts(posts.at(-1).body.card); assert(x[0].endsWith('SMI\\_JAN\\* is ready in Bay 2'), x[0]); assert.strictEqual(x.at(-1), 'Sent By: T\\*\\*');
+    assert.strictEqual(C.nfyRender('<b>EMERGENCY</b> {patient} - Bay {bay}', { patient: 'SMIJAN', bay: 2 }), 'EMERGENCY SMIJAN - Bay 2');
+  });
+  await t('every send is logged for the in-app alerts; a disabled provider or one without a chat gets nothing', async () => {
+    const log = (await C.readNotifyLogSince('2000')).filter(r => r.provider === 'Dr A'); assert(log.length >= 4); assert.strictEqual(log[0].vitals, '116/70, HR 69, SpO2 99%');
+    let r = await C.onVitalsSaved({ ...base, provider: 'Dr B', stage: 'initial', vitals: { bp: '120/80' } }); assert.strictEqual(r.sent, false); assert(/turned off/.test(r.reason));
+    r = await C.onVitalsSaved({ ...base, provider: 'Dr D', stage: 'initial', vitals: { bp: '120/80' } }); assert(/No group chat link/.test(r.reason), r.reason);
+    r = await C.onVitalsSaved({ ...base, provider: 'Dr Z', stage: 'initial', vitals: { bp: '120/80' } }); assert(/No group chat set/.test(r.reason), r.reason);
   });
   await t('initial vitals have their own toggle (on by default); an emergency still goes', async () => {
     await C.setNotifyConfig('NotifyInitial', 'FALSE');
@@ -66,17 +94,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual((await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '186/112' } })).level, 'emergency');
     await C.setNotifyConfig('NotifyInitial', 'TRUE');
   });
-  await t('escalation: an emergency also goes to the escalation workflow when that is on; standard alerts never do', async () => {
-    await C.setNotifyConfig('EscalationChat', FLOW_ESC); await C.setNotifyConfig('EscalateEmergency', 'TRUE');
-    let k = posts.length; await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '150/92' } });
-    assert.deepStrictEqual(posts.slice(k).map(p => p.url), [FLOW_A]);
-    k = posts.length; await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '190/100' } });
-    assert.deepStrictEqual(posts.slice(k).map(p => p.url), [FLOW_A, FLOW_ESC]);
-    await C.setNotifyConfig('SendGroupChat', 'FALSE'); k = posts.length; await C.onVitalsSaved({ ...base, stage: '40-min', vitals: { bp: '190/100' } });
-    assert.deepStrictEqual(posts.slice(k).map(p => p.url), [FLOW_ESC], 'group chat off: escalation only');
-    await C.setNotifyConfig('SendGroupChat', 'TRUE'); await C.setNotifyConfig('EscalateEmergency', 'FALSE');
-  });
-  await t('the workflow’s answer comes back: 404 and a disabled workflow are reported; a blocked request falls back to no-cors', async () => {
+  await t('the flow’s answer comes back: 404 and a disabled flow are reported; a blocked request falls back to no-cors', async () => {
     C.__answer = async () => ({ ok: false, status: 404, text: async () => '{"error":{"code":"WorkflowNotFound","message":"x"}}' });
     let r = await C.sendNotifyTest('Dr A', 'T'); assert.strictEqual(r.ok, false); assert(/answered 404 \(WorkflowNotFound\): the URL is wrong/.test(r.reason), r.reason);
     C.__answer = async () => ({ ok: false, status: 400, text: async () => '{"error":{"code":"WorkflowDisabled","message":"The workflow is disabled."}}' });
@@ -86,12 +104,13 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert(/text\/plain/.test(posts.at(-1).o.headers['Content-Type']));
     C.__answer = null; r = await C.sendNotifyTest('Dr A', 'T'); assert.strictEqual(r.status, 202); assert(!r.unconfirmed);
   });
-  await t('test send: one post, no log row, no patient', async () => {
+  await t('test send: one post to that provider’s chat with their mention, no log row, no patient', async () => {
     const before = (await C.readNotifyLogSince('2000')).length, k = posts.length;
-    const r = await C.sendNotifyTest('Dr A', 'Tech T'); assert.strictEqual(r.ok, true); assert.strictEqual(posts.length, k + 1);
-    assert.strictEqual(posts.at(-1).url, FLOW_A); assert.strictEqual(posts.at(-1).body.event, 'test'); assert.strictEqual(posts.at(-1).body.patient, ''); assert(posts.at(-1).body.attachments[0].content.body[0].text.startsWith('Test from ESK Tracker'));
+    const r = await C.sendNotifyTest('Dr A', 'Tech T'); assert.strictEqual(r.ok, true); assert.strictEqual(r.mentioned, true); assert.strictEqual(posts.length, k + 1);
+    const b = posts.at(-1).body; assert.strictEqual(posts.at(-1).url, FLOW); assert.strictEqual(b.event, 'test'); assert.strictEqual(b.patient, ''); assert.deepStrictEqual([...b.chats], [CHAT_A]);
+    assert(texts(b.card)[0].startsWith('<at>Alex Able</at> Test from ESK Tracker'));
     assert.strictEqual((await C.readNotifyLogSince('2000')).length, before);
-    assert(/No Teams workflow URL/.test((await C.sendNotifyTest('Dr Z')).reason));
+    assert(/No group chat set/.test((await C.sendNotifyTest('Dr Z')).reason));
   });
   console.log(n + ' passed');
 })().catch(e => { console.error(e); process.exit(1); });
