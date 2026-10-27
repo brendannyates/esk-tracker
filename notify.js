@@ -75,9 +75,9 @@ function nfyLines(d){
 // The <at> text in the title must match the entity text exactly, which is why both come from the same string.
 function nfyCard(lines, mention){
   var body = lines.map(function(t, i){
-    var b = { type: 'TextBlock', text: t, wrap: true, spacing: i === 0 ? 'Default' : 'None' };
+    var b = { type: 'TextBlock', text: t, wrap: true, spacing: i === 0 ? 'Default' : 'Medium' };   // room between the title and each line
     if (i === 0) b.weight = 'Bolder';
-    if (i === lines.length - 1 && /^Sent By: /.test(t)) { b.isSubtle = true; b.spacing = 'Small'; }
+    if (i === lines.length - 1 && /^Sent By: /.test(t)) b.isSubtle = true;
     return b;
   });
   var card = { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body };

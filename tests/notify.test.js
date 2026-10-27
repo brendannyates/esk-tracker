@@ -45,6 +45,7 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual(b.card.type, 'AdaptiveCard'); assert.strictEqual(b.card.version, '1.4'); assert.strictEqual(b.type, undefined, 'not wrapped for the template');
     assert.deepStrictEqual([...texts(b.card)], ['<at>Alex Able</at> SMIJAN is ready in Bay 2', 'Stage: Initial Vitals', 'BP: 116/70', 'HR: 69, SpO2: 99%', 'Sent By: Tech T']);
     assert.strictEqual(b.card.body[0].weight, 'Bolder'); assert.strictEqual(b.card.body[4].isSubtle, true);
+    assert.deepStrictEqual([...b.card.body.map(x => x.spacing)], ['Default', 'Medium', 'Medium', 'Medium', 'Medium'], 'space between the title and each line');
     const e = b.card.msteams.entities[0]; assert.strictEqual(e.text, '<at>Alex Able</at>'); assert.strictEqual(e.mentioned.id, 'dra@example.com'); assert.strictEqual(e.mentioned.name, 'Alex Able');
     assert(!texts(b.card).some(x => /^Provider/.test(x)), 'no Provider row');
     assert.strictEqual(b.message, '&lt;at&gt;Alex Able&lt;/at&gt; SMIJAN is ready in Bay 2<br>Stage: Initial Vitals<br>BP: 116/70<br>HR: 69, SpO2: 99%<br>Sent By: Tech T'.replace('&lt;at&gt;Alex Able&lt;/at&gt; ', ''));
