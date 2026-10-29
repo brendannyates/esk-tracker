@@ -1322,6 +1322,9 @@ const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsof
 // Who has the tracker open: hidden "ESK Active Users", one row per open panel, written only by that panel (see "who's active").
 const PRES_SHEET = 'ESK Active Users', PRES_HDR = ['Session', 'Name', 'View', 'Where', 'Seen', 'Input'], PRES_ROWS = 200;
 const PRES_QUIET = new Set();   // worksheet ids whose edits never trigger a refresh (the check-ins)
+// the hidden sheet every ESK add-in on the workbook shares its settings through (see OfficeStore); SH_MOVED marks, in each add-in's
+// own document settings, that they were copied over
+const SH_SHEET = 'ESK Shared', SH_PART = 30000, SH_PARTS = 60, SH_ROWS = 80, SH_MOVED = 'eskSharedSheet';
 const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov', 'pvSound', 'pvTipOff'];
 function parseProfiles(values){
   const out = [];
@@ -1428,8 +1431,80 @@ function OfficeStore(){
   // vitals and visit times saved by someone else show up. seen[key] = that setting as last loaded or written by this pane.
   const docs = () => Office.context.document.settings;
   const refreshDocs = () => new Promise(res => { try { docs().refreshAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });   // true when the file's copy was read
-  const sig = k => { try { return JSON.stringify(docs().get(k) ?? null); } catch { return 'null'; } };
   let seen = null, onDocs = null, polling = false;
+  // Shared state on the hidden "ESK Shared" sheet. Office keeps document settings per add-in, so ESK Bays (its own Id) never saw
+  // what ESK Tracker saved there (the bay map, visits, PRN orders, dose sign-offs), and the tracker never saw the provider's saves.
+  // Every esk* setting is one row: A key, B stamp (time|name|random, new on every save), C parts, D on the JSON in SH_PART pieces.
+  // sh = key -> { v, stamp }; this add-in's own settings keep a copy (an older pane still reads them) and are copied over once.
+  // shOn false (the sheet can't be made, for example a protected workbook structure): the add-in's own settings, as before.
+  const sh = new Map(); let shOn = false, shWsId = null;
+  const shared = k => shOn && !String(k).startsWith('Office.');
+  const clone = v => v == null ? null : JSON.parse(JSON.stringify(v));
+  const sig = k => { try { return shared(k) ? (sh.get(k)?.stamp || '') : JSON.stringify(docs().get(k) ?? null); } catch { return 'null'; } };
+  async function shSheet(ctx, make){
+    let ws = ctx.workbook.worksheets.getItemOrNullObject(SH_SHEET); await ctx.sync();
+    if (ws.isNullObject){ if (!make) return null; ws = ctx.workbook.worksheets.add(SH_SHEET); const h = ws.getRange('A1:D1'); h.numberFormat = [['@', '@', '@', '@']]; h.values = [['Key', 'Saved', 'Parts', 'Value (JSON)']]; ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+    ws.load('id'); await ctx.sync(); shWsId = ws.id; return ws;
+  }
+  // keys and stamps (A:C), then the rows whose stamp is new to this pane (all of them when all is set)
+  async function shPull(ctx, all){
+    const ws = await shSheet(ctx, false); if (!ws) return [];
+    const head = ws.getRange(`A2:C${SH_ROWS}`); head.load('values'); await ctx.sync();
+    const want = head.values.map((r, i) => ({ k: String(r[0] || ''), stamp: String(r[1] || ''), n: Math.min(SH_PARTS, +r[2] || 0), row: i + 2 })).filter(x => x.k && x.n && (all || sh.get(x.k)?.stamp !== x.stamp));
+    const rs = want.map(x => { const r = ws.getRange(`D${x.row}:${colLetter(2 + x.n)}${x.row}`); r.load('values'); return r; });
+    if (rs.length) await ctx.sync();
+    const got = [];
+    want.forEach((x, i) => { try { sh.set(x.k, { v: JSON.parse(rs[i].values[0].join('')), stamp: x.stamp }); got.push(x.k); } catch (e){ console.error('ESK Shared: unreadable row for ' + x.k, e); } });
+    return got;
+  }
+  async function shWrite(ctx, key, val){
+    const s = JSON.stringify(val ?? null), parts = [];
+    for (let i = 0; i < s.length; i += SH_PART) parts.push(s.slice(i, i + SH_PART));
+    if (parts.length > SH_PARTS) throw new Error(`${key} is too big for the shared sheet.`);
+    const ws = await shSheet(ctx, true), keys = ws.getRange(`A1:A${SH_ROWS}`); keys.load('values'); await ctx.sync();   // read now: another pane may have added a row
+    let i = keys.values.findIndex((v, n) => n > 0 && String(v[0]) === key); if (i < 0) i = keys.values.findIndex((v, n) => n > 0 && v[0] === '');
+    if (i < 0) throw new Error('The ESK Shared sheet is full.');
+    const row = i + 1, stamp = `${new Date().toISOString()}|${CFG.me || CFG.prov || ''}|${Math.random().toString(36).slice(2, 8)}`;
+    ws.getRange(`D${row}:${colLetter(2 + SH_PARTS)}${row}`).clear(Excel.ClearApplyTo.contents);
+    const rg = ws.getRange(`A${row}:${colLetter(2 + parts.length)}${row}`); rg.numberFormat = [Array(3 + parts.length).fill('@')]; rg.values = [[key, stamp, String(parts.length), ...parts]];
+    await ctx.sync(); sh.set(key, { v: clone(val), stamp });
+  }
+  // the first open of each add-in after this change: its own settings go to the sheet. A key the sheet already has keeps the
+  // sheet's values and takes only what this add-in has that the sheet lacks (visits field by field: a provider's dose sign-off
+  // or PRN order saved in ESK Bays' own settings joins the tracker's visit).
+  const plain = x => x && typeof x === 'object' && !Array.isArray(x);
+  function shMerge(k, cur, own){
+    if (!plain(cur) || !plain(own)) return cur;
+    if (k !== 'eskVisit') return { ...own, ...cur };
+    const out = { ...own };
+    for (const [id, v] of Object.entries(cur)) out[id] = plain(v) && plain(own[id]) ? { ...own[id], ...v } : v;
+    return out;
+  }
+  async function pollDocs(){
+    if (polling || !onDocs || !seen) return; polling = true;
+    try {
+      let ok = await refreshDocs();
+      if (shOn){ try { await Excel.run(ctx => shPull(ctx, false)); ok = true; } catch (e){ ok = false; console.error(e); } }   // the stamps column, then only rows someone else saved
+      if (ok) S.polledAt = Date.now();
+      if (DOC_KEYS.some(k => sig(k) !== seen[k])) onDocs('docs');
+    } finally { polling = false; }   // 'docs': someone saved vitals, a PRN… → quick reload
+  }
+  async function shStart(){
+    try {
+      await Excel.run(async ctx => {
+        await shSheet(ctx, true); sh.clear(); await shPull(ctx, true);
+        if (docs().get(SH_MOVED)) return;
+        for (const k of DOC_KEYS){
+          if (String(k).startsWith('Office.')) continue;
+          const own = docs().get(k); if (own == null) continue;
+          const cur = sh.get(k), v = cur ? shMerge(k, cur.v, own) : own;
+          if (!cur || JSON.stringify(v) !== JSON.stringify(cur.v)) await shWrite(ctx, k, v);
+        }
+        docs().set(SH_MOVED, new Date().toISOString()); docs().saveAsync(() => {});
+      });
+      shOn = true;
+    } catch (e){ console.error('ESK Shared sheet unavailable; using this add-in’s own settings', e); shOn = false; }
+  }
   const CH = 250; // rows per request — Excel on the web rejects very large single reads ("An internal error has occurred")
   const hasManual = (v, f) => v.some((x, c) => !isF(f[c]) && x !== '' && x != null);
   async function retry(fn){
@@ -1492,7 +1567,9 @@ function OfficeStore(){
   return {
     live: true,
     async load(){
-      await refreshDocs(); seen = Object.fromEntries(DOC_KEYS.map(k => [k, sig(k)]));
+      await refreshDocs();
+      if (!shOn) await shStart(); else await Excel.run(ctx => shPull(ctx, false)).catch(e => console.error(e));
+      seen = Object.fromEntries(DOC_KEYS.map(k => [k, sig(k)]));
       return retry(() => Excel.run(async ctx => {
         const ts = ctx.workbook.tables; ts.load('items/name'); const wss = ctx.workbook.worksheets; wss.load('items/name'); await ctx.sync();
         const hs = ts.items.map(t => { const h = t.getHeaderRowRange(); h.load('values'); const ws = t.worksheet; ws.load('name'); return { t, h, ws }; });
@@ -1742,23 +1819,25 @@ function OfficeStore(){
         await ctx.sync();
       });
     },
-    getDoc(key){ try { return docs().get(key); } catch { return null; } },
-    setDoc(key, val){ return new Promise(res => { try { docs().set(key, val); if (seen) seen[key] = sig(key); docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } }); },   // true once saved to the file
-    async freshDoc(key){ await refreshDocs(); return this.getDoc(key); },
+    getDoc(key){ try { return shared(key) ? clone(sh.get(key)?.v) : docs().get(key); } catch { return null; } },   // a copy: callers change what they get
+    // true once saved: to the shared sheet (and this add-in's own settings, for an older pane), or only the settings without the sheet
+    setDoc(key, val){
+      const own = new Promise(res => { try { docs().set(key, val); docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });
+      if (!shared(key)){ if (seen) seen[key] = sig(key); return own; }
+      return Excel.run(ctx => shWrite(ctx, key, val)).then(() => { if (seen) seen[key] = sig(key); return true; }, e => { console.error(e); return false; });
+    },
+    async freshDoc(key){ await refreshDocs(); if (shared(key)) await Excel.run(ctx => shPull(ctx, false)).catch(e => console.error(e)); return this.getDoc(key); },
     // Called from the 20 s timer: someone else saved settings (vitals, room or dose time, PRN, tasks…) → same path as a cell change.
     // seen is only reset by load(), so a change keeps firing until a reload picks it up.
     markDocs(){ if (seen) for (const k of DOC_KEYS) seen[k] = sig(k); },   // applyDocs took them: quiet until the next change
-    async pollDocs(){
-      if (polling || !onDocs || !seen) return; polling = true;
-      try { if (await refreshDocs()) S.polledAt = Date.now(); if (DOC_KEYS.some(k => sig(k) !== seen[k])) onDocs('docs'); } finally { polling = false; }   // 'docs': someone saved vitals, a PRN… → quick reload
-    },
+    pollDocs,
     // Any cell edit on any sheet (yours or a co-author's), plus Office's settings-changed event. Older Excel: the tracker tables only.
     watch(cb){
       onDocs = cb;
       try { docs().addHandlerAsync(Office.EventType.SettingsChanged, () => cb('docs')); } catch {}
       let all = false; try { all = Office.context.requirements.isSetSupported('ExcelApi', '1.9'); } catch {}
       Excel.run(async ctx => {
-        if (all) ctx.workbook.worksheets.onChanged.add(e => { if (e && PRES_QUIET.has(e.worksheetId)) return Promise.resolve(); cb(e && e.source === 'Remote' ? 'remote' : undefined); return Promise.resolve(); });   // check-ins (who's active) never refresh anyone   // 'remote': a co-author's edit, often with a save of theirs on its way
+        if (all) ctx.workbook.worksheets.onChanged.add(e => { if (e && PRES_QUIET.has(e.worksheetId)) return Promise.resolve(); if (e && shWsId && e.worksheetId === shWsId){ pollDocs().catch(() => {}); return Promise.resolve(); }   /* a shared-settings save: read it now, no table refresh */ cb(e && e.source === 'Remote' ? 'remote' : undefined); return Promise.resolve(); });   // check-ins (who's active) never refresh anyone   // 'remote': a co-author's edit, often with a save of theirs on its way
         else for (const k in names){ ctx.workbook.tables.getItem(names[k]).onChanged.add(() => { cb(); return Promise.resolve(); }); }
         await ctx.sync();
       }).catch(() => {});

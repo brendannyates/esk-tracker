@@ -15,6 +15,9 @@ Importing writes to the **Benefits** tab (table `tblBenefits`), one row per pati
 
 Source is in `src/`. Run `python3 build.py` to rebuild into `dist/`, then copy the output to the repo root.
 
+## Shared settings (ESK Shared sheet)
+ESK Tracker and ESK Bays are separate add-ins with their own Ids, and Office keeps document settings per add-in, so neither could read what the other saved: ESK Bays never got the bay map, the techs' vitals or bays, and the tracker never got a provider's dose sign-off or PRN order. Every shared `esk*` setting (bay map and clinic settings in `eskShared`, visits in `eskVisit`, tasks, notes, appt list fingerprint…) now lives on the hidden **ESK Shared** sheet, one row per key: A key, B stamp (changes on every save), C parts, D on the JSON in 30,000-character pieces. Panes poll the stamps every 2 s and read a row only when its stamp changes; an edit to the sheet is read at once. The first time each add-in opens after this change, its own settings are copied over (a key the sheet already has keeps the sheet's values and gains what this add-in had that it lacked; visits merge field by field). Each add-in still keeps a copy in its own settings. Without the sheet (for example a protected workbook structure) the add-in uses its own settings, as before. Office's own `Office.AutoShowTaskpaneWithDocument` stays per add-in.
+
 ## Visit log
 Every visit action (room time, dose time, bay, initial / 40-min / final vitals, rechecks, PRN meds, discharge, moves) is written to the hidden **ESK Visit Log** sheet as it's saved, one row per change, with the MRN, the time and who recorded it. It's a backup: if a visit's vitals or times go missing from the tracker (for example two people saving at once), the next refresh fills the blanks back in from the log. It never overwrites what's there. A patient's rows stay until the day of their next appointment, then they're cleared.
 
