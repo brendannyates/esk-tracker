@@ -116,23 +116,20 @@ t('provider panel: vitals lines, then Confirm dose / confirmed / administered', 
   h = C.bayProvPanelHTML({ id: '3', row: null, busy: true, until: 705 }); assert(h.includes('in this bay until about 11:45 (their final vitals).'));
   delete C.vit.pa;
 });
-t('dose confirmation: last 4 of the serial must match exactly one kit this patient can get, and the lot must match it', () => {
+t('dose confirmation: last 4 of the serial must match exactly one kit this patient can get; no lot asked', () => {
   C.S.K = [{ id: 'k1', serial: 'SN0001234', lot: 'AB12345', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k2', serial: 'SN0005678', lot: 'X1', available: true, pharm: 'BESSE', mrn: 'P' },
     { id: 'k3', serial: 'SN9995678', lot: 'X1', available: true, pharm: 'BESSE', mrn: '' }, { id: 'k4', serial: 'SN0004321', lot: 'X1', available: true, pharm: 'BESSE', mrn: 'Q' }, { id: 'k5', serial: 'SN0009999', lot: 'X1', available: false, pharm: 'BESSE', mrn: '' },
     { id: 'k6', serial: 'SN0002468', lot: '', available: true, pharm: 'BESSE', mrn: 'P' }];
   const it = { a: { mrn: 'P' }, inf: { pharm: 'BESSE' }, adminKit: null, pulledKit: null, suggest: null };
-  assert.strictEqual(C.pvMatch(it, '1234', 'AB12345').k.id, 'k1', 'full lot'); assert.strictEqual(C.pvMatch(it, ' 1234 ', '2345').k.id, 'k1', 'last 4 of the lot');
-  assert.strictEqual(C.pvMatch(it, '1234', 'ab12345').k.id, 'k1', 'lot case does not matter');
-  assert(/lot doesn’t match kit …1234/.test(C.pvMatch(it, '1234', '9999').err), 'wrong lot');
-  assert(/Enter the lot number/.test(C.pvMatch(it, '1234', '').err) && /Enter the lot number/.test(C.pvMatch(it, '1234', '345').err), 'lot required, 4+');
-  assert(/no lot number on the Inventory/.test(C.pvMatch(it, '2468', 'ABCD').err), 'kit row with no lot');
-  assert(/2 kits end in 5678/.test(C.pvMatch(it, '5678', 'AAAA').err), 'ambiguous');
-  assert(/No kit for P ends in 4321/.test(C.pvMatch(it, '4321', 'AAAA').err), 'labeled for someone else');
-  assert(/No kit/.test(C.pvMatch(it, '9999', 'AAAA').err), 'not available'); assert(/last 4/.test(C.pvMatch(it, '12', 'AAAA').err));
+  assert.strictEqual(C.pvMatch(it, '1234').k.id, 'k1', 'serial alone'); assert.strictEqual(C.pvMatch(it, ' 1234 ').k.id, 'k1', 'spaces trimmed');
+  assert.strictEqual(C.pvMatch(it, '2468').k.id, 'k6', 'kit row with no lot still confirms');
+  assert(/2 kits end in 5678/.test(C.pvMatch(it, '5678').err), 'ambiguous');
+  assert(/No kit for P ends in 4321/.test(C.pvMatch(it, '4321').err), 'labeled for someone else');
+  assert(/No kit/.test(C.pvMatch(it, '9999').err), 'not available'); assert(/last 4/.test(C.pvMatch(it, '12').err));
   const gen = { a: { mrn: 'P' }, inf: { pharm: 'GENOA' }, adminKit: null, pulledKit: null, suggest: null };
-  assert(/No kit/.test(C.pvMatch(gen, '1234', 'AB12345').err), 'specialty patient: Besse stock does not count');
-  assert(/doesn’t match/.test(C.pvMatch({ ...it, adminKit: { serial: 'SN0001111', lot: 'AB12345' } }, '1234', '2345').err));
-  assert.strictEqual(C.pvMatch({ ...it, adminKit: C.S.K[0] }, '1234', '2345').k.id, 'k1', 'tech already recorded it: still checks serial and lot');
+  assert(/No kit/.test(C.pvMatch(gen, '1234').err), 'specialty patient: Besse stock does not count');
+  assert(/doesn’t match/.test(C.pvMatch({ ...it, adminKit: { serial: 'SN0001111', lot: 'AB12345' } }, '1234').err));
+  assert.strictEqual(C.pvMatch({ ...it, adminKit: C.S.K[0] }, '1234').k.id, 'k1', 'tech already recorded it: still checks the serial');
   C.S.K = [];
 });
 t('PRN orders: open until a logged PRN row carries the order id; removing that row reopens it', () => {
