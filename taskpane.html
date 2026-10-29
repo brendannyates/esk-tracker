@@ -5527,7 +5527,7 @@ function bayNextHTML(m, prov){
     return `<div class="barr"><span class="p">${esc(nm(r.a.mrn))}</span><span class="w">${fmtT(r.a.time)}</span><span class="where${b ? '' : ' none'}">${b ? `Bay ${esc(b)}` : 'No bay yet'}</span>${prov || !map ? '<span></span>' : `<button class="btn ghost sm" data-act="bayMove" data-k="${esc(r.key)}">${b ? 'Change bay' : 'Choose a bay'}</button>`}</div>`; }).join('')}</div>`;
 }
 // Provider confirms the dose: the last 4 of the kit serial must match exactly one kit this patient can get (the tech's pull or
-// suggestion, their labeled kits, or Besse stock), and the lot number (at least its last 4) must match that kit's lot.
+// suggestion, their labeled kits, or Besse stock). The lot is not asked for; the kit's lot from the Inventory is kept in pc.lot.
 // Writes the Inventory row as administered (mg, date, supervising physician = the provider) with Treating Technician left blank,
 // and saves eskVisit[key].pc { at, sn, lot, kit, by, ts } plus the dose time when none is set (vitals timers start there).
 // The tech finishes it in Administer, which writes their name into the row.
@@ -5536,25 +5536,21 @@ function pvKits(it){
   const L = S.K.filter(x => x.available && (PS(it.inf.pharm) ? (x.pharm !== 'BESSE' && x.mrn === it.a.mrn) : (x.pharm === 'BESSE' && (x.mrn === it.a.mrn || !x.mrn))));
   return [...new Set([it.pulledKit, it.suggest, ...L].filter(Boolean))];
 }
-function pvMatch(it, sn, lot){
+function pvMatch(it, sn){
   const q = String(sn || '').trim().toUpperCase(), end = k => String(k.serial || '').toUpperCase().endsWith(q);
-  const ql = String(lot || '').trim().toUpperCase(), lotOk = k => String(k.lot ?? '').trim().toUpperCase().endsWith(ql);
   if (!/^[A-Z0-9]{4}$/.test(q)) return { err: 'Enter the last 4 characters of the kit serial.' };
-  if (!/^[A-Z0-9-]{4,}$/.test(ql)) return { err: 'Enter the lot number (at least its last 4 characters).' };
-  const lotErr = k => !String(k.lot ?? '').trim() ? { err: 'This kit has no lot number on the Inventory. Ask the tech to check the row.' } : lotOk(k) ? null : { err: `The lot doesn’t match kit …${esc(q)}. Check the box.` };
-  if (it.adminKit) return !end(it.adminKit) ? { err: `The tech recorded kit …${esc(String(it.adminKit.serial || '').slice(-4))}, which doesn’t match.` } : lotErr(it.adminKit) || { k: it.adminKit };
+  if (it.adminKit) return !end(it.adminKit) ? { err: `The tech recorded kit …${esc(String(it.adminKit.serial || '').slice(-4))}, which doesn’t match.` } : { k: it.adminKit };
   const L = pvKits(it).filter(end);
   if (!L.length) return { err: `No kit for ${esc(nm(it.a.mrn))} ends in ${esc(q)}. Check the box, or ask the tech to scan it.` };
   if (L.length > 1) return { err: `${L.length} kits end in ${esc(q)}. Ask the tech to scan it in Administer.` };
   if (L[0].administered || L[0].expired || L[0].disposed) return { err: 'That kit is administered, expired or marked for disposal. Tell the tech.' };
-  return lotErr(L[0]) || { k: L[0] };
+  return { k: L[0] };
 }
 function openPvDose(key){
   const it = todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return;
   S.pv = { key }; const b = bayLabel(visitGet(key)?.bay);
   openModal(`<h2>Confirm dose — ${esc(nm(it.a.mrn))}</h2><div class="muted small">${b ? `Bay ${esc(b)} · ` : ''}${it.inf.mg ?? '?'} mg · ${esc(PH_LABEL[it.inf.pharm] || '')}</div>
     <div class="form2"><div><label class="lbl" for="pvSn">Last 4 of the kit serial</label><input id="pvSn" class="fld mono" maxlength="4" autocomplete="off" spellcheck="false"></div>
-      <div><label class="lbl" for="pvLot">Lot number <span class="muted">(or its last 4)</span></label><input id="pvLot" class="fld mono" maxlength="20" autocomplete="off" spellcheck="false"></div>
       <div><label class="lbl" for="pvAt">Time given <span class="muted">(vitals timers start here)</span></label><input id="pvAt" class="fld" type="time" value="${hhmm(nowMin())}"></div></div>
     <p class="small muted">This marks the kit administered on the Inventory, with you as supervising physician. The tech adds their name to finish it.</p>
     <div id="pvMsg"></div>
@@ -5563,7 +5559,7 @@ function openPvDose(key){
 }
 async function pvSave(){
   const key = S.pv?.key, it = key && todayModel(todaySerial()).find(i => i.a.key === key); if (!it) return closeModal();
-  const sn = String($('#pvSn')?.value || '').trim().toUpperCase(), lot = String($('#pvLot')?.value || '').trim().toUpperCase(), at = fromHHMM($('#pvAt')?.value), r = pvMatch(it, sn, lot);
+  const sn = String($('#pvSn')?.value || '').trim().toUpperCase(), at = fromHHMM($('#pvAt')?.value), r = pvMatch(it, sn);
   const err = r.err || (at == null ? 'Enter the time the dose was given.' : '');
   if (err){ $('#pvMsg').innerHTML = `<div class="msg bad">${err}</div>`; return; }
   const k = r.k;
@@ -5576,7 +5572,7 @@ async function pvSave(){
     const ok = await write('Recording the dose…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Administered for ${nm(it.a.mrn)}. The tech adds their name to finish it.`);
     if (!ok) return;
   } else closeModal();
-  await visitSet(key, { pc: { at, sn, lot: String(k.lot ?? lot).trim(), kit: k.id, by: CFG.prov, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
+  await visitSet(key, { pc: { at, sn, lot: String(k.lot ?? '').trim(), kit: k.id, by: CFG.prov, ts: Date.now() }, ...(obsAt(visitGet(key)) == null ? { adm: at } : {}) });
   render(); if (k.administered) toast('ok', `Dose confirmed for ${nm(it.a.mrn)}.`);
 }
 // The provider answers a PCT's request: ok = approved (it goes to the PCT to give and log, with the usual alert), no = declined.
