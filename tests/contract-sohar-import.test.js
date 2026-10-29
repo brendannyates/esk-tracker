@@ -3,7 +3,7 @@
 // Runs only the Node-tested "Sohar benefits" block of src/taskpane.html (plus norm and mrnKey), the same way
 // tests/benefits.test.js does. No UI code is loaded. FICTIONAL names, MRNs, dates and amounts only.
 //
-// If the Sohar add-in folder is on this PC (SOHAR_DIR, or the default OneDrive path below), the test also checks
+// If the Sohar add-in folder is on this PC (SOHAR_DIR, or the default OneDrive path below; moved 10/28), the test also checks
 // the literal column list against Sohar's live core.js and runs a file built by Sohar's own trackerExport + toCSV.
 // If the folder is missing, those checks are skipped and the rest still runs.
 const fs = require('fs'), os = require('os'), path = require('path'), vm = require('vm'), assert = require('assert');
@@ -21,12 +21,13 @@ let n = 0, skipped = 0; const t = (name, fn) => { fn(); n++; console.log('ok', n
 //   BENEFITS_EXPORT_COLS (core.js ~line 30, "Treat as a contract: add columns at the end only")
 //   TRACKER_EXPORT_COLS = [...BENEFITS_EXPORT_COLS, 'Service', 'Source', 'Exported', 'Secondary Payer', 'Cost-share Flags'] (~line 1471)
 // Copied as a literal so this test runs without the Sohar folder. If Sohar appends columns, add them here.
-const TRACKER_EXPORT_COLS = ['Per Nbr', 'MRN', 'Last Name', 'First Name', 'DOB', 'Sohar Payer', 'Plan', 'Network', 'Coverage Level',
+// Sohar v0.19 (10/28) swapped Last Name, First Name and DOB for LASFIR: no names or DOBs in the file at all.
+const TRACKER_EXPORT_COLS = ['Per Nbr', 'MRN', 'LASFIR', 'Sohar Payer', 'Plan', 'Network', 'Coverage Level',
   'Coverage Start', 'Coverage End', 'Copay', 'Coinsurance', 'Deductible', 'Deductible Remaining', 'Deductible Status',
   'OOP Max', 'OOP Remaining', 'OOP Status', 'Benefit Flag', 'Sohar Status', 'Sohar Date', 'Sohar Ref',
   'Service', 'Source', 'Exported', 'Secondary Payer', 'Cost-share Flags'];
 // Columns ESK must never read: names and DOB by design; the rest are not used.
-const IGNORED = ['Last Name', 'First Name', 'DOB', 'Sohar Ref', 'Secondary Payer', 'Cost-share Flags'];
+const IGNORED = ['LASFIR', 'Sohar Ref', 'Secondary Payer', 'Cost-share Flags'];
 const PHI_COLS = ['Last Name', 'First Name', 'DOB'];
 
 // Sohar's CSV writer (core.js csvCell/toCSV): header row, quote only when a cell has " , CR or LF, CRLF line ends plus a trailing CRLF, no BOM.
@@ -60,7 +61,7 @@ const parsed = E.parseBenefits(E.parseCSV(csvText));
 const plan = parsed && E.planBenefits(parsed.rows, TRACKER);
 const fakePHI = FILE_ROWS.flatMap(r => PHI_COLS.map(c => r[c]));
 
-t('every BEN_IN key is a Sohar tracker column; only names, DOB, Sohar Ref and the two newest columns go unread', () => {
+t('every BEN_IN key is a Sohar tracker column; only LASFIR, Sohar Ref and the two newest columns go unread', () => {
   const have = TRACKER_EXPORT_COLS.map(E.norm);
   eq(E.BEN_IN.filter(k => !have.includes(k)), [], 'BEN_IN keys missing from the Sohar file');
   eq(TRACKER_EXPORT_COLS.filter(c => !E.BEN_IN.includes(E.norm(c))), IGNORED);
@@ -127,7 +128,7 @@ t('parsed rows hold no name or DOB anywhere', () => {
 });
 
 // ---- optional: Sohar's live core.js ----
-const SOHAR = process.env.SOHAR_DIR || path.join(os.homedir(), 'OneDrive - Mindful Health Solutions', 'Add-In Manifests', 'Sohar Eligibility', 'add-in');
+const SOHAR = process.env.SOHAR_DIR || path.join(os.homedir(), 'OneDrive - Mindful Health Solutions', 'Projects', 'Clinic Workbook Pilot', 'add-in');
 const coreFile = path.join(SOHAR, 'core.js');
 if (!fs.existsSync(coreFile)){
   skipped = 3; console.log('skip live Sohar checks (no ' + coreFile + ')');
