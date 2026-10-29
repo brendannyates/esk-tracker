@@ -6,7 +6,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'taskpane.html'), 'utf8').replace(/\r\n/g, '\n');
 const line = re => { const m = src.match(re); if (!m) throw new Error('not found: ' + re); return m[0]; };
 const between = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); assert(i > 0 && j > i, a); return src.slice(i, j); };
-const code = ['var S = {};', line(/^const DOC_KEYS = .*$/m), line(/^const CH = .*$/m), between('function OfficeStore(){', '// ---------- store: demo'),
+const code = ['var S = {};', line(/^const PRES_QUIET = .*$/m), line(/^const SH_SHEET = .*$/m), line(/^const DOC_KEYS = .*$/m), line(/^const CH = .*$/m), between('function OfficeStore(){', '// ---------- store: demo'),
   between('function visitMissing(', '// Someone else may have saved visits'), between('function visitMerge(', '// ---------- visit log'),
   'globalThis.OfficeStore = OfficeStore; globalThis.visitMerge = visitMerge; globalThis.visitMissing = visitMissing; globalThis.S = S;'].join('\n');
 

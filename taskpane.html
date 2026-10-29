@@ -1324,7 +1324,7 @@ const PRES_SHEET = 'ESK Active Users', PRES_HDR = ['Session', 'Name', 'View', 'W
 const PRES_QUIET = new Set();   // worksheet ids whose edits never trigger a refresh (the check-ins)
 // the hidden sheet every ESK add-in on the workbook shares its settings through (see OfficeStore); SH_MOVED marks, in each add-in's
 // own document settings, that they were copied over
-const SH_SHEET = 'ESK Shared', SH_PART = 30000, SH_PARTS = 60, SH_ROWS = 80, SH_MOVED = 'eskSharedSheet';
+const SH_SHEET = 'ESK Shared', SH_PART = 30000, SH_PARTS = 60, SH_ROWS = 80, SH_MOVED = 'eskSharedSheet', SH_MOVED2 = 'eskSharedSheet2';
 const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov', 'pvSound', 'pvTipOff'];
 function parseProfiles(values){
   const out = [];
@@ -1434,51 +1434,140 @@ function OfficeStore(){
   let seen = null, onDocs = null, polling = false;
   // Shared state on the hidden "ESK Shared" sheet. Office keeps document settings per add-in, so ESK Bays (its own Id) never saw
   // what ESK Tracker saved there (the bay map, visits, PRN orders, dose sign-offs), and the tracker never saw the provider's saves.
-  // Every esk* setting is one row: A key, B stamp (time|name|random, new on every save), C parts, D on the JSON in SH_PART pieces.
-  // sh = key -> { v, stamp }; this add-in's own settings keep a copy (an older pane still reads them) and are copied over once.
-  // shOn false (the sheet can't be made, for example a protected workbook structure): the add-in's own settings, as before.
-  const sh = new Map(); let shOn = false, shWsId = null;
-  const shared = k => shOn && !String(k).startsWith('Office.');
+  // Every esk* setting in DOC_KEYS has its own fixed row (its place in DOC_KEYS + 2), so two panes saving at once never pick the
+  // same free row: A key, B stamp (time|name|random, new on every save), C parts, D on the JSON in SH_PART pieces.
+  // sh = key -> { v, stamp }; this add-in's own settings keep a copy (an older pane still reads them) and are merged in once.
+  // shOn false only when the sheet doesn't exist and can't be made (for example a protected workbook structure): then this add-in's
+  // own settings, as before. Once the sheet exists, a failed read is a load error (retried), never a quiet switch to own settings.
+  const sh = new Map(); let shOn = false, shWanted = false, shWsId = null;   // shWanted: the sheet is in use here, even while a read is failing
+  const shKeys = () => DOC_KEYS.filter(k => !String(k).startsWith('Office.'));   // read when used: tests build the store without DOC_KEYS
+  const shRow = k => DOC_KEYS.indexOf(k) + 2;
+  const shared = k => (shOn || shWanted) && shKeys().includes(k);
   const clone = v => v == null ? null : JSON.parse(JSON.stringify(v));
   const sig = k => { try { return shared(k) ? (sh.get(k)?.stamp || '') : JSON.stringify(docs().get(k) ?? null); } catch { return 'null'; } };
+  const newStamp = () => `${new Date().toISOString()}|${CFG.me || CFG.prov || ''}|${Math.random().toString(36).slice(2, 8)}`;
   async function shSheet(ctx, make){
     let ws = ctx.workbook.worksheets.getItemOrNullObject(SH_SHEET); await ctx.sync();
-    if (ws.isNullObject){ if (!make) return null; ws = ctx.workbook.worksheets.add(SH_SHEET); const h = ws.getRange('A1:D1'); h.numberFormat = [['@', '@', '@', '@']]; h.values = [['Key', 'Saved', 'Parts', 'Value (JSON)']]; ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+    if (ws.isNullObject){
+      if (!make) return null;
+      try { ws = ctx.workbook.worksheets.add(SH_SHEET); const h = ws.getRange('A1:D1'); h.numberFormat = [['@', '@', '@', '@']]; h.values = [['Key', 'Saved', 'Parts', 'Value (JSON)']]; ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+      catch (e){ ws = ctx.workbook.worksheets.getItemOrNullObject(SH_SHEET); await ctx.sync(); if (ws.isNullObject) throw e; }   // another pane made it at the same moment
+    }
     ws.load('id'); await ctx.sync(); shWsId = ws.id; return ws;
   }
-  // keys and stamps (A:C), then the rows whose stamp is new to this pane (all of them when all is set)
-  async function shPull(ctx, all){
-    const ws = await shSheet(ctx, false); if (!ws) return [];
+  // keys and stamps (A:C), then the rows whose stamp is new to this pane (all of them when all is set). A key found on two rows
+  // (the first version's free-row layout, or an old pane) takes the newest stamp; the ISO time leads, so the strings sort.
+  async function shRead(ctx, all){
+    const ws = await shSheet(ctx, false); if (!ws) return { ws: null, layoutOk: true };
     const head = ws.getRange(`A2:C${SH_ROWS}`); head.load('values'); await ctx.sync();
-    const want = head.values.map((r, i) => ({ k: String(r[0] || ''), stamp: String(r[1] || ''), n: Math.min(SH_PARTS, +r[2] || 0), row: i + 2 })).filter(x => x.k && x.n && (all || sh.get(x.k)?.stamp !== x.stamp));
+    const best = new Map(); let layoutOk = true;
+    head.values.forEach((r, i) => {
+      const k = String(r[0] || ''), row = i + 2; if (!k) return;
+      if (!shKeys().includes(k) || shRow(k) !== row) layoutOk = false;
+      const x = { k, stamp: String(r[1] || ''), n: Math.min(SH_PARTS, +r[2] || 0), row }, b = best.get(k);
+      if (!b){ best.set(k, x); return; }
+      layoutOk = false; if (x.stamp > b.stamp) best.set(k, x);
+    });
+    const want = [...best.values()].filter(x => x.n && (all || sh.get(x.k)?.stamp !== x.stamp));
     const rs = want.map(x => { const r = ws.getRange(`D${x.row}:${colLetter(2 + x.n)}${x.row}`); r.load('values'); return r; });
     if (rs.length) await ctx.sync();
-    const got = [];
-    want.forEach((x, i) => { try { sh.set(x.k, { v: JSON.parse(rs[i].values[0].join('')), stamp: x.stamp }); got.push(x.k); } catch (e){ console.error('ESK Shared: unreadable row for ' + x.k, e); } });
-    return got;
+    want.forEach((x, i) => { try { sh.set(x.k, { v: JSON.parse(rs[i].values[0].join('')), stamp: x.stamp }); } catch (e){ console.error('ESK Shared: unreadable row for ' + x.k, e); } });
+    return { ws, layoutOk };
   }
-  async function shWrite(ctx, key, val){
+  const shPull = (ctx, all) => shRead(ctx, all);
+  // Writes key's row. cas: refuse (return false, with the cache now holding what's there) when the row was saved by someone else
+  // since this pane last read it, so the caller merges again instead of writing over their change (saveVisit retries).
+  async function shWrite(ctx, key, val, cas){
     const s = JSON.stringify(val ?? null), parts = [];
     for (let i = 0; i < s.length; i += SH_PART) parts.push(s.slice(i, i + SH_PART));
     if (parts.length > SH_PARTS) throw new Error(`${key} is too big for the shared sheet.`);
-    const ws = await shSheet(ctx, true), keys = ws.getRange(`A1:A${SH_ROWS}`); keys.load('values'); await ctx.sync();   // read now: another pane may have added a row
-    let i = keys.values.findIndex((v, n) => n > 0 && String(v[0]) === key); if (i < 0) i = keys.values.findIndex((v, n) => n > 0 && v[0] === '');
-    if (i < 0) throw new Error('The ESK Shared sheet is full.');
-    const row = i + 1, stamp = `${new Date().toISOString()}|${CFG.me || CFG.prov || ''}|${Math.random().toString(36).slice(2, 8)}`;
+    const ws = await shSheet(ctx, true), row = shRow(key), cur = ws.getRange(`A${row}:C${row}`); cur.load('values'); await ctx.sync();
+    const [k0, st0, n0] = cur.values[0];
+    if (cas && String(k0) === key && String(st0 || '') && String(st0) !== (sh.get(key)?.stamp || '')){
+      const n = Math.min(SH_PARTS, +n0 || 0);
+      if (n){ const r = ws.getRange(`D${row}:${colLetter(2 + n)}${row}`); r.load('values'); await ctx.sync(); try { sh.set(key, { v: JSON.parse(r.values[0].join('')), stamp: String(st0) }); } catch {} }
+      return false;
+    }
+    const stamp = newStamp();
     ws.getRange(`D${row}:${colLetter(2 + SH_PARTS)}${row}`).clear(Excel.ClearApplyTo.contents);
     const rg = ws.getRange(`A${row}:${colLetter(2 + parts.length)}${row}`); rg.numberFormat = [Array(3 + parts.length).fill('@')]; rg.values = [[key, stamp, String(parts.length), ...parts]];
-    await ctx.sync(); sh.set(key, { v: clone(val), stamp });
+    await ctx.sync(); sh.set(key, { v: clone(val), stamp }); return true;
   }
-  // the first open of each add-in after this change: its own settings go to the sheet. A key the sheet already has keeps the
-  // sheet's values and takes only what this add-in has that the sheet lacks (visits field by field: a provider's dose sign-off
-  // or PRN order saved in ESK Bays' own settings joins the tracker's visit).
+  // the first version picked rows first come, first served: put every key on its own row, newest value kept
+  async function shRelayout(ctx, ws){
+    ws.getRange(`A2:${colLetter(2 + SH_PARTS)}${SH_ROWS}`).clear(Excel.ClearApplyTo.contents);
+    for (const k of shKeys()){
+      const x = sh.get(k); if (!x) continue;
+      const s = JSON.stringify(x.v ?? null), parts = []; for (let i = 0; i < s.length; i += SH_PART) parts.push(s.slice(i, i + SH_PART));
+      const row = shRow(k), stamp = newStamp(), rg = ws.getRange(`A${row}:${colLetter(2 + parts.length)}${row}`);
+      rg.numberFormat = [Array(3 + parts.length).fill('@')]; rg.values = [[k, stamp, String(parts.length), ...parts]]; x.stamp = stamp;
+    }
+    await ctx.sync();
+  }
+  // Merging this add-in's own settings into the sheet, once per add-in (SH_MOVED2; it also repairs the first version's merge).
+  // The tracker is the record for what techs enter (bay, room and dose times, vitals, rechecks, PRN given, discharge, moves); ESK Bays
+  // for the provider's dose sign-off (pc). PRN orders merge order by order: the provider's request answer (ok/no/req) from ESK Bays,
+  // everything else from the tracker, and nothing filled in on either side is lost. Other keys: the tracker's value wins.
   const plain = x => x && typeof x === 'object' && !Array.isArray(x);
-  function shMerge(k, cur, own){
-    if (!plain(cur) || !plain(own)) return cur;
-    if (k !== 'eskVisit') return { ...own, ...cur };
-    const out = { ...own };
-    for (const [id, v] of Object.entries(cur)) out[id] = plain(v) && plain(own[id]) ? { ...own[id], ...v } : v;
+  function mergeOrders(t, b){
+    if (!Array.isArray(t)) return Array.isArray(b) ? b : t;
+    if (!Array.isArray(b)) return t;
+    const out = t.map(o => ({ ...o })), at = new Map(out.map((o, i) => [o.id, i]));
+    for (const o of b){
+      if (!at.has(o.id)){ out.push({ ...o }); continue; }
+      const m = out[at.get(o.id)];
+      for (const [f, v] of Object.entries(o)) if (v != null && (m[f] == null || ['ok', 'no', 'req'].includes(f))) m[f] = v;
+    }
     return out;
+  }
+  function mergeVisit(t, b){
+    const out = {};
+    for (const f of new Set([...Object.keys(b), ...Object.keys(t)])){
+      if (f === 'pc') out[f] = b.pc ?? t.pc;
+      else if (f === 'prnOrd') out[f] = mergeOrders(t.prnOrd, b.prnOrd);
+      else if (plain(t[f]) && plain(b[f])) out[f] = { ...b[f], ...t[f] };
+      else out[f] = t[f] !== undefined ? t[f] : b[f];
+    }
+    return out;
+  }
+  function shMerge(k, cur, own, ownIsBays){
+    if (cur == null) return own;
+    const t = ownIsBays ? cur : own, b = ownIsBays ? own : cur;
+    if (k === 'eskVisit' && plain(t) && plain(b)){
+      const out = {};
+      for (const id of new Set([...Object.keys(b), ...Object.keys(t)])) out[id] = plain(t[id]) && plain(b[id]) ? mergeVisit(t[id], b[id]) : (t[id] ?? b[id]);
+      return out;
+    }
+    if (plain(t) && plain(b)) return { ...b, ...t };
+    return t ?? b;
+  }
+  const saved = () => new Promise(res => { try { docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });
+  async function shStart(){
+    let existed = false;
+    try {
+      await retry(() => Excel.run(async ctx => {
+        const before = ctx.workbook.worksheets.getItemOrNullObject(SH_SHEET); await ctx.sync(); existed = !before.isNullObject;
+        const ws = await shSheet(ctx, true); sh.clear();
+        const { layoutOk } = await shRead(ctx, true);
+        if (!layoutOk) await shRelayout(ctx, ws);
+        if (docs().get(SH_MOVED2)) return;
+        const bays = !!S.provView;
+        for (const k of shKeys()){
+          const own = docs().get(k); if (own == null) continue;
+          for (let n = 0; n < 3; n++){   // another pane may be merging the same key: write only over what was merged into
+            const cur = sh.get(k), v = shMerge(k, cur?.v ?? null, own, bays);
+            if (cur && JSON.stringify(v) === JSON.stringify(cur.v)) break;
+            if (await shWrite(ctx, k, v, true)) break;
+          }
+        }
+        docs().set(SH_MOVED, docs().get(SH_MOVED) || new Date().toISOString()); docs().set(SH_MOVED2, new Date().toISOString());
+        if (!await saved()) throw new Error('Couldn’t save to this workbook (is it read-only?).');
+      }));
+      shOn = true;
+    } catch (e){
+      if (existed || docs().get(SH_MOVED)){ shWanted = true; throw e; }   // the sheet is in use: a load error the next refresh retries, never a quiet switch
+      console.error('ESK Shared sheet unavailable; using this add-in’s own settings', e); shOn = false;
+    }
   }
   async function pollDocs(){
     if (polling || !onDocs || !seen) return; polling = true;
@@ -1488,22 +1577,6 @@ function OfficeStore(){
       if (ok) S.polledAt = Date.now();
       if (DOC_KEYS.some(k => sig(k) !== seen[k])) onDocs('docs');
     } finally { polling = false; }   // 'docs': someone saved vitals, a PRN… → quick reload
-  }
-  async function shStart(){
-    try {
-      await Excel.run(async ctx => {
-        await shSheet(ctx, true); sh.clear(); await shPull(ctx, true);
-        if (docs().get(SH_MOVED)) return;
-        for (const k of DOC_KEYS){
-          if (String(k).startsWith('Office.')) continue;
-          const own = docs().get(k); if (own == null) continue;
-          const cur = sh.get(k), v = cur ? shMerge(k, cur.v, own) : own;
-          if (!cur || JSON.stringify(v) !== JSON.stringify(cur.v)) await shWrite(ctx, k, v);
-        }
-        docs().set(SH_MOVED, new Date().toISOString()); docs().saveAsync(() => {});
-      });
-      shOn = true;
-    } catch (e){ console.error('ESK Shared sheet unavailable; using this add-in’s own settings', e); shOn = false; }
   }
   const CH = 250; // rows per request — Excel on the web rejects very large single reads ("An internal error has occurred")
   const hasManual = (v, f) => v.some((x, c) => !isF(f[c]) && x !== '' && x != null);
@@ -1824,9 +1897,10 @@ function OfficeStore(){
     setDoc(key, val){
       const own = new Promise(res => { try { docs().set(key, val); docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });
       if (!shared(key)){ if (seen) seen[key] = sig(key); return own; }
-      return Excel.run(ctx => shWrite(ctx, key, val)).then(() => { if (seen) seen[key] = sig(key); return true; }, e => { console.error(e); return false; });
+      // visits: written only over what this pane last read (saveVisit merges again and retries when someone saved in between)
+      return Excel.run(ctx => shWrite(ctx, key, val, key === 'eskVisit')).then(ok => { if (ok && seen) seen[key] = sig(key); return ok; }, e => { console.error(e); return false; });
     },
-    async freshDoc(key){ await refreshDocs(); if (shared(key)) await Excel.run(ctx => shPull(ctx, false)).catch(e => console.error(e)); return this.getDoc(key); },
+    async freshDoc(key){ await refreshDocs(); if (shared(key)) await Excel.run(ctx => shPull(ctx, false)).catch(e => console.error(e)); return this.getDoc(key); },   // a failed read keeps the last copy; a save over a newer row is refused by shWrite
     // Called from the 20 s timer: someone else saved settings (vitals, room or dose time, PRN, tasks…) → same path as a cell change.
     // seen is only reset by load(), so a change keeps firing until a reload picks it up.
     markDocs(){ if (seen) for (const k of DOC_KEYS) seen[k] = sig(k); },   // applyDocs took them: quiet until the next change
