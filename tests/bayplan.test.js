@@ -45,7 +45,7 @@ const plan = () => ({ schema: 'mhs-bay-map', v: 1, name: 'Clinic A rooms', clini
 (async () => {
 await t('the old built-in drawing, saved as the map: same drawing as main (bar whitespace, the aspect-ratio style and the room label %)', () => {
   if (!old){ console.log('  (skipped: no main branch here)'); return; }
-  const O = load(old); assert(!O.bayPlan, 'main has no bayPlan');
+  const O = load(old); if (O.bayPlan){ console.log('  (skipped: main already loads maps from files, so there is no older built-in drawing to compare)'); return; }
   N.S.shared = { bayPlan: N.BP_DEFAULT };
   const cases = [
     () => mk(row('a', '2', 'need', 0), row('x', '9', 'need', 1), row('c', '3', 'chair', 4), row('nb', '', 'chair', 4)),
