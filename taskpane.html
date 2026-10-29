@@ -7394,6 +7394,7 @@ async function reload1(quiet){
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
     S.provAlias = S.store.getDoc('eskProvAlias') || S.provAlias || {}; S.freqAlias = S.store.getDoc('eskFreqAlias') || S.freqAlias || {}; S.freqRate = S.store.getDoc('eskFreqRate') || S.freqRate || {}; S.provCred = S.store.getDoc('eskProvCred') || S.provCred || {}; S.cap = S.store.getDoc('eskCapacity') || S.cap || null; S.cancel = S.store.getDoc('eskCancel') || S.cancel || {}; S.test = S.store.getDoc('eskTest') || null; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S._vlogRows = d.vlog || []; await vlogAfterLoad(d.vlog || []); derive(); await noteApptList(); S.pull = S.store.getDoc('eskPull') || S.pull || {}; S.tasks = S.store.getDoc('eskTasks') || S.tasks || {}; S.snooze = S.store.getDoc('eskSnooze') || S.snooze || {}; S.notes = S.store.getDoc('eskNotes') || S.notes || {}; S.docs = S.store.getDoc('eskDocs') || S.docs || {}; S.visit = S.unsaved ? visitMerge(S.visit, S._vlogBase || {}, S.store.getDoc('eskVisit')) : S.store.getDoc('eskVisit') || S.visit || {}; S.shared = S.store.getDoc('eskShared') || S.shared || {}; applySharedCfg(); S.dailyDay = S.store.getDoc('eskDailyDay') || S.dailyDay || null; S.remsCov = S.store.getDoc('eskRemsCov') || S.remsCov || []; { const a = S.store.getDoc('eskAudit'); S.aud = mergeAud(S.aud, a); } S.loaded = true; S.loadErr = null; S.loadedAt = Date.now(); syncLagNote(); render();
     if (S._synced) syncOrderStatus(); else { S._synced = true; setTimeout(syncOrderStatus, REFRESH_MS); }   // first load: let the workbook finish opening before writing to it
+    if (S.provView && S.mode === 'pane' && S.store.live && !S.store.remote) bayAutoOpen();
   } catch (e){ console.error(e); const dbg = e && e.debugInfo ? [e.code, e.debugInfo.errorLocation, e.debugInfo.statement].filter(Boolean).join(' · ') : (e && e.code) || ''; S.loadErr = (e.message || String(e)) + (dbg ? ` (${dbg})` : ''); if (!S.loaded) render(); else toast('bad', esc(S.loadErr)); }
   finally { if (!quiet) busy(false); }
 }
@@ -7412,6 +7413,13 @@ function notInExcelHTML(){
     <p class="small muted">The demos use fake patients and open full screen (Esc leaves it). Nothing in them is saved.</p>
     <div class="small muted" style="margin-top:10px">The add-in keeps patient data in the workbook. This site only serves the app’s code.</div></div></main>`;
 }
+// ESK Bays opens with the workbook by design: the first time it runs in a workbook it turns on Office's open-with-this-document
+// setting (its own, per add-in; the manifest's pane is Office.AutoShowTaskpaneWithDocument), so from then on it opens by itself
+// for every provider who has ESK Bays. ESK Tracker's own switch in Settings is separate and untouched.
+async function bayAutoOpen(){
+  if (S.store.getDoc('Office.AutoShowTaskpaneWithDocument') === true) return;
+  try { await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', true); } catch (e){ console.error(e); }
+}
 // prov: the "ESK Bays" provider add-in. Its own Id, names and button, opening taskpane.html?view=bays; installs beside ESK Tracker.
 const BAYS_ADDIN_ID = '6f3b9e2a-41c7-4d58-a0e3-8b17c5d29f64';
 function downloadManifest(prov){
@@ -7420,7 +7428,7 @@ function downloadManifest(prov){
   x = SSO_APP_ID ? x.replaceAll('__SSO_ID__', SSO_APP_ID).replaceAll('__HOSTNAME__', new URL(base).host) : x.replace(/\s*<WebApplicationInfo>[\s\S]*?<\/WebApplicationInfo>/, '');   // sign-on only once the app is registered
   if (prov) x = x.replace(/<Id>[^<]*<\/Id>/, `<Id>${BAYS_ADDIN_ID}</Id>`).replaceAll('/taskpane.html"', '/taskpane.html?view=bays"')
     .replace('<DisplayName DefaultValue="ESK Tracker"/>', '<DisplayName DefaultValue="ESK Bays"/>').replace(/<Description DefaultValue="[^"]*"\/>/, '<Description DefaultValue="Live bay map of your ESK patients: initial vitals, ready to discharge, and dose confirmation."/>')
-    .replace('Office.AutoShowTaskpaneWithDocument', 'ESKBays.Pane').replaceAll('ESK.Group', 'ESKBays.Group').replaceAll('ESK.Open', 'ESKBays.Open')
+    .replaceAll('ESK.Group', 'ESKBays.Group').replaceAll('ESK.Open', 'ESKBays.Open')
     .replace('"ESK Tracker is ready"', '"ESK Bays is ready"').replace('"Open ESK Tracker from the Home tab."', '"Open ESK Bays from the Home tab."')
     .replace('id="Button.Label" DefaultValue="ESK Tracker"', 'id="Button.Label" DefaultValue="ESK Bays"').replace(/id="Button.Tooltip" DefaultValue="[^"]*"/, 'id="Button.Tooltip" DefaultValue="Open the bay map for your patients."');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type:'application/xml' })); a.download = prov ? 'esk-bays-manifest.xml' : 'esk-tracker-manifest.xml'; a.click();
@@ -7581,7 +7589,9 @@ function openFull(pop){
   pop = !!pop && S.provView;
   if (DLG){ try { DLG.close(); } catch {} DLG = null; S.full = false; }
   const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog' + (S.provView ? '&view=bays' : '');
-  Office.context.ui.displayDialogAsync(url, pop ? { height: 80, width: 50, displayInIframe: false } : { height: 96, width: 96, displayInIframe: true }, res => {
+  // promptBeforeOpen false: no "ESK Bays wants to display a new window" bar first (Office's own, pale and easy to miss). The click
+  // that called this lets the browser open it; a browser that still blocks it lands in the toast below.
+  Office.context.ui.displayDialogAsync(url, pop ? { height: 80, width: 50, displayInIframe: false, promptBeforeOpen: false } : { height: 96, width: 96, displayInIframe: true }, res => {
     if (res.status !== Office.AsyncResultStatus.Succeeded){ toast('bad', (pop ? 'Couldn’t pop out ESK Bays. Allow pop-ups for this site (icon at the right end of the address bar), then try again. ' : 'Couldn’t open full screen: ') + esc(res.error?.message || '')); return; }
     DLG = res.value; S.full = true; S.fullPop = pop; render();
     const reply = obj => { try { sendChunks(s => DLG && DLG.messageChild(s), obj); } catch (e){ console.error(e); } };
