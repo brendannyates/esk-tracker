@@ -1146,6 +1146,13 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-reports .acc-s{font-size:12px;color:var(--muted);font-weight:400}
 .pg-reports .acc-moves>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--accent);font-weight:500;font-size:14px}
 @media (max-width:899px){ .pg-reports .acc-f{min-width:0;flex:1 1 150px} .pg-reports .acc-tools{width:100%;margin-left:0;justify-content:flex-start} }
+.pg-pharmacy .card{margin-bottom:16px} .ph-wrap>.seg{margin-bottom:12px} .ph-wrap>.msg{margin-bottom:12px}
+.ph-bar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin-bottom:10px} .ph-bar .search,.ph-bar input[type=search]{max-width:260px}
+.ph-fs{border:1px solid var(--line);border-radius:10px;padding:8px 12px 10px;margin:10px 0} .ph-fs legend{padding:0 6px} details.ph-fs>summary{cursor:pointer;min-height:36px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center} details.ph-fs[open]>summary{margin-bottom:8px}
+.ph-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;min-width:96px}
+.ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 12px;align-items:end} .ph-grid .lbl{display:flex;flex-direction:column;gap:4px;margin:0} .ph-grid .ph-note{grid-column:1/-1}
+.ph-grp{margin-top:12px} .ph-grp h4{margin:0;font-size:14px}
+.set-admin .adm-row .fld{flex:1 1 auto}
 </style>
 </head>
 <body>
@@ -1653,12 +1660,13 @@ function OfficeStore(){
         for (const x of Object.values(found)){ x.b = x.t.getDataBodyRange(); x.b.load('rowCount,columnCount'); }
         const refWs = wss.items.find(w => w.name.trim().toUpperCase() === 'REF');
         const bo = wss.items.find(w => /besse/i.test(w.name) && /order/i.test(w.name));
-        const pw = wss.items.find(w => w.name === PROF_SHEET), rw = wss.items.find(w => w.name === REMS_SHEET);
-        let hr = null, rr = null, br = null, pr = null, rmr = null;
+        const pw = wss.items.find(w => w.name === PROF_SHEET), rw = wss.items.find(w => w.name === REMS_SHEET), xw = wss.items.find(w => w.name === PHX_SHEET);
+        let hr = null, rr = null, br = null, pr = null, rmr = null, xr = null;
         if (found.daily){ hr = found.daily.ws.getRange('B2:C5'); hr.load('values,formulas'); }
         if (refWs){ rr = refWs.getUsedRange(true); rr.load('values'); }
         if (pw){ pr = pw.getRange('A1:E500'); pr.load('values'); }
         if (rw){ rmr = rw.getUsedRangeOrNullObject(true); rmr.load('values'); }
+        if (xw){ xr = xw.getUsedRangeOrNullObject(true); xr.load('values'); }
         if (bo){ br = bo.getRange('A1:Z200'); br.load('values'); besseSheet = bo.name; }
         await ctx.sync();
         const tables = {};
@@ -1670,7 +1678,7 @@ function OfficeStore(){
         const dailyHdr = hr ? { sheet: found.daily.ws.name, values: hr.values, formulas: hr.formulas } : null;
         let vlog = []; const vw = wss.items.find(w => w.name === VLOG_SHEET);   // visit log: its own sync, it can be the biggest range here
         if (vw){ const vr = vw.getUsedRangeOrNullObject(true); vr.load('values'); await ctx.sync(); if (!vr.isNullObject) vlog = parseVlog(vr.values); }
-        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [], vlog };
+        return { tables, ref: rr ? parseRef(rr.values) : {}, besse: br ? parseBesse(br.values) : null, besseSheet, dailyHdr, profiles: pr ? parseProfiles(pr.values) : [], rems: rmr && !rmr.isNullObject ? parseRemsRows(rmr.values) : [], phx: xr && !xr.isNullObject ? xr.values : [], vlog };
       }));
     },
     // REMS uploads (Document Management report) → hidden "ESK REMS Uploads" sheet, upsert by Doc Nbr. Plain text cells, not a table.
@@ -1738,6 +1746,26 @@ function OfficeStore(){
         ws.load('id'); const all = ws.getRange(`A2:F${PRES_ROWS}`); all.load('values'); await ctx.sync();
         PRES_QUIET.add(ws.id);
         return all.values.filter(r => r[0]).map(r => ({ session: String(r[0]), name: String(r[1] || ''), view: String(r[2] || ''), where: String(r[3] || ''), seen: String(r[4] || ''), input: String(r[5] || '') }));
+      });
+    },
+    // Pharmacy: one patient's row on the hidden "ESK Pharmacy" sheet (text cells). Writes only that row, then reads it back:
+    // if someone else's new row landed in the same place at the same moment, it goes again on the next free row.
+    async savePharm(mrn, row){
+      return Excel.run(async ctx => {
+        const W = PHX_COLS.length;
+        let ws = ctx.workbook.worksheets.getItemOrNullObject(PHX_SHEET); await ctx.sync();
+        if (ws.isNullObject){ ws = ctx.workbook.worksheets.add(PHX_SHEET); ws.visibility = Excel.SheetVisibility.hidden; await ctx.sync(); }
+        for (let n = 0; n < 3; n++){
+          const u = ws.getUsedRangeOrNullObject(true); u.load('values'); await ctx.sync();
+          const vals = u.isNullObject ? [] : u.values, head = vals.length && String(vals[0][0] ?? '').trim() === 'MRN';
+          if (!head){ const h = ws.getRange('A1').getResizedRange(0, W - 1); h.numberFormat = [Array(W).fill('@')]; h.values = [PHX_COLS]; }
+          let i = vals.findIndex((r, k) => k > 0 && mrnKey(r[0]) === mrn); if (i < 0) i = Math.max(1, vals.length);
+          const rg = ws.getRange('A1').getOffsetRange(i, 0).getResizedRange(0, W - 1); rg.numberFormat = [Array(W).fill('@')]; rg.values = [row.map(v => String(v ?? ''))];
+          await ctx.sync();
+          const chk = ws.getRange('A1').getOffsetRange(i, 0); chk.load('values'); await ctx.sync();
+          if (mrnKey(chk.values[0][0]) === mrn) return true;
+        }
+        throw new Error('The pharmacy record didn’t save. Try again.');
       });
     },
     async saveProfile(p){
@@ -2004,7 +2032,7 @@ function DemoStore(){
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
   const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
   const docs = { eskShared: { bayPlan: { ...JSON.parse(JSON.stringify(BP_DEFAULT)), name: 'ESK rooms (demo)', savedBy: 'Taylor R.', savedAt: new Date(Date.now() - 864e5).toISOString() } } };   // the demo clinic has loaded a bay map
-  const rems = [], vlogDemo = [];
+  const rems = [], vlogDemo = [], phxDemo = demoPharm(T, docs);
   { let n = 0; for (const a of apVals){ if (a[5] !== 'Kept' || a[2] >= T) continue; n++; if (n % 7 === 3) continue; const late = n % 9 === 4 ? 1 : 0, w = isoOf(a[2] + late) + ' 1' + (n % 6) + ':' + String(10 + n % 50).padStart(2, '0');
     rems.push([String(1550000 + n), 'REMS PT Monitoring Form', '', a[1], w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); }
     for (const r of inv){ if (!r[12] || r[12] >= T || ++n % 8 === 0) continue; const w = isoOf(r[12]) + ' 15:' + String(n % 60).padStart(2, '0'); rems.push([String(1550000 + n), 'REMS PT Monitoring Form', String(r[2]), '', w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); } }
@@ -2016,9 +2044,9 @@ function DemoStore(){
   // Shared between demo tabs (the ESK Tracker demo and the ESK Bays demo side by side), like two people on one workbook:
   // the documents and table values live in localStorage (eskDemoShared, today only); another tab's save fires the storage event.
   const SHARE = 'eskDemoShared';
-  const share = () => { try { localStorage.setItem(SHARE, JSON.stringify({ day: T, docs, vals: Object.fromEntries(Object.entries(t).map(([k, x]) => [k, x[1]])) })); } catch {} };
+  const share = () => { try { localStorage.setItem(SHARE, JSON.stringify({ day: T, docs, phx: phxDemo, vals: Object.fromEntries(Object.entries(t).map(([k, x]) => [k, x[1]])) })); } catch {} };
   const pull = () => { try { const o = JSON.parse(localStorage.getItem(SHARE) || 'null'); if (!o || o.day !== T) return false;
-    for (const k of Object.keys(docs)) delete docs[k]; Object.assign(docs, o.docs || {});
+    for (const k of Object.keys(docs)) delete docs[k]; Object.assign(docs, o.docs || {}); if (Array.isArray(o.phx)) phxDemo.splice(0, phxDemo.length, ...o.phx);
     for (const [k, v] of Object.entries(o.vals || {})) if (t[k] && Array.isArray(v)) t[k][1].splice(0, t[k][1].length, ...v);
     return true; } catch { return false; } };
   pull();
@@ -2027,7 +2055,7 @@ function DemoStore(){
     async load(){
       const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: JSON.parse(JSON.stringify(ref)),
-        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), vlog: parseVlog([VLOG_COLS, ...vlogDemo]) };
+        besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), phx: phxDemo.map(r => r.slice()), vlog: parseVlog([VLOG_COLS, ...vlogDemo]) };
     },
     async update(k, r, snap, changes){
       const [, vals, fs, calc] = t[k]; const row = vals.findIndex(v => snapMatch(v, snap.map((s, c) => fs.has(c) ? null : s)));
@@ -2046,6 +2074,7 @@ function DemoStore(){
     async setDropdown(colHeader, refHeader, values){ ref[norm(refHeader)] = values.slice(); await new Promise(r => setTimeout(r, 150)); return { source: `REF › ${refHeader}` }; },
     async appendVisitLog(rows){ vlogDemo.push(...rows); },
     async pruneVisitLog(keys){ const d = new Set(keys), n = vlogDemo.length; vlogDemo.splice(0, n, ...vlogDemo.filter(r => !d.has(r[1]))); return n - vlogDemo.length; },
+    async savePharm(mrn, row){ const m = mergePhx(phxDemo, mrn, row); phxDemo.splice(0, phxDemo.length, ...m); await new Promise(r => setTimeout(r, 120)); return true; },
     async upsertRems(rows){ const m = mergeRems(rems, rows); rems.splice(0, rems.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { added: m.added, updated: m.updated }; },
     async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
@@ -2062,7 +2091,7 @@ function DemoStore(){
     watch(cb){ window.addEventListener('storage', e => { if (e.key === SHARE && pull()) cb('docs'); }); },
     reset(){ try { localStorage.removeItem(SHARE); } catch {} },
   };
-  for (const m of ['update', 'add', 'addMany', 'updateMany', 'setDoc', 'setDropdown', 'upsertBenefits', 'upsertRems', 'clearCells', 'setCells']){   // every write is shared
+  for (const m of ['update', 'add', 'addMany', 'updateMany', 'setDoc', 'setDropdown', 'upsertBenefits', 'upsertRems', 'savePharm', 'clearCells', 'setCells']){   // every write is shared
     const fn = store[m]; store[m] = async function(...a){ const r = await fn.apply(this, a); share(); return r; }; }
   return store;
 }
@@ -2085,7 +2114,7 @@ function derive(){
   const tp = S.tables.patients;
   if (tp) tp.values.forEach((_, r) => {
     const mrn = mrnKey(tp.get(r,'mrn')); if (!mrn) return;
-    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), mg: num(tp.get(r,'protocolmg')), freq: canonFreq(tp.get(r,'txfrequency')), prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: canonProv(tp.get(r,'renderingprovider')), protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
+    const p = { r, mrn, name: String(tp.get(r,'patientname') ?? '').trim() || mrn, status: String(tp.get(r,'status') ?? '').trim(), pharm: pharmOf(tp.get(r,'pharmacy')), pharmName: String(tp.get(r,'pharmacy') ?? '').trim(), mg: num(tp.get(r,'protocolmg')), freq: canonFreq(tp.get(r,'txfrequency')), prefs: tp.get(r,'schedulingpreferences') ?? '', notes: tp.get(r,'notes') ?? '', provider: canonProv(tp.get(r,'renderingprovider')), protoExp: toSerial(tp.get(r,'protocolexpdate')), coverage: String(tp.get(r,'coverageoptions') ?? '').trim(), insurance: String(tp.get(r,'insurance') ?? '').trim(), authExp: toSerial(tp.get(r,'authexp')), lastMadrs: toSerial(tp.get(r,'lastmadrs')) };
     P.push(p); if (!byMrn.has(mrn)) byMrn.set(mrn, p);
   });
   const ta = S.tables.appts; const keys = new Set();
@@ -2149,10 +2178,11 @@ const kitById = id => S.K.find(x => x.id === id) || testKitsToday().find(x => x.
 async function testSave(t){ S.test = t; await S.store.setDoc('eskTest', t); derive(); render(); }
 async function testKitSet(key, rec){ const t = testOn(); if (!t) return; const k = { ...(t.kits || {}) }; if (rec) k[key] = { ...(k[key] || {}), ...rec, at: nowMin(), by: CFG.me || CFG.prov || '' }; else delete k[key]; await testSave({ ...t, kits: k }); }
 function apptInfo(a){
-  const p = S.byMrn.get(a.mrn); const pharm = p?.pharm || '';
+  const p = S.byMrn.get(a.mrn), xr = phxRoute(a, p);   // transferring patient: from the new pharmacy's start date, ordered from it (Pharmacy › Transfers)
+  const pharm = xr ? pharmOf(xr.name) : p?.pharm || '', phName = xr ? xr.name : p?.pharmName || '';
   let mg = a.dose, src = 'schedule';
   if (!(mg > 0)) { if (a.isStart) { mg = 56; src = 'start'; } else if (p?.mg) { mg = p.mg; src = 'tracker'; } else { mg = null; src = 'unknown'; } }
-  return { p, pharm, mg, src };
+  return { p, pharm, mg, src, phName, xfer: xr ? xr.id : '' };
 }
 function scheduledThru(mrn){ const T = todaySerial(); let m = null; for (const a of S.A) if (a.mrn === mrn && a.active && a.date >= T && (m == null || a.date > m)) m = a.date; return m; }
 
@@ -2980,7 +3010,7 @@ function genoaModel(from, to){
     const oh = onhand.get(a.mrn) || []; let i = oh.findIndex(k => !inf.mg || k.recv === inf.mg);
     if (i >= 0 && oh[i].expDate != null && oh[i].expDate < a.date) i = -1; // Genoa kits are good 14 days after receipt
     if (i >= 0){ const k = oh.splice(i, 1)[0]; return { a, inf, cover:'onhand', k }; }
-    const op = open.get(a.mrn) || []; if (op.length){ const k = op.shift(); return { a, inf, cover:'ordered', k }; }
+    const op = open.get(a.mrn) || []; if (op.length){ const j = phxOrderPick(op, a, inf); if (j >= 0){ const k = op.splice(j, 1)[0]; return { a, inf, cover:'ordered', k }; } }
     return { a, inf, cover:'need' };
   });
   return { rows, from, to };
@@ -3029,6 +3059,9 @@ function describe(tkey, out){ const t = S.tables[tkey]; return out.map(([c, v]) 
 const TABLE_OFFSET = { kits: 1, patients: 1, appts: 12 }; // column where each table starts (B, B, M) — display only
 const colLetterFor = (k, c) => colLetter((TABLE_OFFSET[k] ?? 0) + c);
 const mrnVal = m => /^\d+$/.test(m) ? Number(m) : m;
+// what an order line's Pharmacy cell says: the patient's own specialty pharmacy (or the transfer target) when it isn't Besse or Genoa
+function phOrderText(inf){ if (inf.pharm !== 'OTHER' || !inf.phName) return pharmText(inf.pharm); const m = phMatch(inf.phName); return (m && (S.ref.pharmacy || []).find(v => phMatch(v)?.id === m.id)) || inf.phName; }
+const phLabel = inf => inf.pharm === 'OTHER' && inf.phName ? inf.phName : PH_LABEL[inf.pharm];
 function pharmText(code){ const want = code === 'BESSE' ? 'Besse' : code === 'GENOA' ? 'Genoa' : code; const refv = (S.ref.pharmacy || []).find(v => pharmOf(v) === code); return refv || want; }
 async function write(label, fn, okText){
   if (label) busy(label); S._writing = true;
@@ -3084,7 +3117,7 @@ function render(){
   app.innerHTML = `<div class="app" data-mode="${S.mode}">
     <aside class="rail">
       ${brand}
-      <div class="navwrap"><button type="button" class="navarr l" aria-label="Scroll tabs left" hidden>${NAV_IC.left}</button><nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav><button type="button" class="navarr r" aria-label="Scroll tabs right" hidden>${NAV_IC.right}</button></div>
+      <div class="navwrap"><button type="button" class="navarr l" aria-label="Scroll tabs left" hidden>${NAV_IC.left}</button><nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('pharmacy', 1)}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav><button type="button" class="navarr r" aria-label="Scroll tabs right" hidden>${NAV_IC.right}</button></div>
       <div class="sec">
         ${S.mode === 'demo' ? `<button class="ni rt" data-act="demoBack" title="Back to the install page">← Back</button><button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <div class="pres pres-chip" data-pres="chip">${presenceHTML('chip')}</div>
@@ -4481,7 +4514,7 @@ function needHTML(g){
     <div class="inv-win"><label class="small muted" for="winFrom">Order window</label><input id="winFrom" type="date" class="fld" data-win="from" value="${isoOf(S.win.from)}"><span class="muted">to</span><input id="winTo" type="date" class="fld" data-win="to" value="${isoOf(S.win.to)}" aria-label="Order window end"><button class="linkbtn" data-act="winReset">Through next Friday</button></div>
     <p class="small muted">Genoa and other specialty-pharmacy visits from ${fmtD(g.from, 'dow')} through ${fmtD(g.to, 'dow')} with no kit on hand and nothing on order for that patient.</p>
     ${need.length ? `<div class="tw"><table class="t rt"><thead><tr><th class="inv-cb"><input type="checkbox" data-gall ${sel === need.length ? 'checked' : ''} aria-label="Select all"></th><th>Needed by</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th></th></tr></thead><tbody>
-      ${need.map(r => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}"></td><td data-l="Needed by"><b>${fmtD(r.a.date, 'dow')}</b> ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="">${urg(r)}</td></tr>`).join('')}
+      ${need.map(r => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}"></td><td data-l="Needed by"><b>${fmtD(r.a.date, 'dow')}</b> ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${esc(phLabel(r.inf))}</td><td data-l="">${urg(r)}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="inv-foot2"><span class="small muted">Marking as ordered opens one Inventory line per kit (MRN, Pharmacy, Date Ordered). It then shows under <b>On order</b> until received.</span><button class="btn primary" data-act="genoaOrder" ${sel ? '' : 'disabled'}>Mark ${sel || ''} as ordered today</button></div>`
     : '<div class="msg ok">Nothing to order for this window. Every visit is covered.</div>'}
@@ -4491,7 +4524,7 @@ function needHTML(g){
       return `<tr><td data-l="Patient"><b>${esc(nm(x.mrn))}</b> <span class="small muted">${esc(x.mrn)}</span></td><td data-l="Kit" class="inv-nw">${PH_LABEL[x.p.pharm]} ${x.p.mg ?? '?'} mg</td><td data-l="Marked scheduled">${fmtD(fromIso(x.t.at))}${x.t.by ? ` · ${esc(x.t.by)}` : ''} <span class="small muted">(clears ${fmtD(fromIso(x.t.at) + 15)})</span></td><td data-l="Next in report">${nx ? `${fmtD(nx.date)}${th !== nx.date ? `, booked thru ${fmtD(th)}` : ''}` : '<span class="muted">None</span>'}</td><td data-l="Meds" class="inv-wrap">${medChip(x.mrn)}</td><td data-l="" class="inv-acts"><button class="btn sm primary" data-act="orderFor" data-m="${esc(x.mrn)}">Mark ordered today</button></td></tr>`; }).join('')}</tbody></table></div></div>` : ''}
   <div class="card"><details class="sec" data-open="inv:covered" ${S.open?.['inv:covered'] ? 'open' : ''}><summary>Covered appointments ${tag('', String(covered.length))}</summary>
     ${covered.length ? `<div class="tw inv-gap"><table class="t rt"><thead><tr><th>Date</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th>Covered by</th></tr></thead><tbody>
-      ${covered.map(r => `<tr><td data-l="Date">${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${PH_LABEL[r.inf.pharm]}</td><td data-l="Covered by">${r.cover === 'onhand' ? `${tag('ok', 'On hand')} <span class="small muted">SN …${esc(r.k.serial.slice(-5))} · use by ${fmtD(r.k.expDate)}</span>` : tag('info', `Ordered ${fmtD(r.k.ordered)}`)}</td></tr>`).join('')}
+      ${covered.map(r => `<tr><td data-l="Date">${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${esc(phLabel(r.inf))}</td><td data-l="Covered by">${r.cover === 'onhand' ? `${tag('ok', 'On hand')} <span class="small muted">SN …${esc(r.k.serial.slice(-5))} · use by ${fmtD(r.k.expDate)}</span>` : tag('info', `Ordered ${fmtD(r.k.ordered)}`)}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="muted small inv-gap">None.</div>'}
   </details></div>`;
 }
@@ -4532,7 +4565,7 @@ async function genoaOrder(){
   if (!CFG.me) return openSettings();
   const T = todaySerial();
   const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
-    await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: pharmText(r.inf.pharm), dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
+    await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: phOrderText(r.inf), dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
   }, `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered.`);
   if (ok){ S.genoaSel.clear(); render(); }
 }
@@ -6562,6 +6595,559 @@ function remsCloseHTML(m){
 const remsMissToday = () => remsToday().tot.missing;
 const remsOf = key => remsToday().opps.find(o => o.appt?.key === key) || null;
 
+// ---------- pharmacy transfers and refills (no Excel calls; tests/pharmacy.test.js runs this block in Node) ----------
+// Moving specialty-pharmacy patients (Genoa or another per-patient pharmacy) to a pharmacy higher on the preference list
+// (Besse first, then Advantage, then whatever the plan requires), and keeping their prescriptions ahead of the ordering.
+// Pharmacies, benefit results and the refill defaults: eskShared.pharm (Settings › Admin › Pharmacies).
+// Per patient: hidden sheet "ESK Pharmacy", one row per MRN, short names only. The add-in reads only the Data (JSON) column;
+// the others are written for people reading the sheet.
+//   rec.xf = { resp: { [pharmacy id]: { sub: 'YYYY-MM-DD' Rx/referral sent, cls: result id, at: 'YYYY-MM-DD' result, note } },
+//              on: true | false (transfer this patient), to: pharmacy id, done: { at, by, from, to } (Pharmacy column rewritten) }
+//   rec.rx = { ph: pharmacy id, sent: 'YYYY-MM-DD' last Rx or refill sent to the pharmacy, kits: fills on it (first fill + refills),
+//              adj: kits used from it before they were logged, req: { at, by } refill asked of the provider (entered in NextGen) }
+const PHX_SHEET = 'ESK Pharmacy';
+const PHX_COLS = ['MRN', 'Patient', 'Current pharmacy', 'Transfer to', 'Benefit results', 'Rx submitted', 'Transfer', 'Rx/refill sent', 'Kits on Rx', 'Kits left', 'Refill requested', 'Updated', 'By', 'Data (JSON)'];
+const PHX_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const PHX_BLANK = { id: '', name: '', match: '', rank: null, orderDow: null, shipDays: null, start: '', contact: '', email: '', phone: '', fax: '', notes: '' };
+// Order days and shipping times are not known yet: Admin fills them in. Besse is clinic stock, the others are per patient.
+const PHX_DEF = {
+  list: [
+    { id: 'besse', name: 'Besse', match: 'besse', rank: 1 },
+    { id: 'advantage', name: 'Advantage', match: 'advantage', rank: 2 },
+    { id: 'genoa', name: 'Genoa', match: 'genoa', rank: 3 },
+  ],
+  classes: [
+    { id: 'pend', label: 'Waiting on benefits check', ok: null },
+    { id: 'cov', label: 'Eligible: covered', ok: true },
+    { id: 'pa', label: 'Eligible after prior auth', ok: null },
+    { id: 'nc', label: 'Not eligible: not covered', ok: false },
+    { id: 'oon', label: 'Not eligible: out of network', ok: false },
+    { id: 'plan', label: 'Not eligible: plan requires another pharmacy', ok: false },
+    { id: 'dec', label: 'Patient declined', ok: false },
+  ],
+  refills: 3,    // standard prescription: first fill + 3 refills = 4 kits
+  reqLead: 7,    // ask the provider this many days before the order that would run the prescription out
+};
+let _phc = null, _phcOf;
+function phCfg(){
+  const c = (S.shared || {}).pharm; if (_phc && _phcOf === c) return _phc;
+  const o = c || {}, list = Array.isArray(o.list) && o.list.length ? o.list : PHX_DEF.list, classes = Array.isArray(o.classes) && o.classes.length ? o.classes : PHX_DEF.classes;
+  _phcOf = c; _phc = { list: list.map(p => ({ ...PHX_BLANK, ...p })), classes: classes.map(x => ({ ...x })), refills: o.refills ?? PHX_DEF.refills, reqLead: o.reqLead ?? PHX_DEF.reqLead };
+  return _phc;
+}
+const phById = id => phCfg().list.find(p => p.id === id) || null;
+const phCls = id => phCfg().classes.find(c => c.id === id) || null;
+const phRanked = () => phCfg().list.filter(p => +p.rank > 0).sort((a, b) => +a.rank - +b.rank);
+const phIsStock = ph => !!ph && pharmOf(ph.name) === 'BESSE';   // Besse is the only clinic-stock pharmacy the ordering screens know
+// The configured pharmacy a Pharmacy cell (or an Inventory line) names: any of its comma-separated match words, else its name.
+function phMatch(raw){
+  const s = String(raw ?? '').toLowerCase(); if (!s.trim()) return null;
+  return phCfg().list.find(p => String(p.match || p.name).split(',').map(x => x.trim().toLowerCase()).filter(Boolean).some(m => s.includes(m))) || null;
+}
+const phStart = ph => fromIso(ph?.start || '');
+// Latest weekly order day that still arrives by the visit: back off the shipping days, then to the order weekday.
+function phOrderBy(dos, ph){
+  let d = dos - (+ph?.shipDays || 0); const w = ph?.orderDow;
+  if (w == null || w === '') return d;
+  for (let i = 0; i < 7 && dowOf(d) !== +w; i++) d--;
+  return d;
+}
+
+// --- the ESK Pharmacy sheet ---
+function parsePhxRows(values){
+  const out = new Map(); if (!values || !values.length) return out;
+  const h = values[0].map(v => String(v ?? '').trim()), cm = h.indexOf('MRN'), cj = h.indexOf('Data (JSON)'); if (cm < 0 || cj < 0) return out;
+  for (const r of values.slice(1)){ const mrn = mrnKey(r[cm]); if (!mrn) continue; let rec; try { rec = JSON.parse(String(r[cj] || '{}')); } catch { continue; } if (rec && typeof rec === 'object') out.set(mrn, rec); }
+  return out;
+}
+// The row written for one patient. info: { name, cur, left, now, by }
+function phxRow(mrn, rec, info){
+  const xf = rec.xf || {}, rx = rec.rx || {}, n = id => phById(id)?.name || id || '', R = Object.entries(xf.resp || {});
+  return [mrn, info.name || '', info.cur || '', xf.to ? n(xf.to) : '',
+    R.filter(([, r]) => r.cls).map(([id, r]) => `${n(id)}: ${phCls(r.cls)?.label || r.cls}`).join('; '),
+    R.filter(([, r]) => r.sub).map(([id, r]) => `${n(id)} ${r.sub}`).join('; '),
+    xf.done ? `Done ${xf.done.at}` : xf.on ? 'Yes' : xf.on === false ? 'No' : '',
+    rx.sent ? `${rx.sent}${rx.ph ? ' ' + n(rx.ph) : ''}` : '', rx.kits ?? '', info.left ?? '', rx.req?.at || '', info.now || '', info.by || '', JSON.stringify(rec)];
+}
+// upsert one MRN's row into the sheet's values (header first); rec null removes it
+function mergePhx(values, mrn, row){
+  const head = values.length && String(values[0][0] ?? '').trim() === 'MRN' ? values[0] : PHX_COLS;
+  const body = (values.length && values[0] === head ? values.slice(1) : values.slice()).filter(r => mrnKey(r[0]) && mrnKey(r[0]) !== mrn);
+  if (row) body.push(row);
+  return [PHX_COLS, ...body.map(r => PHX_COLS.map((_, i) => r[i] ?? ''))];
+}
+
+// --- transfers ---
+const phxRec = mrn => (S.phx && S.phx.get(mrn)) || {};
+const phCur = p => phMatch(p?.pharmName) || (p?.pharmName ? { ...PHX_BLANK, id: '', name: p.pharmName } : null);
+// Pharmacies this patient could move to: ranked, not where they are now, and ahead of it on the list.
+function phBetter(p){ const cur = phCur(p); return phRanked().filter(ph => ph.id !== cur?.id && (!(+cur?.rank > 0) || +ph.rank < +cur.rank)); }
+function phxBest(p, rec){ const resp = rec?.xf?.resp || {}; return phBetter(p).find(ph => phCls(resp[ph.id]?.cls)?.ok === true) || null; }
+// Patients the transfer covers: specialty-pharmacy patients still in treatment, plus anyone with a transfer record.
+function phxCandidates(){
+  const seen = new Set(), out = [];
+  for (const p of S.P){ if (seen.has(p.mrn)) continue; const rec = phxRec(p.mrn);
+    if ((PS(p.pharm) && !/discontinu|did not start/i.test(p.status)) || rec.xf){ seen.add(p.mrn); out.push(p); } }
+  return out;
+}
+function phxState(p){
+  const T = todaySerial(), rec = phxRec(p.mrn), xf = rec.xf || {}, resp = xf.resp || {}, cur = phCur(p), better = phBetter(p), best = phxBest(p, rec);
+  const to = xf.to ? phById(xf.to) : null, start = phStart(to);
+  const base = { p, rec, xf, cur, better, best, to, start };
+  if (xf.done) return { ...base, st: 'moved', label: `Moved to ${phById(xf.done.to)?.name || xf.done.to || 'new pharmacy'}`, tone: 'ok' };
+  if (xf.on && to){
+    if (start == null) return { ...base, st: 'on', label: `Transferring to ${to.name} · no start date`, tone: 'warn' };
+    return { ...base, st: 'on', label: start <= T ? `Ordering from ${to.name} since ${fmtD(start)}` : `Transferring to ${to.name} · ${fmtD(start)}`, tone: 'acc' };
+  }
+  if (xf.on === false) return { ...base, st: 'stay', label: `Staying at ${cur?.name || 'current pharmacy'}`, tone: '' };
+  if (best) return { ...base, st: 'decide', label: `Eligible for ${best.name}`, tone: 'warn' };
+  const asked = better.filter(ph => resp[ph.id]?.sub || resp[ph.id]?.cls);
+  const waiting = asked.filter(ph => phCls(resp[ph.id]?.cls)?.ok == null);
+  if (waiting.length) return { ...base, st: 'wait', label: `Waiting on ${waiting.map(ph => ph.name).join(', ')}`, tone: 'info' };
+  if (better.length && better.every(ph => phCls(resp[ph.id]?.cls)?.ok === false)) return { ...base, st: 'none', label: `Not eligible: stays at ${cur?.name || 'current pharmacy'}`, tone: '' };
+  if (!better.length) return { ...base, st: 'top', label: 'Already at the first choice', tone: '' };
+  return { ...base, st: 'new', label: asked.length ? `${better.length - asked.length} pharmac${better.length - asked.length === 1 ? 'y' : 'ies'} not asked` : 'Not started', tone: '' };
+}
+// The pharmacy a visit's meds come from once its patient is transferring: the target, from its start date on, until the
+// Pharmacy column on the Master Patient Tracker is rewritten (then the tracker itself says so).
+function phxRoute(a, p){
+  if (!p || !PS(p.pharm) || !S.phx) return null;
+  const xf = S.phx.get(a.mrn)?.xf; if (!xf || !xf.on || !xf.to || xf.done) return null;
+  const ph = phById(xf.to), st = phStart(ph); if (!ph || st == null || a.date < st) return null;
+  return ph;
+}
+
+// Which open order covers this visit (index into the patient's open orders, oldest first; -1 none). Oldest first, except while the
+// patient is transferring: then an order named for a configured pharmacy only covers that pharmacy's visits, so an order placed
+// with the new pharmacy isn't used up by an earlier visit still on the old one (and the old one's orders don't cover the new one's).
+function phxOrderPick(op, a, inf){
+  const xf = S.phx?.get(a.mrn)?.xf; if (!xf?.on || !xf.to || xf.done) return op.length ? 0 : -1;
+  const want = inf.xfer || phCur(inf.p)?.id || '', of = k => phMatch(k.pharmRaw)?.id || '';
+  const i = op.findIndex(k => of(k) === want); return i >= 0 ? i : op.findIndex(k => !of(k));
+}
+// --- order plan: transferring patients' booked visits on the new pharmacy, grouped by the order day that covers them ---
+function phxPlan(days){
+  const T = todaySerial(), to = T + (days || 42), by = new Map();
+  const g = genoaModel(T, to), cover = new Map(g.rows.map(r => [r.a.key, r]));   // per-patient pharmacies: kits on hand / on order cover the earliest visits
+  for (const a of S.A){
+    if (!a.active || a.date < T || a.date > to || !pendingAppt(a)) continue;
+    const inf = apptInfo(a); if (!inf.xfer) continue;
+    const ph = phById(inf.xfer); if (!ph) continue;
+    const c = phIsStock(ph) ? { cover: 'stock' } : cover.get(a.key) || { cover: 'need' };
+    const od = phOrderBy(a.date, ph), late = od < T;
+    if (!by.has(ph.id)) by.set(ph.id, { ph, groups: new Map() });
+    const G = by.get(ph.id).groups, gk = late ? T : od;
+    if (!G.has(gk)) G.set(gk, { date: gk, late: false, rows: [] });
+    const grp = G.get(gk); grp.late = grp.late || late; grp.rows.push({ a, inf, ...c, od, late });
+  }
+  return [...by.values()].map(x => ({ ph: x.ph, groups: [...x.groups.values()].sort((a, b) => a.date - b.date).map(grp => {
+    grp.rows.sort((a, b) => a.a.date - b.a.date || (a.a.time ?? 0) - (b.a.time ?? 0));
+    const need = grp.rows.filter(r => r.cover === 'need' || r.cover === 'stock'), mg = {};
+    for (const r of need){ const k = r.inf.mg || '?'; mg[k] = (mg[k] || 0) + 1; }
+    return { ...grp, need, mg };
+  }) })).sort((a, b) => (+a.ph.rank || 99) - (+b.ph.rank || 99));
+}
+// Cadence: each transferring patient's Tx frequency as kits a week, and the first order on the new pharmacy.
+function phxCadence(){
+  const T = todaySerial(), rows = [];
+  for (const p of phxCandidates()){
+    const s = phxState(p); if (s.st !== 'on') continue;
+    const first = S.A.filter(a => a.mrn === p.mrn && a.active && pendingAppt(a) && s.start != null && a.date >= s.start).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0))[0] || null;
+    const rate = freqRate(p.freq), fo = first ? phOrderBy(first.date, s.to) : s.start != null ? phOrderBy(s.start, s.to) : null;
+    rows.push({ p, ph: s.to, start: s.start, rate, mg: p.mg, first, firstOrder: fo, late: fo != null && fo < T });
+  }
+  const wk = new Map();
+  for (const r of rows){ const k = r.ph.id; if (!wk.has(k)) wk.set(k, { ph: r.ph, pts: 0, mg: {}, unknown: 0 }); const w = wk.get(k); w.pts++;
+    if (r.rate > 0) w.mg[r.mg || '?'] = (w.mg[r.mg || '?'] || 0) + r.rate; else w.unknown++; }
+  return { rows: rows.sort((a, b) => (a.firstOrder ?? 1e9) - (b.firstOrder ?? 1e9)), weekly: [...wk.values()] };
+}
+// Counts by pharmacy benefit: for each ranked pharmacy, patients per result (and not asked yet).
+function phxCounts(){
+  const C = phCfg(), pts = phxCandidates(), out = [];
+  for (const ph of phRanked()){
+    const asked = pts.filter(p => phBetter(p).some(x => x.id === ph.id));
+    const by = {}; let sub = 0, none = 0;
+    for (const p of asked){ const r = phxRec(p.mrn).xf?.resp?.[ph.id]; if (r?.sub) sub++; if (!r?.cls){ none++; continue; } by[r.cls] = (by[r.cls] || 0) + 1; }
+    out.push({ ph, n: asked.length, sub, none, by: C.classes.map(c => ({ c, n: by[c.id] || 0 })) });
+  }
+  return out;
+}
+
+// --- refills ---
+// Kits taken from this prescription: Inventory lines for the patient ordered (or received) on or after the date it was sent,
+// not Besse, and not named for a different configured pharmacy; plus any used before they were logged.
+function rxUsed(mrn, rx){
+  const s = fromIso(rx?.sent || ''); if (s == null) return 0;
+  return S.K.filter(k => { if (k.mrn !== mrn || k.pharm === 'BESSE') return false; const d = k.ordered ?? k.received; if (d == null || d < s) return false;
+    const m = phMatch(k.pharmRaw); return !m || !rx.ph || m.id === rx.ph; }).length + (+rx.adj || 0);
+}
+// Who needs a refill asked for, and by when: booked visits not covered by kits on hand or on order each take a fill; the first
+// visit the prescription can't cover sets the order it must reach the pharmacy for, less reqLead days. With no booked visit past
+// the last fill, the Tx frequency projects one.
+function rxState(p){
+  const T = todaySerial(), C = phCfg(), rx = phxRec(p.mrn).rx || null;
+  const ph = (rx?.ph && phById(rx.ph)) || phCur(p);
+  const visits = S.A.filter(a => a.mrn === p.mrn && a.active && pendingAppt(a) && PS(apptInfo(a).pharm)).sort((a, b) => a.date - b.date || (a.time ?? 0) - (b.time ?? 0));
+  const held = S.K.filter(k => k.mrn === p.mrn && k.pharm !== 'BESSE' && (k.available || k.openOrder)).length;
+  const uncovered = visits.slice(held), rate = freqRate(p.freq);
+  const base = { p, rx, ph, visits, held, uncovered, rate };
+  if (!rx?.sent) return { ...base, st: 'none', label: 'No Rx on file', tone: uncovered.length ? 'warn' : '', rank: uncovered.length ? 2 : 5 };
+  const used = rxUsed(p.mrn, rx), kits = +rx.kits || 0, left = Math.max(0, kits - used);
+  // moving to another per-patient pharmacy: this Rx only covers visits before its start date; the new one needs its own Rx
+  const xf = phxRec(p.mrn).xf, to = xf?.on && !xf.done && xf.to ? phById(xf.to) : null, st0 = phStart(to), moving = !!to && !phIsStock(to) && st0 != null && rx.ph !== to.id;
+  const pool = moving ? uncovered.filter(a => a.date < st0) : uncovered;
+  let out = pool[left] || null, outAt = out?.date ?? null, projected = false;
+  if (moving && !out){ const first = visits.find(a => a.date >= st0), by = phOrderBy(first?.date ?? st0, to) - (+C.reqLead || 0), sub = xf.resp?.[to.id]?.sub;
+    return { ...base, used, kits, left, out: null, outAt: first?.date ?? st0, projected: false, reqBy: by, req: null, moving: to, st: 'newrx',
+      label: sub ? `Rx sent to ${to.name} ${fmtD(fromIso(sub))}: add it with New Rx` : `Needs an Rx at ${to.name}`, tone: sub ? 'info' : by <= T ? 'bad' : by <= T + 7 ? 'warn' : 'info', rank: sub ? 3 : by <= T ? 0 : 1 }; }
+  const toStock = !!to && phIsStock(to) && st0 != null;   // moving to Besse: no Rx needed from the start date, so no projection past it
+  if (toStock && !out) return { ...base, used, kits, left, out: null, outAt: null, projected: false, reqBy: null, req: null, moving: to, st: 'ok', label: `Moves to ${to.name} ${fmtD(st0)} · ${left} of ${kits} left`, tone: '', rank: 4 };
+  if (!out && rate > 0 && !moving){ const last = uncovered.length ? uncovered[uncovered.length - 1].date : visits.length ? visits[visits.length - 1].date : T; outAt = last + Math.ceil((left - uncovered.length + 1) * 7 / rate); projected = true; }
+  const reqBy = outAt != null ? phOrderBy(outAt, ph) - (+C.reqLead || 0) : null;
+  const req = rx.req?.at && rx.req.at >= rx.sent ? rx.req : null;
+  const S2 = { ...base, used, kits, left, out, outAt, projected, reqBy, req };
+  if (req){ const w = T - (fromIso(req.at) ?? T); return { ...S2, st: 'req', label: `Requested ${fmtD(fromIso(req.at))}${w >= 5 ? ` · ${w} days, no Rx yet` : ' · waiting on provider'}`, tone: w >= 5 ? 'warn' : 'info', rank: w >= 5 ? 1 : 3 }; }
+  if (reqBy != null && reqBy <= T) return { ...S2, st: 'now', label: 'Request refill now', tone: 'bad', rank: 0 };
+  if (reqBy != null && reqBy <= T + 7) return { ...S2, st: 'soon', label: `Request by ${fmtD(reqBy, 'dow')}`, tone: 'warn', rank: 1 };
+  if (!left) return { ...S2, st: 'empty', label: reqBy != null ? `No fills left · request by ${fmtD(reqBy, 'dow')}` : 'No fills left', tone: 'warn', rank: 2 };
+  return { ...S2, st: 'ok', label: `${left} of ${kits} left`, tone: 'ok', rank: 4 };
+}
+// Refill list: patients on a per-patient pharmacy (now, or from a transfer start date), still in treatment.
+function rxList(){
+  const seen = new Set(), out = [];
+  for (const p of S.P){ if (seen.has(p.mrn) || /discontinu|did not start/i.test(p.status)) continue;
+    const xf = phxRec(p.mrn).xf, toStock = xf?.on && !xf.done && phIsStock(phById(xf.to)) && (phStart(phById(xf.to)) ?? 1e9) <= todaySerial();
+    if (!PS(p.pharm) || toStock) continue; seen.add(p.mrn); out.push(rxState(p)); }
+  return out.sort((a, b) => a.rank - b.rank || (a.reqBy ?? 1e9) - (b.reqBy ?? 1e9) || String(nm(a.p.mrn)).localeCompare(String(nm(b.p.mrn))));
+}
+// ---------- end pharmacy logic ----------
+
+// ===== page: pharmacy =====
+// Pharmacy › Transfers (who could move, what each pharmacy said, the transfer toggle, rewriting the tracker), Order plan
+// (transferring patients' visits by the order day that covers them, cadence) and Refills. Download = all of it in one workbook.
+const ACT_PHARM = {};
+// Demo (fake patients): Besse starts in 3 weeks, Advantage in 2; a few Genoa patients part way through.
+function demoPharm(T, docs){
+  const d = n => isoOf(T + n), sh = docs.eskShared = docs.eskShared || {};
+  sh.pharm = { list: [
+    { id: 'besse', name: 'Besse', match: 'besse', rank: 1, orderDow: 4, shipDays: 2, start: d(21), contact: 'Demo Besse rep', email: 'besse.demo@example.com', phone: '555-0100' },
+    { id: 'advantage', name: 'Advantage', match: 'advantage', rank: 2, orderDow: 2, shipDays: 3, start: d(14), contact: 'Demo intake', email: 'advantage.demo@example.com', phone: '555-0101', fax: '555-0102' },
+    { id: 'genoa', name: 'Genoa', match: 'genoa', rank: 3, orderDow: 1, shipDays: 3 } ], classes: PHX_DEF.classes, refills: 3, reqLead: 7 };
+  const recs = {
+    900102: { xf: { resp: { besse: { sub: d(-9), cls: 'cov', at: d(-4) } }, on: true, to: 'besse' }, rx: { ph: 'genoa', sent: d(-40), kits: 4 } },
+    900107: { xf: { resp: { besse: { sub: d(-9), cls: 'nc', at: d(-5) }, advantage: { sub: d(-6), cls: 'cov', at: d(-2) } } }, rx: { ph: 'genoa', sent: d(-20), kits: 4 } },
+    900110: { xf: { resp: { besse: { sub: d(-3), cls: 'pend' } } } },
+    900113: { xf: { resp: { besse: { sub: d(-12), cls: 'oon', at: d(-8) }, advantage: { sub: d(-8), cls: 'cov', at: d(-6) } }, on: true, to: 'advantage' }, rx: { ph: 'genoa', sent: d(-25), kits: 4, req: { at: d(-1), by: 'Taylor R.' } } },
+    900105: { rx: { ph: 'genoa', sent: d(-70), kits: 4 } },
+  };
+  return [PHX_COLS, ...Object.entries(recs).map(([m, r]) => PHX_COLS.map((c, i) => i === 0 ? m : c === 'Data (JSON)' ? JSON.stringify(r) : ''))];
+}
+PAGES.pharmacy = {
+  label: 'Pharmacy',
+  title: () => 'Pharmacy <span>transfers and refills</span>',
+  sub: () => { const r = phRx().filter(x => x.st === 'now').length, d = phSt().filter(s => s.st === 'decide').length;
+    return [d ? `${d} eligible to decide` : '', r ? `${r} refill${r === 1 ? '' : 's'} to request` : ''].filter(Boolean).join(' · ') || 'Nothing waiting'; },
+  tools: () => '<button class="btn" data-act="phxXlsx">Download…</button>',
+  html: () => pharmacyHTML(),
+  badge: () => { if (!S.loaded) return null; const n = phRx().filter(x => x.st === 'now' || (x.st === 'newrx' && x.tone === 'bad')).length + phSt().filter(s => s.st === 'decide').length + phMemo('plan14', () => phxPlan(14)).reduce((t, x) => t + x.groups.filter(g => g.date <= todaySerial() && g.need.some(r => r.cover === 'need')).length, 0); return n ? { n } : null; },
+};
+// computed once per render pass (rail badge, header and page all ask)
+function phMemo(k, fn){ const m = S._phMemo || (S._phMemo = {}); if (!(k in m)){ m[k] = fn(); if (!S._phMemoQ){ S._phMemoQ = true; queueMicrotask(() => { S._phMemo = null; S._phMemoQ = false; }); } } return m[k]; }
+const phRx = () => phMemo('rx', rxList), phSt = () => phMemo('st', () => phxCandidates().map(phxState));
+const phTab = () => ['xfer', 'plan', 'rx'].includes(S.phv) ? S.phv : 'xfer';
+function pharmacyHTML(){
+  const tab = phTab(), seg = `<div class="seg" role="group" aria-label="Pharmacy view">${[['xfer', 'Transfers'], ['plan', 'Order plan'], ['rx', 'Refills']].map(([k, l]) => `<button data-act="phView" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>`;
+  const cfgNote = phRanked().some(ph => ph.orderDow == null || ph.orderDow === '' || ph.shipDays == null || ph.shipDays === '')
+    ? `<div class="msg warn small">Some pharmacies have no order day or shipping days yet, so order dates are estimates. Set them in Settings › Admin › Pharmacies.</div>` : '';
+  return `<div class="ph-wrap">${seg}${cfgNote}${tab === 'xfer' ? phxHTML() : tab === 'plan' ? phPlanHTML() : rxHTML()}</div>`;
+}
+const phName = id => phById(id)?.name || id || '—';
+const phTiles = L => `<div class="tiles">${L.map(([n, l, tone]) => `<div class="tile${tone ? ' ' + tone : ''}"><b>${n}</b><span>${esc(l)}</span></div>`).join('')}</div>`;
+function phxHTML(){
+  const st = phSt(), pts = st, q = String(S.phq || '').trim().toLowerCase();
+  const show = st.filter(s => (S.phAll || s.st !== 'moved') && (!q || String(nm(s.p.mrn)).toLowerCase().includes(q) || s.p.mrn.includes(q)));
+  const cnt = k => st.filter(s => s.st === k).length, sub = st.filter(s => Object.values(s.xf.resp || {}).some(r => r.sub)).length;
+  const R = phRanked(), sel = S.phSel = S.phSel || new Set(), T = todaySerial(), RC = R.filter(ph => show.some(s => s.better.some(x => x.id === ph.id)));   // columns: pharmacies someone listed could move to
+  const cell = (s, ph) => { if (!s.better.some(x => x.id === ph.id)) return '<span class="muted small">—</span>'; const r = s.xf.resp?.[ph.id] || {}, c = phCls(r.cls);
+    return `${c ? tag(c.ok === true ? 'ok' : c.ok === false ? '' : 'info', c.label) : r.sub ? tag('info', 'Sent ' + fmtD(fromIso(r.sub))) : '<span class="muted small">Not asked</span>'}${c && r.sub ? `<div class="small muted">sent ${fmtD(fromIso(r.sub))}</div>` : ''}`; };
+  const ready = st.filter(s => s.st === 'on' && s.start != null && s.start <= T && s.to);
+  const progs = R.filter(ph => st.some(s => s.st === 'on' && s.to?.id === ph.id)).map(ph => { const n = st.filter(s => s.st === 'on' && s.to?.id === ph.id).length, s0 = phStart(ph);
+    return `<div class="small"><b>${esc(ph.name)}</b>: ${n} transferring · ${s0 != null ? `start ${fmtD(s0, 'full')}` : '<span class="tag warn">no start date</span>'}${ph.orderDow != null && ph.orderDow !== '' ? ` · orders ${PHX_DOW[+ph.orderDow]}` : ''}${ph.shipDays != null && ph.shipDays !== '' ? `, ships in ${ph.shipDays} d` : ''}</div>`; }).join('');
+  return `<section class="card"><div class="inv-ch"><h3>Specialty-pharmacy patients ${tag('', String(pts.length))}</h3></div>
+    <p class="small muted">Preference: ${R.map(ph => esc(ph.name)).join(', then ')}. A patient can move to a pharmacy ahead of the one they use now once it says their benefits allow it. Turn on <b>Transfer</b> for each patient who should move: from the pharmacy's start date, their visits are ordered from it.</p>
+    ${phTiles([[sub, 'Rx submitted'], [cnt('wait'), 'waiting on a response', cnt('wait') ? 'warn' : ''], [cnt('decide'), 'eligible, not decided', cnt('decide') ? 'warn' : ''], [cnt('on'), 'transferring', ''], [cnt('stay') + cnt('none'), 'staying'], [cnt('moved'), 'moved']])}
+    ${progs ? `<div style="margin-top:10px">${progs}</div>` : ''}</section>
+  ${ready.length ? `<section class="card"><div class="inv-ch"><h3>Update the patient tracker ${tag('warn', String(ready.length))}</h3><button class="btn primary sm" data-act="phxApply">Write new pharmacy…</button></div><p class="small muted">${ready.length} transferring patient${ready.length === 1 ? ' has' : 's have'} reached the start date. Writing the new pharmacy to the Master Patient Tracker makes every screen use it.</p></section>` : ''}
+  <section class="card"><div class="ph-bar"><input class="fld" type="search" id="phq" data-input="phq" placeholder="Search by LASFIR or MRN" value="${esc(S.phq || '')}" aria-label="Search transfer patients" autocomplete="off">
+    <label class="check"><input type="checkbox" data-phall ${S.phAll ? 'checked' : ''}><span class="l">Show moved</span></label><span class="grow"></span>
+    <label class="small muted" for="phSubTo">Mark Rx submitted to</label><select id="phSubTo" class="fld" style="max-width:170px">${R.map(ph => `<option value="${esc(ph.id)}" ${S.phSubTo === ph.id ? 'selected' : ''}>${esc(ph.name)}</option>`).join('')}</select><button class="btn sm" data-act="phxSubmit" ${sel.size ? '' : 'disabled'}>Mark ${sel.size || ''} today</button></div>
+    ${show.length ? `<div class="tw"><table class="t rt"><thead><tr><th class="inv-cb"><input type="checkbox" data-phselall ${show.length && show.every(s => sel.has(s.p.mrn)) ? 'checked' : ''} aria-label="Select all"></th><th>Patient</th><th>Insurance</th><th>Now</th>${RC.map(ph => `<th>${esc(ph.name)}</th>`).join('')}<th>Status</th><th>Transfer</th><th></th></tr></thead><tbody>
+      ${show.map(s => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-phsel="${esc(s.p.mrn)}" ${sel.has(s.p.mrn) ? 'checked' : ''} aria-label="Select ${esc(nm(s.p.mrn))}"></td>
+        <td data-l="Patient"><b>${esc(nm(s.p.mrn))}</b> <span class="small muted">${esc(s.p.mrn)}</span>${s.p.status ? `<div class="small muted">${esc(s.p.status)}${s.p.freq ? ' · ' + esc(s.p.freq) : ''}</div>` : ''}</td>
+        <td data-l="Insurance" class="inv-wrap">${esc(s.p.insurance || '—')}</td><td data-l="Now">${esc(s.xf.done ? phName(s.xf.done.from) : s.cur?.name || '—')}</td>
+        ${RC.map(ph => `<td data-l="${esc(ph.name)}">${cell(s, ph)}</td>`).join('')}
+        <td data-l="Status">${tag(s.tone, s.label)}</td>
+        <td data-l="Transfer">${s.st === 'moved' ? '' : s.best || s.xf.on ? `<label class="check"><input type="checkbox" data-phon="${esc(s.p.mrn)}" ${s.xf.on ? 'checked' : ''}><span class="l">${esc((s.to || s.best)?.name || '')}</span></label>` : '<span class="muted small" title="No pharmacy has answered eligible yet">—</span>'}</td>
+        <td data-l=""><button class="btn sm" data-act="phxEdit" data-m="${esc(s.p.mrn)}">Update…</button></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="msg ok">No specialty-pharmacy patients match.</div>'}
+    <p class="small muted">Saved on the hidden “${PHX_SHEET}” sheet with MRN and short names only.</p></section>`;
+}
+function openPhxEdit(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; const s = phxState(p), C = phCfg(), resp = s.xf.resp || {};
+  const opts = (cur) => `<option value="">No response yet</option>${C.classes.map(c => `<option value="${esc(c.id)}" ${cur === c.id ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}`;
+  const eligible = s.better.filter(ph => phCls(resp[ph.id]?.cls)?.ok === true);
+  openModal(`<h2>Pharmacy transfer: ${esc(nm(mrn))}</h2><div class="small muted">MRN ${esc(mrn)} · now ${esc(s.cur?.name || '—')}${p.insurance ? ' · ' + esc(p.insurance) : ''}</div>
+    ${s.better.length ? s.better.map(ph => { const r = resp[ph.id] || {}; return `<fieldset class="ph-fs"><legend><b>${esc(ph.name)}</b> <span class="small muted">choice ${esc(ph.rank)}</span></legend>
+      <div class="ph-grid"><label class="lbl">Rx / referral submitted<input type="date" class="fld" data-phe="${esc(ph.id)}|sub" value="${esc(r.sub || '')}"></label>
+      <label class="lbl">Benefits response<select class="fld" data-phe="${esc(ph.id)}|cls">${opts(r.cls)}</select></label>
+      <label class="lbl">Response date<input type="date" class="fld" data-phe="${esc(ph.id)}|at" value="${esc(r.at || '')}"></label>
+      <label class="lbl ph-note">Note<input class="fld" data-phe="${esc(ph.id)}|note" value="${esc(r.note || '')}" autocomplete="off" placeholder="e.g. copay $0, PA ref #"></label></div></fieldset>`; }).join('')
+      : '<div class="msg info">This patient is already at the first-choice pharmacy.</div>'}
+    <fieldset class="ph-fs"><legend><b>Transfer</b></legend>
+      <div class="ph-grid"><label class="check"><input type="checkbox" id="phOn" ${s.xf.on ? 'checked' : ''}><span class="l">Transfer this patient</span></label>
+      <label class="lbl">To<select id="phTo" class="fld">${s.better.map(ph => `<option value="${esc(ph.id)}" ${(s.xf.to || s.best?.id || eligible[0]?.id) === ph.id ? 'selected' : ''}>${esc(ph.name)}${eligible.some(e => e.id === ph.id) ? ' (eligible)' : ''}</option>`).join('')}</select></label>
+      <label class="check"><input type="checkbox" id="phStay" ${s.xf.on === false ? 'checked' : ''}><span class="l">Decided: stays at ${esc(s.cur?.name || 'current pharmacy')}</span></label></div>
+      <p class="small muted">Ordering moves on the pharmacy's start date (Settings › Admin › Pharmacies). Visits before it are still ordered from ${esc(s.cur?.name || 'the current pharmacy')}.</p></fieldset>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="phxSave" data-m="${esc(mrn)}">Save</button></div>`, true);
+}
+// one patient's record -> the sheet (re-read first so two people editing different patients never overwrite each other)
+async function phxPut(mrn, fn, okText){
+  const p = S.byMrn.get(mrn), cur = JSON.parse(JSON.stringify(phxRec(mrn))), rec = fn(cur) || cur;
+  S.phx = S.phx || new Map(); const was = S.phx.get(mrn); let rs = null;   // Kits left on the sheet: worked out with the new record
+  if (rec.rx?.sent && p){ S.phx.set(mrn, rec); try { rs = rxState(p); } finally { was ? S.phx.set(mrn, was) : S.phx.delete(mrn); } }
+  const row = phxRow(mrn, rec, { name: nm(mrn), cur: p?.pharmName || '', left: rs?.left ?? '', now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' });
+  return write('Saving…', () => S.store.savePharm(mrn, row), okText || 'Saved.');
+}
+async function phxSave(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings();
+  const resp = {}; document.querySelectorAll('[data-phe]').forEach(el => { const [id, f] = el.dataset.phe.split('|'); const v = String(el.value || '').trim(); (resp[id] = resp[id] || {})[f] = v; });
+  for (const r of Object.values(resp)) for (const k of Object.keys(r)) if (!r[k]) delete r[k];
+  for (const [id, r] of Object.entries(resp)) if (r.cls && !r.at) r.at = isoOf(todaySerial());   // a response picked today is dated today
+  const on = $('#phOn')?.checked, stay = $('#phStay')?.checked, to = $('#phTo')?.value || '';
+  if (on && !to) return toast('warn', 'Pick the pharmacy to transfer to.');
+  if (on && phCls(resp[to]?.cls)?.ok !== true) return toast('warn', `Set ${esc(phName(to))}’s benefits response to an eligible result first.`);
+  const ok = await phxPut(mrn, rec => { const xf = rec.xf = rec.xf || {}; xf.resp = { ...(xf.resp || {}), ...resp };
+    for (const id of Object.keys(xf.resp)) if (!Object.keys(xf.resp[id]).length) delete xf.resp[id];
+    if (on){ xf.on = true; xf.to = to; } else if (stay){ xf.on = false; delete xf.to; } else { delete xf.on; delete xf.to; }
+    return rec; }, 'Transfer saved.');
+  if (ok) closeModal();
+}
+async function phxToggle(mrn, on){
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const s = phxState(p);
+  const to = s.xf.to || s.best?.id; if (on && !to){ render(); return toast('warn', 'No pharmacy has answered eligible for this patient yet.'); }
+  await phxPut(mrn, rec => { const xf = rec.xf = rec.xf || {}; if (on){ xf.on = true; xf.to = to; } else { xf.on = false; delete xf.to; } return rec; }, on ? `Transferring to ${esc(phName(to))}.` : 'Transfer turned off.');
+}
+async function phxSubmit(){
+  const to = $('#phSubTo')?.value, L = [...(S.phSel || [])]; if (!to || !L.length) return; if (!CFG.me) return openSettings();
+  const day = isoOf(todaySerial()); let n = 0;
+  busy(`Marking ${L.length} submitted…`);
+  try { for (const mrn of L){ const p = S.byMrn.get(mrn); if (!p || !phBetter(p).some(ph => ph.id === to)) continue;
+    const rec = JSON.parse(JSON.stringify(phxRec(mrn))), xf = rec.xf = rec.xf || {}; xf.resp = xf.resp || {}; xf.resp[to] = { ...(xf.resp[to] || {}), sub: day };
+    if (!xf.resp[to].cls && phCls('pend')) xf.resp[to].cls = 'pend';
+    await S.store.savePharm(mrn, phxRow(mrn, rec, { name: nm(mrn), cur: p.pharmName || '', now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' })); n++; } }
+  catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); }
+  finally { busy(false); S._selfWriteAt = Date.now(); }
+  S.phSel.clear(); await reload(true); toast('ok', `Marked ${n} as submitted to ${esc(phName(to))}${n < L.length ? ` (${L.length - n} skipped: already at or ahead of it)` : ''}.`);
+}
+// Rewrite Pharmacy on the Master Patient Tracker for transferring patients past the start date, then mark them moved.
+function phxApplyPlan(){
+  const t = S.tables.patients, c = t?.cols.pharmacy, T = todaySerial(); if (c == null) return null;
+  const ready = phxCandidates().map(phxState).filter(s => s.st === 'on' && s.start != null && s.start <= T && s.to), items = [];
+  const refv = ph => (S.ref.pharmacy || []).find(v => phMatch(v)?.id === ph.id) || ph.name;
+  for (const s of ready) t.values.forEach((_, r) => { if (mrnKey(t.get(r, 'mrn')) !== s.p.mrn || t.isFormula(r, c)) return; items.push({ r, snap: t.snap(r), changes: [[c, refv(s.to)]], s, from: String(t.get(r, 'pharmacy') ?? ''), to: refv(s.to) }); });
+  const names = [...new Set(items.map(i => i.to))], missing = names.filter(n => !(S.ref.pharmacy || []).includes(n));
+  return { t, c, ready, items, missing };
+}
+function openPhxApply(){
+  const x = phxApplyPlan(); if (!x) return toast('bad', 'No Pharmacy column on the Master Patient Tracker.');
+  S.phApply = x; const L = colLetterFor('patients', x.c);
+  openModal(`<h2>Write the new pharmacy to the tracker</h2>
+    <div class="writes"><b>Will write to the workbook:</b><div><code>${esc(L)}</code> Pharmacy on ${x.items.length} row${x.items.length === 1 ? '' : 's'}</div>
+      ${x.items.map(i => `<div class="small" style="margin-left:14px">${esc(nm(i.s.p.mrn))} · MRN ${esc(i.s.p.mrn)} · ${esc(i.from || '(blank)')} → <b>${esc(i.to)}</b></div>`).join('')}
+      ${x.missing.length ? `<div><code>REF</code> Pharmacy list gets ${x.missing.map(esc).join(', ')} added, and the Pharmacy dropdown is set to that list</div>` : ''}
+      <div><code>${esc(PHX_SHEET)}</code> each patient marked moved (date, by, from, to)</div></div>
+    <p class="small muted">Rows changed by someone else since the last refresh are skipped; refresh and run it again for those.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="phxApplyGo" ${x.items.length ? '' : 'disabled'}>Write to the workbook</button></div>`);
+}
+async function phxApplyGo(){
+  const x = S.phApply; if (!x) return; if (!CFG.me) return openSettings(); let done = [];
+  const ok = await write('Writing to the Master Patient Tracker…', async () => {
+    done = await S.store.updateMany('patients', x.items.map(({ r, snap, changes }) => ({ r, snap, changes })));
+    if (x.missing.length) await S.store.setDropdown(x.t.headers[x.c], 'Pharmacy', [...(S.ref.pharmacy || []), ...x.missing], false);
+    const at = isoOf(todaySerial()), moved = new Set(done.map(d => x.items.find(i => i.r === d.r)?.s.p.mrn).filter(Boolean));
+    for (const s of x.ready){ if (!moved.has(s.p.mrn)) continue; const rec = JSON.parse(JSON.stringify(phxRec(s.p.mrn))); rec.xf.done = { at, by: CFG.me || '', from: s.cur?.id || s.p.pharmName || '', to: s.to.id };
+      await S.store.savePharm(s.p.mrn, phxRow(s.p.mrn, rec, { name: nm(s.p.mrn), cur: s.to.name, now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' })); }
+  }, () => `Pharmacy rewritten on ${(done || []).length} of ${x.items.length} rows.`);
+  if (ok){ S.phApply = null; closeModal(); }
+}
+
+function phPlanHTML(){
+  const plan = phxPlan(S.phDays || 42), cad = phxCadence(), T = todaySerial();
+  const mgTxt = mg => Object.entries(mg).map(([k, n]) => `${n} × ${k} mg`).join(', ') || 'none';
+  const grpHTML = (x, g) => `<div class="ph-grp"><div class="inv-ch"><h4>${g.late ? tag('bad', 'Late') + ' Order now' : `Order ${fmtD(g.date, 'dow')}`} <span class="small muted">${mgTxt(g.mg)}</span></h4>
+      ${!phIsStock(x.ph) && g.need.length ? `<button class="btn sm${g.date <= T ? ' primary' : ''}" data-act="phOrder" data-p="${esc(x.ph.id)}" data-d="${g.date}">Mark ${g.need.length} as ordered today</button>` : ''}</div>
+    <div class="tw"><table class="t rt"><thead><tr><th>Visit</th><th>Patient</th><th class="num">Dose</th><th>Covered by</th></tr></thead><tbody>${g.rows.map(r => `<tr><td data-l="Visit">${fmtD(r.a.date, 'dow')} ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b> <span class="small muted">${esc(r.a.mrn)}</span></td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td>
+      <td data-l="Covered by">${r.cover === 'stock' ? tag('info', 'Besse weekly order') : r.cover === 'onhand' ? tag('ok', 'Kit on hand') : r.cover === 'ordered' ? tag('info', `Ordered ${fmtD(r.k?.ordered)}`) : tag('warn', 'To order')}</td></tr>`).join('')}</tbody></table></div></div>`;
+  return `<section class="card"><div class="inv-ch"><h3>Orders on the new pharmacies</h3><span class="grow"></span><label class="small muted" for="phDays">Look ahead</label><select id="phDays" class="fld" data-phdays style="max-width:120px">${[21, 42, 63, 84].map(d => `<option value="${d}" ${(S.phDays || 42) === d ? 'selected' : ''}>${d / 7} weeks</option>`).join('')}</select></div>
+    <p class="small muted">Booked visits of transferring patients from each pharmacy's start date. Each visit is ordered on the last order day that still arrives in time (order day and shipping days from Settings › Admin). Kits already on hand or on order for the patient are used first. Besse visits are counted in Inventory › Besse weekly order.</p></section>
+  ${plan.length ? plan.map(x => `<section class="card"><div class="inv-ch"><h3>${esc(x.ph.name)}</h3><span class="small muted">${phStart(x.ph) != null ? `start ${fmtD(phStart(x.ph), 'full')}` : ''}${x.ph.orderDow != null && x.ph.orderDow !== '' ? ` · orders ${PHX_DOW[+x.ph.orderDow]}` : ''}${x.ph.shipDays != null && x.ph.shipDays !== '' ? ` · ships in ${x.ph.shipDays} d` : ''}${x.ph.email ? ` · ${esc(x.ph.email)}` : ''}${x.ph.phone ? ` · ${esc(x.ph.phone)}` : ''}</span></div>${x.groups.map(g => grpHTML(x, g)).join('')}</section>`).join('')
+    : '<section class="card"><div class="msg ok">No booked visits on a new pharmacy in this window.</div></section>'}
+  <section class="card"><div class="inv-ch"><h3>Cadence ${tag('', String(cad.rows.length))}</h3></div>
+    ${cad.weekly.length ? `<div class="small" style="margin-bottom:8px">${cad.weekly.map(w => `<div><b>${esc(w.ph.name)}</b>: ${w.pts} patient${w.pts === 1 ? '' : 's'}, about ${Object.entries(w.mg).map(([k, n]) => `${Math.round(n * 10) / 10} × ${k} mg`).join(', ') || '0'} a week${w.unknown ? ` (${w.unknown} with a frequency it can't read)` : ''}</div>`).join('')}</div>` : ''}
+    ${cad.rows.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>To</th><th>Frequency</th><th class="num">Kits a week</th><th class="num">Dose</th><th>First visit there</th><th>First order</th></tr></thead><tbody>${cad.rows.map(r => `<tr><td data-l="Patient"><b>${esc(nm(r.p.mrn))}</b> <span class="small muted">${esc(r.p.mrn)}</span></td><td data-l="To">${esc(r.ph.name)}</td><td data-l="Frequency">${esc(r.p.freq || '—')}</td><td data-l="Kits a week" class="num">${r.rate > 0 ? Math.round(r.rate * 100) / 100 : '?'}</td><td data-l="Dose" class="num">${r.mg ?? '?'}</td><td data-l="First visit there">${r.first ? fmtD(r.first.date, 'dow') : '<span class="muted">Not booked</span>'}</td><td data-l="First order">${r.firstOrder != null ? (r.late ? tag('bad', 'Late: ' + fmtD(r.firstOrder, 'dow')) : fmtD(r.firstOrder, 'dow')) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No one is transferring yet.</div>'}</section>`;
+}
+async function phOrder(phId, day){
+  const ph = phById(phId), x = phxPlan(S.phDays || 42).find(p => p.ph.id === phId), g = x?.groups.find(g => g.date === +day); if (!ph || !g) return;
+  const rows = g.need.filter(r => r.cover === 'need'); if (!rows.length) return; if (!CFG.me) return openSettings();
+  const T = todaySerial(), refv = (S.ref.pharmacy || []).find(v => phMatch(v)?.id === ph.id) || ph.name;
+  await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, () => S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: refv, dateordered: { date: T }, comments: nm(r.a.mrn) }).out)),
+    `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered from ${esc(ph.name)}.`);
+}
+
+function rxHTML(){
+  const L = phRx(), q = String(S.phq || '').trim().toLowerCase(), show = L.filter(x => !q || String(nm(x.p.mrn)).toLowerCase().includes(q) || x.p.mrn.includes(q));
+  const c = k => L.filter(x => x.st === k).length, C = phCfg();
+  return `<section class="card"><div class="inv-ch"><h3>Refills ${tag('', String(L.length))}</h3></div>
+    <p class="small muted">Patients on a per-patient pharmacy. Each Rx is the first fill plus its refills (standard: 1 + ${esc(C.refills)} = ${1 + (+C.refills || 0)} kits). Kits ordered since the Rx was sent count against it. A refill is due ${esc(C.reqLead)} days before the order that would run it out, worked out from booked visits, then the Tx frequency. Enter the request in NextGen, then select <b>Requested</b>.</p>
+    ${phTiles([[c('now'), 'request now', c('now') ? 'bad' : 'ok'], [c('soon'), 'due this week', c('soon') ? 'warn' : ''], [c('req'), 'waiting on provider'], [c('newrx'), 'transfers needing a new Rx', c('newrx') ? 'warn' : ''], [c('none'), 'no Rx on file', c('none') ? 'warn' : '']])}</section>
+  <section class="card"><div class="ph-bar"><input class="fld" type="search" id="phq" data-input="phq" placeholder="Search by LASFIR or MRN" value="${esc(S.phq || '')}" aria-label="Search refill patients" autocomplete="off"></div>
+    ${show.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>Provider</th><th>Pharmacy</th><th>Rx sent</th><th>Runs out</th><th>Request by</th><th>Status</th><th></th></tr></thead><tbody>
+      ${show.map(x => `<tr><td data-l="Patient"><b>${esc(nm(x.p.mrn))}</b> <span class="small muted">${esc(x.p.mrn)}</span>${x.p.freq ? `<div class="small muted">${esc(x.p.freq)}</div>` : ''}</td><td data-l="Provider">${esc(x.p.provider || '—')}</td><td data-l="Pharmacy">${esc(x.ph?.name || x.p.pharmName || '—')}</td>
+        <td data-l="Rx sent">${x.rx?.sent ? `${fmtD(fromIso(x.rx.sent))}<div class="small muted">${x.left} of ${x.kits} left</div>` : '—'}</td>
+        <td data-l="Runs out">${x.st === 'newrx' ? `<span class="small">moves ${fmtD(x.outAt, 'dow')}</span>` : x.outAt != null ? `${fmtD(x.outAt, 'dow')}${x.projected ? '<div class="small muted">by frequency</div>' : ''}` : '—'}</td><td data-l="Request by">${x.reqBy != null ? fmtD(x.reqBy, 'dow') : '—'}</td>
+        <td data-l="Status">${tag(x.tone, x.label)}</td>
+        <td data-l=""><div class="ph-acts">${x.rx?.sent && !x.req && x.st !== 'newrx' ? `<button class="btn sm${x.st === 'now' || x.st === 'soon' ? ' primary' : ''}" data-act="rxReq" data-m="${esc(x.p.mrn)}">Requested</button>` : ''}<button class="${x.rx?.sent && !x.req && x.st !== 'newrx' ? 'linkbtn' : 'btn sm'}" data-act="rxEdit" data-m="${esc(x.p.mrn)}">${x.rx?.sent ? 'New Rx…' : 'Add Rx…'}</button></div></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="msg ok">No patients on a per-patient pharmacy.</div>'}</section>`;
+}
+function openRxEdit(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; const x = rxState(p), C = phCfg(), rx = x.rx || {};
+  const refills = rx.kits ? Math.max(0, +rx.kits - 1) : C.refills;
+  openModal(`<h2>Prescription: ${esc(nm(mrn))}</h2><div class="small muted">MRN ${esc(mrn)}${p.provider ? ' · ' + esc(p.provider) : ''}${x.rx?.sent ? ` · now ${x.left} of ${x.kits} left` : ''}</div>
+    <div class="ph-grid" style="margin-top:10px"><label class="lbl">Pharmacy<select id="rxPh" class="fld">${phCfg().list.filter(ph => !phIsStock(ph)).map(ph => `<option value="${esc(ph.id)}" ${(rx.ph || x.ph?.id) === ph.id ? 'selected' : ''}>${esc(ph.name)}</option>`).join('')}</select></label>
+      <label class="lbl">Rx / refill sent<input id="rxSent" type="date" class="fld" value="${esc(isoOf(todaySerial()))}"></label>
+      <label class="lbl">Refills on it (plus the first fill)<input id="rxRef" type="number" min="0" max="24" step="1" class="fld" value="${esc(refills)}"></label>
+      <label class="lbl">Kits already used from it<input id="rxAdj" type="number" min="0" max="24" step="1" class="fld" value="0"></label></div>
+    <p class="small muted">Kits ordered for this patient from today on count against this Rx. Use “already used” only for kits ordered before the date sent.</p>
+    ${rx.sent ? `<p class="small muted">Replaces the Rx sent ${fmtD(fromIso(rx.sent))} (${esc(rx.kits)} kits).</p>` : ''}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="rxSave" data-m="${esc(mrn)}">Save</button></div>`);
+}
+async function rxSave(mrn){
+  if (!CFG.me) return openSettings();
+  const ph = $('#rxPh')?.value || '', sent = $('#rxSent')?.value || '', ref = Math.max(0, Math.round(+($('#rxRef')?.value || 0))), adj = Math.max(0, Math.round(+($('#rxAdj')?.value || 0)));
+  if (!fromIso(sent)) return toast('warn', 'Enter the date the Rx or refill was sent.');
+  if (await phxPut(mrn, rec => { rec.rx = { ph, sent, kits: ref + 1, ...(adj ? { adj } : {}), by: CFG.me || '' }; return rec; }, 'Prescription saved.')) closeModal();
+}
+async function rxReq(mrn){
+  if (!CFG.me) return openSettings();
+  await phxPut(mrn, rec => { rec.rx = { ...(rec.rx || {}), req: { at: isoOf(todaySerial()), by: CFG.me || '' } }; return rec; }, 'Marked as requested from the provider.');
+}
+
+// ---- Download: transfers, counts by pharmacy benefit, order plan, cadence, refills ----
+function phxXlsxAsk(){
+  openModal(`<h2>Download pharmacy transfers and refills</h2><div class="small">Sheets: Transfers, Counts by benefit, Order plan, Cadence, Weekly volume, Refills.</div>
+    <div class="alert warn small" style="margin-top:8px"><p>It has MRNs and short names. Keep the file in approved locations (OneDrive or SharePoint), not email or personal drives.</p></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="phxXlsxGo">Download workbook</button></div>`);
+}
+function phxBook(){
+  const R = phRanked(), C = phCfg(), d = s => s == null ? '' : isoOf(s), pts = phxCandidates().map(phxState);
+  const xfer = [['MRN', 'Patient', 'Status (tracker)', 'Insurance', 'Tx frequency', 'Dose', 'Current pharmacy', ...R.flatMap(ph => [`${ph.name} Rx submitted`, `${ph.name} response`, `${ph.name} response date`]), 'Eligible for', 'Transfer', 'Transfer to', 'Start date', 'Moved', 'Status'],
+    ...pts.map(s => [s.p.mrn, nm(s.p.mrn), s.p.status, s.p.insurance, s.p.freq, s.p.mg ?? '', s.xf.done ? phName(s.xf.done.from) : s.cur?.name || '',
+      ...R.flatMap(ph => { const r = s.xf.resp?.[ph.id] || {}; return s.better.some(x => x.id === ph.id) ? [r.sub || '', phCls(r.cls)?.label || '', r.at || ''] : ['n/a', '', '']; }),
+      s.best?.name || '', s.xf.done ? 'Moved' : s.xf.on ? 'Yes' : s.xf.on === false ? 'No' : '', s.to?.name || '', d(s.start), s.xf.done?.at || '', s.label])];
+  const counts = [['Pharmacy', 'Choice', 'Could move here', 'Rx submitted', 'No response yet', ...C.classes.map(c => c.label)], ...phxCounts().map(x => [x.ph.name, x.ph.rank, x.n, x.sub, x.none, ...x.by.map(b => b.n)])];
+  const ins = new Map(); for (const s of pts) for (const ph of s.better){ const c = phCls(s.xf.resp?.[ph.id]?.cls); const k = `${s.p.insurance || '(none)'}|${ph.name}`; const o = ins.get(k) || { ins: s.p.insurance || '(none)', ph: ph.name, yes: 0, no: 0, open: 0 }; c?.ok === true ? o.yes++ : c?.ok === false ? o.no++ : o.open++; ins.set(k, o); }
+  const byIns = [['Insurance', 'Pharmacy', 'Eligible', 'Not eligible', 'Open'], ...[...ins.values()].sort((a, b) => a.ins.localeCompare(b.ins) || a.ph.localeCompare(b.ph)).map(o => [o.ins, o.ph, o.yes, o.no, o.open])];
+  const plan = [['Pharmacy', 'Order date', 'Late', 'Visit date', 'Visit time', 'MRN', 'Patient', 'Dose (mg)', 'Covered by'], ...phxPlan(S.phDays || 42).flatMap(x => x.groups.flatMap(g => g.rows.map(r => [x.ph.name, d(g.date), r.late ? 'Yes' : '', d(r.a.date), fmtT(r.a.time), r.a.mrn, nm(r.a.mrn), r.inf.mg ?? '', { stock: 'Besse weekly order', onhand: 'Kit on hand', ordered: 'On order', need: 'To order' }[r.cover] || r.cover]))) ];
+  const cad = phxCadence();
+  const cadence = [['MRN', 'Patient', 'To', 'Start date', 'Tx frequency', 'Kits a week', 'Dose (mg)', 'First visit there', 'First order', 'Order day', 'Shipping days'], ...cad.rows.map(r => [r.p.mrn, nm(r.p.mrn), r.ph.name, d(r.start), r.p.freq, r.rate > 0 ? Math.round(r.rate * 100) / 100 : '', r.mg ?? '', d(r.first?.date), d(r.firstOrder), r.ph.orderDow != null && r.ph.orderDow !== '' ? PHX_DOW[+r.ph.orderDow] : '', r.ph.shipDays ?? ''])];
+  const weekly = [['Pharmacy', 'Patients', 'Dose (mg)', 'Kits a week'], ...cad.weekly.flatMap(w => Object.entries(w.mg).map(([mg, n]) => [w.ph.name, w.pts, mg, Math.round(n * 100) / 100]))];
+  const refills = [['MRN', 'Patient', 'Provider', 'Pharmacy', 'Rx sent', 'Kits on Rx', 'Used', 'Left', 'Runs out', 'By frequency', 'Request by', 'Requested', 'Status'], ...rxList().map(x => [x.p.mrn, nm(x.p.mrn), x.p.provider, x.ph?.name || x.p.pharmName || '', x.rx?.sent || '', x.kits ?? '', x.used ?? '', x.left ?? '', d(x.outAt), x.projected ? 'Yes' : '', d(x.reqBy), x.req?.at || '', x.label])];
+  return { Transfers: xfer, 'Counts by benefit': counts, 'By insurance': byIns, 'Order plan': plan, Cadence: cadence, 'Weekly volume': weekly, Refills: refills };
+}
+async function phxXlsx(){
+  if (!(await loadXLSX())) return toast('bad', 'Couldn’t load the Excel writer. Check the connection and try again.');
+  const wb = XLSX.utils.book_new();
+  for (const [n, rows] of Object.entries(phxBook())){ const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map((_, c) => ({ wch: Math.min(40, Math.max(10, ...rows.slice(0, 200).map(r => String(r[c] ?? '').length + 2))) })); XLSX.utils.book_append_sheet(wb, ws, n); }
+  const name = `Pharmacy transfers - ${(CFG.clinic || 'clinic').replace(/[\\/:*?"<>|]/g, '')} - ${isoOf(todaySerial())}.xlsx`;
+  const ok = downloadText(name, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(ok ? 'ok' : 'warn', ok ? `Downloaded ${esc(name)}.` : 'Download was blocked here. Try from the full-screen view or Excel in a browser.');
+  if (ok) closeModal();
+}
+
+// ---- Settings › Admin › Pharmacies (shared: eskShared.pharm) ----
+function admPharmHTML(){
+  const D = S.phDraft || (S.phDraft = JSON.parse(JSON.stringify({ list: phCfg().list, classes: phCfg().classes, refills: phCfg().refills, reqLead: phCfg().reqLead })));
+  const f = (i, k, lab, type = 'text', extra = '') => `<label class="lbl">${lab}<input class="fld" type="${type}" data-phc="${i}|${k}" value="${esc(D.list[i][k] ?? '')}" autocomplete="off" ${extra}></label>`;
+  const sum = p => [p.rank ? `choice ${p.rank}` : 'not a target', phIsStock(p) ? 'clinic stock' : 'per patient', p.orderDow != null && p.orderDow !== '' ? `orders ${PHX_DOW[+p.orderDow]}` : 'no order day', p.shipDays != null && p.shipDays !== '' ? `ships in ${p.shipDays} d` : '', fromIso(p.start) != null ? `start ${fmtD(fromIso(p.start))}` : 'no start date'].filter(Boolean).join(' · ');
+  const ph = (p, i) => `<details class="ph-fs" data-open="phc:${i}" ${S.open?.['phc:' + i] || !p.name ? 'open' : ''}><summary><b>${esc(p.name || 'New pharmacy')}</b> <span class="small muted">${esc(sum(p))}</span></summary><div class="ph-grid">
+    ${f(i, 'name', 'Name')}${f(i, 'match', 'Matches on the tracker (comma-separated)')}${f(i, 'rank', 'Choice (1 = first; blank = not a target)', 'number', 'min="1" max="9" step="1"')}
+    <label class="lbl">Weekly order day<select class="fld" data-phc="${i}|orderDow"><option value="">Not set</option>${PHX_DOW.map((d, n) => `<option value="${n}" ${String(p.orderDow ?? '') === String(n) ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+    ${f(i, 'shipDays', 'Days from order to delivery', 'number', 'min="0" max="21" step="1"')}${f(i, 'start', 'Transition start date', 'date')}
+    ${f(i, 'contact', 'Ordering contact')}${f(i, 'email', 'Ordering email', 'email')}${f(i, 'phone', 'Phone', 'tel')}${f(i, 'fax', 'Fax', 'tel')}<label class="lbl ph-note">Notes<input class="fld" data-phc="${i}|notes" value="${esc(p.notes || '')}" autocomplete="off"></label></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost sm" data-act="phcDel" data-i="${i}">Remove</button></div></details>`;
+  const cls = (c, i) => `<div class="adm-row"><input class="fld" data-phk="${i}|label" value="${esc(c.label)}" aria-label="Result name" autocomplete="off"><select class="fld" data-phk="${i}|ok" aria-label="Counts as" style="max-width:150px">${[['', 'Still open'], ['1', 'Eligible'], ['0', 'Not eligible']].map(([v, l]) => `<option value="${v}" ${(c.ok === true ? '1' : c.ok === false ? '0' : '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select><button class="btn ghost sm" data-act="phkDel" data-i="${i}">Remove</button></div>`;
+  return `<h4 class="set-sub">Pharmacies <span class="muted">(transfers, order plan, refills; shared with everyone)</span></h4>
+    <p class="small muted">Specialty-pharmacy patients can transfer to a pharmacy with a better (lower) choice number. “Matches” is how the pharmacy is written in the tracker's Pharmacy column and on Inventory lines.</p>
+    ${D.list.map(ph).join('')}<div class="row"><button class="btn ghost sm" data-act="phcAdd">Add pharmacy</button></div>
+    <h4 class="set-sub">Benefits responses</h4>${D.classes.map(cls).join('')}<div class="row"><button class="btn ghost sm" data-act="phkAdd">Add response</button></div>
+    <div class="ph-grid" style="margin-top:10px"><label class="lbl">Standard refills (plus the first fill)<input class="fld" type="number" min="0" max="24" step="1" data-phg="refills" value="${esc(D.refills)}"></label>
+      <label class="lbl">Ask for a refill this many days before the order<input class="fld" type="number" min="0" max="30" step="1" data-phg="reqLead" value="${esc(D.reqLead)}"></label></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" data-act="phcReset">Discard changes</button><button class="btn primary sm" data-act="phcSave">Save pharmacies</button></div>`;
+}
+function phSlug(s, used){ let b = String(s || 'pharmacy').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pharmacy', id = b, n = 2; while (used.has(id)) id = `${b}-${n++}`; return id; }
+async function phcSave(){
+  const D = S.phDraft; if (!D) return; if (!adminOn()) return toast('warn', 'Unlock Admin first.');
+  const used = new Set(), list = [];
+  for (const p of D.list){ const name = String(p.name || '').trim(); if (!name) continue; const id = p.id && !used.has(p.id) ? p.id : phSlug(name, used); used.add(id);
+    const n = v => v === '' || v == null ? null : Math.max(0, Math.round(+v));
+    list.push({ ...PHX_BLANK, ...p, id, name, match: String(p.match || '').trim() || name.toLowerCase(), rank: n(p.rank) || null, orderDow: n(p.orderDow), shipDays: n(p.shipDays), start: fromIso(p.start) != null ? p.start : '' }); }
+  if (!list.length) return toast('warn', 'Keep at least one pharmacy.');
+  const cu = new Set(), classes = D.classes.filter(c => String(c.label || '').trim()).map(c => { const id = c.id && !cu.has(c.id) ? c.id : phSlug(c.label, cu); cu.add(id); return { id, label: String(c.label).trim(), ok: c.ok === true || c.ok === '1' ? true : c.ok === false || c.ok === '0' ? false : null }; });
+  const pharm = { list, classes, refills: Math.max(0, Math.round(+D.refills || 0)), reqLead: Math.max(0, Math.round(+D.reqLead || 0)), by: CFG.me || '', at: new Date().toISOString() };
+  try { const fresh = (await S.store.freshDoc?.('eskShared')) || S.shared || {}; S.shared = { ...fresh, pharm }; await S.store.setDoc('eskShared', S.shared); S.phDraft = null; derive(); render(); toast('ok', 'Pharmacies saved.'); }
+  catch (e){ console.error(e); toast('bad', `Pharmacies weren't saved: ${esc(e.message || String(e))}`); }
+}
+Object.assign(ACT_PHARM, {
+  phView: el => { S.phv = el.dataset.v; render(); window.scrollTo(0, 0); },
+  phxEdit: el => openPhxEdit(el.dataset.m),
+  phxSave: el => phxSave(el.dataset.m),
+  phxSubmit: () => phxSubmit(),
+  phxApply: () => openPhxApply(),
+  phxApplyGo: () => phxApplyGo(),
+  phOrder: el => phOrder(el.dataset.p, el.dataset.d),
+  rxEdit: el => openRxEdit(el.dataset.m),
+  rxSave: el => rxSave(el.dataset.m),
+  rxReq: el => rxReq(el.dataset.m),
+  phxXlsx: () => phxXlsxAsk(),
+  phxXlsxGo: () => phxXlsx(),
+  phcAdd: () => { const D = S.phDraft; if (!D) return; D.list.push({ ...PHX_BLANK }); render(); },
+  phcDel: el => { const D = S.phDraft; if (!D) return; D.list.splice(+el.dataset.i, 1); render(); },
+  phkAdd: () => { const D = S.phDraft; if (!D) return; D.classes.push({ id: '', label: '', ok: null }); render(); },
+  phkDel: el => { const D = S.phDraft; if (!D) return; D.classes.splice(+el.dataset.i, 1); render(); },
+  phcReset: () => { S.phDraft = null; render(); },
+  phcSave: () => phcSave(),
+});
+// inputs: draft edits (no re-render while typing), checkboxes and selects (the click dispatcher stops data-act checkboxes)
+function phInput(el){
+  const D = S.phDraft;
+  if (el.dataset.phc && D){ const [i, k] = el.dataset.phc.split('|'); if (D.list[+i]) D.list[+i][k] = el.value; return true; }
+  if (el.dataset.phk && D){ const [i, k] = el.dataset.phk.split('|'); if (D.classes[+i]) D.classes[+i][k] = k === 'ok' ? (el.value === '1' ? true : el.value === '0' ? false : null) : el.value; return true; }
+  if (el.dataset.phg && D){ D[el.dataset.phg] = el.value; return true; }
+  return false;
+}
+function phChange(el){
+  if (phInput(el)) return true;
+  if (el.dataset.phon){ phxToggle(el.dataset.phon, el.checked); return true; }
+  if (el.dataset.phsel){ S.phSel = S.phSel || new Set(); el.checked ? S.phSel.add(el.dataset.phsel) : S.phSel.delete(el.dataset.phsel); render(); return true; }
+  if (el.dataset.phselall != null){ S.phSel = S.phSel || new Set(); const q = String(S.phq || '').trim().toLowerCase();
+    for (const s of phxCandidates().map(phxState)) if ((S.phAll || s.st !== 'moved') && (!q || String(nm(s.p.mrn)).toLowerCase().includes(q) || s.p.mrn.includes(q))) el.checked ? S.phSel.add(s.p.mrn) : S.phSel.delete(s.p.mrn); render(); return true; }
+  if (el.dataset.phall != null){ S.phAll = el.checked; render(); return true; }
+  if (el.dataset.phdays != null){ S.phDays = +el.value; render(); return true; }
+  if (el.id === 'phSubTo'){ S.phSubTo = el.value; return true; }
+  return false;
+}
+// ===== /page: pharmacy =====
+
 // ===== page: reports =====
 // Reports › REMS uploads: same-day rate, outstanding forms and who owns them (Treating Technician on the administered kit).
 // Kept off Access on purpose; per-person numbers live only here.
@@ -6897,10 +7483,10 @@ async function pinHash(salt, pin){
 }
 function adminCardHTML(){
   const head = '<section class="card set-admin"><h3>Admin</h3>', pin = (S.shared || {}).adminPin;
-  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
+  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts, pharmacies.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
     : `<p class="small">No admin PIN yet. Set one (4 to 8 digits) to open Admin. It's saved in the workbook for everyone.</p><div class="row"><input id="admPinNew" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="New PIN" aria-label="New admin PIN" style="max-width:140px"><input id="admPinNew2" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Again" aria-label="New admin PIN again" style="max-width:140px"><button class="btn" data-act="admPinSet">Set PIN</button></div>`) + '</section>';
   return head + `<div class="row"><span class="small muted grow">Unlocked on this screen until ${new Date(S.adminUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</span><button class="btn ghost sm" data-act="admPinChange">Change PIN</button><button class="btn ghost sm" data-act="admLock">Lock</button></div>
-    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}</section>`;
+    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}${admPharmHTML()}</section>`;
 }
 // Test patients: Settings › Admin only; today only; never in a sheet (see testAppts)
 function admTestHTML(){
@@ -7220,7 +7806,7 @@ const ACT = {
   demoReset: () => { S.store?.reset?.(); location.reload(); },
   dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
-Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_SETTINGS);
+Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_PHARM, ACT_SETTINGS);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal'){ closeModal(); return; }
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
@@ -7247,6 +7833,7 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.dataset.phc || el.dataset.phk || el.dataset.phg){ phInput(el); return; }   // Admin › Pharmacies draft
   if (el.dataset.prn && S.prn){ const [i, f] = el.dataset.prn.split('|'); if (S.prn.list[+i]) S.prn.list[+i][f] = el.value; }
   if (el.dataset.rk && S.prn){ const [i, f] = el.dataset.rk.split('|'); if (S.prn.rk[+i]) S.prn.rk[+i][f] = el.value; }
   if (el.id === 'coText'){ const first = S.coEdit == null; S.coEdit = el.value; coAutosave(); if (first){ const en = $('#coEditNote'); if (en) en.innerHTML = EDIT_HINT; } }
@@ -7266,6 +7853,7 @@ document.addEventListener('change', e => {
   if (el.id === 'benFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readBenFile(f); return; }
   if (el.id === 'apptShrinkOk'){ const b = $('#apptGo'); if (b) b.disabled = !el.checked; return; }
   if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
+  if (phChange(el)) return;
   if (el.id === 'bpFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) bpReadFile(f); return; }
   if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
@@ -7458,7 +8046,7 @@ async function reload1(quiet){
   if (!quiet) busy('Refreshing…');
   try {
     const d = await S.store.load();
-    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles(); S.rems = d.rems || [];
+    S.tables = d.tables; S.ref = d.ref || {}; S.besse = d.besse; S.besseSheet = d.besseSheet; S.dailyHdr = d.dailyHdr || null; S.profiles = d.profiles || []; applyProfiles(); S.rems = d.rems || []; S.phx = parsePhxRows(d.phx || []);
     const missing = ['patients','kits','appts'].filter(k => !S.tables[k]);
     if (missing.length){ S.loadErr = `Couldn’t find these tables in the workbook: ${missing.map(k => ({ patients:'Master Patient Tracker', kits:'Inventory', appts:'Appt List (NextGen)' }[k])).join(', ')}. The panel looks for their column headers.`; S.loaded = false; render(); return; }
     // S.visit: a change that hasn't reached the file yet (S.unsaved, the saveVisit failsafe) is merged back in, not dropped
@@ -7612,12 +8200,12 @@ function packLoad(d, store){
     let last = tb.values.length - 1; while (last >= 0 && !tb.snap(last).some(v => v !== null && v !== '')) last--;
     tables[k] = { name: tb.name, sheet: tb.sheet, headers: tb.headers, values: tb.values.slice(0, last + 1), fm: tb.formulas.slice(0, last + 1).map(r => r.map(x => isF(x) ? '1' : '0').join('')), fcol: tb.formulaCol };
   }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [], docs: Object.fromEntries(DOC_KEYS.map(k => [k, store.getDoc(k)])) };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], phx: d.phx || [], vlog: d.vlog || [], docs: Object.fromEntries(DOC_KEYS.map(k => [k, store.getDoc(k)])) };
 }
 function hydrate(d){
   const tables = {};
   for (const [k, x] of Object.entries(d.tables)){ const tb = new Tbl(k, x.name, x.sheet, x.headers, x.values, x.fm.map(s => [...s].map(c => c === '1' ? '=' : ''))); tb.formulaCol = x.fcol; tables[k] = tb; }
-  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], vlog: d.vlog || [] };
+  return { tables, ref: d.ref, besse: d.besse, besseSheet: d.besseSheet, dailyHdr: d.dailyHdr || null, profiles: d.profiles || [], rems: d.rems || [], phx: d.phx || [], vlog: d.vlog || [] };
 }
 function RemoteStore(){
   const pend = new Map(); let docs = {}; let onChanged = null;
@@ -7633,6 +8221,7 @@ function RemoteStore(){
     addMany: (k, list) => call('addMany', [k, list]),
     upsertBenefits: rows => call('upsertBenefits', [rows]),
     upsertRems: rows => call('upsertRems', [rows]),
+    savePharm: (mrn, row) => call('savePharm', [mrn, row]),
     appendVisitLog: rows => call('appendVisitLog', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
@@ -7674,7 +8263,7 @@ function openFull(pop){
       const { rid, op, args } = m;
       if (op === 'nfy'){ try { reply({ rid, ok: true, res: await nfyCall(args[0], ...(args[1] || [])) ?? null }); } catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); } return; }   // Settings sheet / Teams test from the full-screen view
       const read = op === 'load' || op === 'freshDoc';
-      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','savePharm','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
