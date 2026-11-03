@@ -20,7 +20,7 @@ const CH = new Map(); { let cur = null;
     if (cur) cur.push(l);
   } }
 const chunk = n => { assert(CH.has(n), 'top-level definition not found: ' + n); return CH.get(n).join('\n'); };
-const NEED = ['MS', 'ymd', 'todaySerial', 'sDate', 'dowOf', 'DOW', 'fmtD', 'isoOf', 'esc', 'IND', 'suggestDays', 'apptInfo', 'inductionModel', 'credLabel',
+const NEED = ['MS', 'ymd', 'todaySerial', 'sDate', 'dowOf', 'DOW', 'fmtD', 'isoOf', 'esc', 'IND', 'suggestDays', 'PS', 'phxRoute', 'apptInfo', 'inductionModel', 'credLabel',
   'MODALITY', 'parseRate', 'freqRate', 'RATE_LABEL', 'fmtN', 'stKey', 'accStatuses', 'accDefaultSt', 'CAP0', 'capOf', 'BLOCKS', 'chairBlock', 'provCredOf',
   'tmplOf', 'tmplSum', 'wkStart', 'slotOf', 'modeOf', 'accessModel', 'keptModel', 'DN5', 'ACCESS_SCHEMA', 'accessBook', 'accXlsx'];
 
