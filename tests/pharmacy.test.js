@@ -184,6 +184,14 @@ t('sheet: row text, JSON round trip, upsert by MRN keeps others, header kept', (
   const m = C.parsePhxRows(v); assert.strictEqual(m.get('900223').xf.on, false); assert.strictEqual(m.get('900224').rx.kits, 4);
   assert.strictEqual(C.parsePhxRows([['MRN', 'Data (JSON)'], ['900225', '{bad']]).size, 0);
 });
+t('sheet layout: #64 columns first and unchanged, so rows already on the live sheet still parse', () => {
+  const C = make(), OLD = ['MRN', 'Patient', 'Current pharmacy', 'Transfer to', 'Benefit results', 'Rx submitted', 'Transfer', 'Rx/refill sent', 'Kits on Rx', 'Kits left', 'Refill requested', 'Updated', 'By', 'Data (JSON)'];
+  deq(C.PHX_COLS.slice(0, OLD.length), OLD);
+  const old = [OLD, ['900232', 'ZZT232', 'Genoa', '', '', '', '', '', '', '', '', '', '', JSON.stringify({ rx: { sent: '2026-10-01', kits: 4 } })]];
+  assert.strictEqual(C.parsePhxRows(old).get('900232').rx.kits, 4);
+  const v = C.mergePhx(old, '900233', C.phxRow('900233', { rx: { sent: '2026-11-01', kits: 2 } }, {}));
+  deq(v[0], C.PHX_COLS); const m = C.parsePhxRows(v); assert.strictEqual(m.get('900232').rx.kits, 4); assert.strictEqual(m.get('900233').rx.kits, 2);
+});
 t('counts by benefit: per ranked pharmacy, who could move there and each response', () => {
   const P = [pt('900226', 'Genoa'), pt('900227', 'Genoa'), pt('900228', 'Advantage')];
   const C = make({ P, phx: new Map([['900226', { xf: { resp: { besse: { sub: '2026-11-01', cls: 'cov' } } } }], ['900227', { xf: { resp: { besse: { sub: '2026-11-01' } } } }]]) });

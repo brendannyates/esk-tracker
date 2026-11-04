@@ -1152,7 +1152,7 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .ph-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;min-width:96px}
 .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 12px;align-items:end} .ph-grid .lbl{display:flex;flex-direction:column;gap:4px;margin:0} .ph-grid .ph-note{grid-column:1/-1}
 .ph-grp{margin-top:12px} .ph-grp h4{margin:0;font-size:14px}
-.set-admin .adm-row .fld{flex:1 1 auto}
+.set-admin .adm-row .fld{flex:1 1 auto} .pg-compliance td.inv-wrap,.pg-pharmacy td.inv-wrap{white-space:normal;max-width:320px}
 </style>
 </head>
 <body>
@@ -1758,7 +1758,7 @@ function OfficeStore(){
         for (let n = 0; n < 3; n++){
           const u = ws.getUsedRangeOrNullObject(true); u.load('values'); await ctx.sync();
           const vals = u.isNullObject ? [] : u.values, head = vals.length && String(vals[0][0] ?? '').trim() === 'MRN';
-          if (!head){ const h = ws.getRange('A1').getResizedRange(0, W - 1); h.numberFormat = [Array(W).fill('@')]; h.values = [PHX_COLS]; }
+          if (!head || vals[0].length < W || PHX_COLS.some((c, k) => String(vals[0][k] ?? '').trim() !== c)){ const h = ws.getRange('A1').getResizedRange(0, W - 1); h.numberFormat = [Array(W).fill('@')]; h.values = [PHX_COLS]; }   // new or older header (columns are only ever added at the end)
           let i = vals.findIndex((r, k) => k > 0 && mrnKey(r[0]) === mrn); if (i < 0) i = Math.max(1, vals.length);
           const rg = ws.getRange('A1').getOffsetRange(i, 0).getResizedRange(0, W - 1); rg.numberFormat = [Array(W).fill('@')]; rg.values = [row.map(v => String(v ?? ''))];
           await ctx.sync();
@@ -1766,6 +1766,41 @@ function OfficeStore(){
           if (mrnKey(chk.values[0][0]) === mrn) return true;
         }
         throw new Error('The pharmacy record didn’t save. Try again.');
+      });
+    },
+    // BIDF on the Benefits tab: the BIDF_COLS after the Sohar columns (added to tblBenefits when missing; the Sohar import only
+    // writes its own columns, so these stay put). The MRN's row, or a new row with MRN and Patient so an import never reuses it.
+    async saveBidf(mrn, name, vals){
+      return Excel.run(async ctx => {
+        let t = ctx.workbook.tables.getItemOrNullObject(BEN_TABLE); await ctx.sync();
+        if (t.isNullObject){
+          let ws = ctx.workbook.worksheets.getItemOrNullObject(BEN_SHEET); await ctx.sync();
+          if (ws.isNullObject) ws = ctx.workbook.worksheets.add(BEN_SHEET);
+          else { const u = ws.getUsedRangeOrNullObject(true); await ctx.sync(); if (!u.isNullObject) throw new Error(`Stopped: the "${BEN_SHEET}" sheet already has data but no ${BEN_TABLE} table.`); }
+          const H = [...BEN_COLS, ...BIDF_COLS], h = ws.getRange('A1').getResizedRange(0, H.length - 1); h.numberFormat = [H.map(() => '@')]; h.values = [H];
+          const nt = ws.tables.add(h, true); nt.name = BEN_TABLE; await ctx.sync(); t = nt;
+        }
+        const hr = t.getHeaderRowRange(); hr.load('values'); await ctx.sync();
+        let hn = hr.values[0].map(norm); const miss = BIDF_COLS.filter(c => !hn.includes(norm(c)));
+        for (const c of miss) t.columns.add(null, null, c);
+        if (miss.length){ await ctx.sync(); const h2 = t.getHeaderRowRange(); h2.load('values'); await ctx.sync(); hn = h2.values[0].map(norm); }
+        const cm = hn.indexOf('mrn'), cp = hn.indexOf('patientname'); if (cm < 0) throw new Error(`Stopped: no MRN column on ${BEN_TABLE}.`);
+        const body = t.getDataBodyRange(); body.load('rowCount,values'); await ctx.sync();   // a table always keeps one data row, maybe empty
+        let r = body.values.findIndex(v => benKey(v[cm]) && benKey(v[cm]) === benKey(mrn));
+        if (r < 0 && body.rowCount === 1 && body.values[0].every(v => v === '' || v == null)) r = 0;   // the empty row a new table starts with
+        if (r < 0){ const row = hn.map(() => ''); row[cm] = String(mrn); if (cp >= 0) row[cp] = name || ''; for (const [k, v] of Object.entries(vals)) row[hn.indexOf(norm(k))] = String(v ?? '');
+          t.rows.add(null, [row]); await ctx.sync(); return { added: 1 }; }
+        const fresh = !benKey(body.values[r][cm]), W2 = fresh ? { MRN: String(mrn), 'Patient Name': name || '', ...vals } : vals;
+        for (const [k, v] of Object.entries(W2)){ const c = hn.indexOf(norm(k)); if (c < 0) continue; const cell = t.getDataBodyRange().getCell(r, c); cell.numberFormat = [['@']]; cell.values = [[String(v ?? '')]]; }
+        await ctx.sync(); return { updated: 1 };
+      });
+    },
+    // Add a column at the right end of the Master Patient Tracker (e.g. "2026 BIDF"); nothing happens if it is already there.
+    async addPtColumn(header){
+      return Excel.run(async ctx => {
+        const t = ctx.workbook.tables.getItem(names.patients), h = t.getHeaderRowRange(); h.load('values'); await ctx.sync();
+        if (h.values[0].some(v => norm(v) === norm(header))) return false;
+        t.columns.add(null, null, header); await ctx.sync(); return true;
       });
     },
     async saveProfile(p){
@@ -2040,7 +2075,7 @@ function DemoStore(){
   const ref = { pharmacy:['Besse','Genoa','Other Specialty'], dose:[14,28,56,70,84,'Marked For Disposal'], disposalmethod:['Blue Bin','Spravato Return'], yesno:['Yes','No'], status:['Pending Start','Active','Paused','Discontinued','Did Not Start'], treatmentfrequency:['2x per week','1x per week','EOW','Monthly','Other'], coverageoptions:['MD & NP','MD Only'] };
   const t = { kits: [INV_H, inv, INV_F, invCalc], patients: [PT_H, ptVals, PT_F, null], appts: [AP_H, apVals, AP_F, null], audit: [AUD_H, audVals, AUD_F, null], daily: [DC_H, dcVals, DC_F, null] };
   { const bd = isoOf(T - 3), b = (mrn, name, pay, cp, co, dr, ds, orr, os, st) => [String(mrn), name, '', pay, 'PPO', 'In network', 'Individual', '2026-01-01', '2026-12-31', cp, co, '500', dr, ds, '4000', orr, os, '', st, bd, 'Verification', bd + ' 09:00'];   // fake Sohar benefits
-    t.benefits = [BEN_COLS, [b(900101, 'ALDBEN', 'Aetna', '30', '20%', '100', 'Approaching', '2500', 'Not met', 'complete.eligible'), b(900102, 'BROCAM', 'Cigna', '0', '10%', '0', 'Met', '800', 'Approaching', 'complete.eligible'), b(900104, 'DUNEMI', 'Blue Shield', '', '', '', '', '', '', 'complete.ineligible (INACTIVE)')], new Set(), null]; }
+    t.benefits = [BEN_COLS, [b(900101, 'ALDBEN', 'Aetna', '30', '20%', '100', 'Approaching', '2500', 'Not met', 'complete.eligible'), b(900102, 'BROCAM', 'Cigna', '0', '10%', '0', 'Met', '800', 'Approaching', 'complete.eligible'), b(900104, 'DUNEMI', 'Blue Shield', '', '', '', '', '', '', 'complete.ineligible (INACTIVE)'), Object.assign(b(900107, 'GRAHAL', 'Anthem Blue Cross', '25', '20%', '250', 'Not met', '3000', 'Not met', 'complete.eligible'), { 20: 'Discovery' })], new Set(), null]; }
   // Shared between demo tabs (the ESK Tracker demo and the ESK Bays demo side by side), like two people on one workbook:
   // the documents and table values live in localStorage (eskDemoShared, today only); another tab's save fires the storage event.
   const SHARE = 'eskDemoShared';
@@ -2074,9 +2109,14 @@ function DemoStore(){
     async setDropdown(colHeader, refHeader, values){ ref[norm(refHeader)] = values.slice(); await new Promise(r => setTimeout(r, 150)); return { source: `REF › ${refHeader}` }; },
     async appendVisitLog(rows){ vlogDemo.push(...rows); },
     async pruneVisitLog(keys){ const d = new Set(keys), n = vlogDemo.length; vlogDemo.splice(0, n, ...vlogDemo.filter(r => !d.has(r[1]))); return n - vlogDemo.length; },
+    async saveBidf(mrn, name, vals){ const B = t.benefits, H = B[0]; for (const c of BIDF_COLS) if (!H.includes(c)){ H.push(c); B[1].forEach(r => r.push('')); }
+      let row = B[1].find(r => benKey(r[0]) === benKey(mrn)); if (!row){ row = H.map(() => ''); row[0] = String(mrn); row[1] = name || ''; B[1].push(row); }
+      for (const [k, v] of Object.entries(vals)) row[H.indexOf(k)] = String(v ?? ''); await new Promise(r => setTimeout(r, 120)); return true; },
+    async addPtColumn(header){ const P = t.patients; if (P[0].some(v => norm(v) === norm(header))) return false; P[0].push(header); P[1].forEach(r => r.push('')); return true; },
     async savePharm(mrn, row){ const m = mergePhx(phxDemo, mrn, row); phxDemo.splice(0, phxDemo.length, ...m); await new Promise(r => setTimeout(r, 120)); return true; },
     async upsertRems(rows){ const m = mergeRems(rems, rows); rems.splice(0, rems.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { added: m.added, updated: m.updated }; },
-    async upsertBenefits(rows){ const cur = t.benefits[1], m = mergeBenefits(cur, rows); cur.splice(0, cur.length, ...m.values); await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
+    async upsertBenefits(rows){ const W = BEN_COLS.length, cur = t.benefits[1], extra = t.benefits[0].length - W, tail = new Map(cur.map(r => [benKey(r[0]), r.slice(W)])), m = mergeBenefits(cur.map(r => r.slice(0, W)), rows); cur.splice(0, cur.length, ...m.values.map(r => [...r, ...(tail.get(benKey(r[0])) || Array(extra).fill(''))]));   // like the workbook: the import leaves the BIDF columns alone
+      await new Promise(r => setTimeout(r, 150)); return { updated: m.updated, added: m.added }; },
     async clearCells(k, cells){ const [, vals, fs] = t[k]; for (const [r, c, exp] of cells){ if (fs.has(c)) throw new Error('Stopped: formula column.'); if (!same(vals[r][c], exp)) throw new Error('The Daily Count tab changed. Refresh and try again.'); } for (const [r, c] of cells) vals[r][c] = ''; await new Promise(r => setTimeout(r, 100)); },
     async setCells(sheet, cells){ if (sheet === dh.sheet){ for (const [a, v] of cells){ const r = +a.slice(1) - 2; if (r >= 0 && r < 4) dh.values[r][1] = (v && typeof v === 'object') ? v.date : v; } return; } for (const [a, v] of cells){ const m = a.match(/^([A-Z]+)(\d+)$/); const c = m[1].split('').reduce((n, ch) => n*26 + ch.charCodeAt(0)-64, 0) - 1; const r = +m[2] - 1; while (besse.length <= r) besse.push(Array(12).fill('')); besse[r][c] = (v && typeof v === 'object') ? v.date : v; } },
     getDoc(key){ return docs[key] ?? null; },
@@ -2091,7 +2131,7 @@ function DemoStore(){
     watch(cb){ window.addEventListener('storage', e => { if (e.key === SHARE && pull()) cb('docs'); }); },
     reset(){ try { localStorage.removeItem(SHARE); } catch {} },
   };
-  for (const m of ['update', 'add', 'addMany', 'updateMany', 'setDoc', 'setDropdown', 'upsertBenefits', 'upsertRems', 'savePharm', 'clearCells', 'setCells']){   // every write is shared
+  for (const m of ['update', 'add', 'addMany', 'updateMany', 'setDoc', 'setDropdown', 'upsertBenefits', 'upsertRems', 'savePharm', 'saveBidf', 'addPtColumn', 'clearCells', 'setCells']){   // every write is shared
     const fn = store[m]; store[m] = async function(...a){ const r = await fn.apply(this, a); share(); return r; }; }
   return store;
 }
@@ -3117,7 +3157,7 @@ function render(){
   app.innerHTML = `<div class="app" data-mode="${S.mode}">
     <aside class="rail">
       ${brand}
-      <div class="navwrap"><button type="button" class="navarr l" aria-label="Scroll tabs left" hidden>${NAV_IC.left}</button><nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('pharmacy', 1)}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav><button type="button" class="navarr r" aria-label="Scroll tabs right" hidden>${NAV_IC.right}</button></div>
+      <div class="navwrap"><button type="button" class="navarr l" aria-label="Scroll tabs left" hidden>${NAV_IC.left}</button><nav class="nav" aria-label="Areas">${['today', 'schedule', 'inventory', 'patients'].map(v => navBtn(v)).join('')}${navBtn('pharmacy', 1)}${navBtn('compliance', 1)}${navBtn('access', 1)}${navBtn('reports', 1)}${navBtn('settings', 1)}</nav><button type="button" class="navarr r" aria-label="Scroll tabs right" hidden>${NAV_IC.right}</button></div>
       <div class="sec">
         ${S.mode === 'demo' ? `<button class="ni rt" data-act="demoBack" title="Back to the install page">← Back</button><button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <div class="pres pres-chip" data-pres="chip">${presenceHTML('chip')}</div>
@@ -3389,7 +3429,7 @@ function actionHTML(){
     body: `<div class="small muted">One email per clinician. Their clinician on the tracker does the MADRS, not whoever the visit is booked with.</div>${clinList(false)}
       <div class="sfoot"><button class="btn sm" data-act="madrsRemSent">Mark sent</button><button class="btn sm ghost" data-act="madrsRemCopy">Copy all instead</button><span class="small muted">cc ${madrsCc().length ? esc(madrsCc().join('; ')) : '<span class="warnText">help email and practice leader not set (Settings)</span>'}</span></div>` }));
   // 7–9. Needs scheduling, Treatment starts, Admin to-do
-  rows.push(schedHTML(), startsHTML(), adminHTML());
+  rows.push(schedHTML(), startsHTML(), adminHTML(), ...cmTaskRows());
   // 10. Daily audit
   const la = M.la, aud = S.aud && S.aud.date === isoOf(T) ? S.aud : null; const lastAt = aud?.scans?.length ? Math.max(...aud.scans.map(x => x.at || 0)) : 0;
   rows.push(la.date === T ? taskRow({ t: 'Daily audit', id: 'sch:audit', done: true, d: `Done today${lastAt ? ' ' + new Date(lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}${aud?.a1 ? ' by ' + esc(aud.a1) : la.src ? ' (' + esc(la.src) + ')' : ''}` })
@@ -6357,6 +6397,7 @@ function ptPageHTML(mrn){
     taskRow({ t: 'Protocol', d: pd, done: !needsProto(p), tone: !needsProto(p) ? '' : !p.protoExp || p.protoExp < T ? 'bad' : 'warn', btn: ptBtn('protoRenew', mrn, 'Protocol renewed…') }),
     taskRow({ t: 'Consent', d: 'Signed with each protocol renewal. Printing it is not recorded.', btn: ptBtn('consent', mrn, 'Print consent') }),
     taskRow({ t: 'MADRS', d: needsMadrs(p) ? `${p.lastMadrs != null ? `Last ${fmtD(p.lastMadrs, 'full')}` : 'None on file'} · due since ${fmtD(p.authExp - MADRS_DAYS, 'full')}` : `Not due${p.lastMadrs != null ? ` · last ${fmtD(p.lastMadrs, 'full')}` : ''}`, done: !needsMadrs(p), tone: needsMadrs(p) ? 'bad' : '', btn: ptBtn('madrsDo', mrn, 'MADRS collected…') }),
+    cmPatientRows(mrn),
   ].join('');
   const thru = scheduledThru(mrn); const sd = taskGet(mrn, 'sched'); const so = R.some(r => r.k === 'sched');
   const nextF = factsDL([
@@ -6605,8 +6646,8 @@ const remsOf = key => remsToday().opps.find(o => o.appt?.key === key) || null;
 //              on: true | false (transfer this patient), to: pharmacy id, done: { at, by, from, to } (Pharmacy column rewritten) }
 //   rec.rx = { ph: pharmacy id, sent: 'YYYY-MM-DD' last Rx or refill sent to the pharmacy, kits: fills on it (first fill + refills),
 //              adj: kits used from it before they were logged, req: { at, by } refill asked of the provider (entered in NextGen) }
-const PHX_SHEET = 'ESK Pharmacy';
-const PHX_COLS = ['MRN', 'Patient', 'Current pharmacy', 'Transfer to', 'Benefit results', 'Rx submitted', 'Transfer', 'Rx/refill sent', 'Kits on Rx', 'Kits left', 'Refill requested', 'Updated', 'By', 'Data (JSON)'];
+const PHX_SHEET = 'ESK Pharmacy';   // per-patient records: pharmacy transfers and refills, plus REMS enrollment and the weekly REMS calls (row _rems). Name kept from #64.
+const PHX_COLS = ['MRN', 'Patient', 'Current pharmacy', 'Transfer to', 'Benefit results', 'Rx submitted', 'Transfer', 'Rx/refill sent', 'Kits on Rx', 'Kits left', 'Refill requested', 'Updated', 'By', 'Data (JSON)', 'REMS setting', 'REMS re-enrollment'];   // REMS columns added after #64's, so its rows still line up
 const PHX_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PHX_BLANK = { id: '', name: '', match: '', rank: null, orderDow: null, shipDays: null, start: '', contact: '', email: '', phone: '', fax: '', notes: '' };
 // Order days and shipping times are not known yet: Admin fills them in. Besse is clinic stock, the others are per patient.
@@ -6667,7 +6708,12 @@ function phxRow(mrn, rec, info){
     R.filter(([, r]) => r.cls).map(([id, r]) => `${n(id)}: ${phCls(r.cls)?.label || r.cls}`).join('; '),
     R.filter(([, r]) => r.sub).map(([id, r]) => `${n(id)} ${r.sub}`).join('; '),
     xf.done ? `Done ${xf.done.at}` : xf.on ? 'Yes' : xf.on === false ? 'No' : '',
-    rx.sent ? `${rx.sent}${rx.ph ? ' ' + n(rx.ph) : ''}` : '', rx.kits ?? '', info.left ?? '', rx.req?.at || '', info.now || '', info.by || '', JSON.stringify(rec)];
+    rx.sent ? `${rx.sent}${rx.ph ? ' ' + n(rx.ph) : ''}` : '', rx.kits ?? '', info.left ?? '', rx.req?.at || '', info.now || '', info.by || '', JSON.stringify(rec), ...phxRemsCells(rec)];
+}
+function phxRemsCells(rec){
+  const r = rec.rems || {}, h = id => (typeof hcsById === 'function' && hcsById(id)?.name) || id || '', x = (r.re || []).filter(y => !y.confirmed && !y.cx).slice(-1)[0];
+  const last = x && REMS_STEPS.slice().reverse().find(([k]) => x[k]);
+  return [r.hcs ? `${h(r.hcs)}${r.enrolled ? ' ' + r.enrolled : ''}` : '', x ? `to ${h(x.to)}: ${last ? `${lc1(last[1])} ${x[last[0]]}` : 'started ' + x.opened}` : ''];
 }
 // upsert one MRN's row into the sheet's values (header first); rec null removes it
 function mergePhx(values, mrn, row){
@@ -6821,6 +6867,105 @@ function rxList(){
   return out.sort((a, b) => a.rank - b.rank || (a.reqBy ?? 1e9) - (b.reqBy ?? 1e9) || String(nm(a.p.mrn)).localeCompare(String(nm(b.p.mrn))));
 }
 // ---------- end pharmacy logic ----------
+// ---------- REMS enrollment, prescribers, BIDF and coverage changes (no Excel calls; tests/compliance.test.js runs this block in Node) ----------
+// Config (Settings › Admin › REMS and insurance): eskShared.rems = { prescribers: [{ id, name, cred, npi, delegates: [technician names], delAt }],
+//   settings: [{ id, name, remsId, dea: prescriber id (DEA registrant for the setting), start, end, notes }], callDow, callPhone },
+//   eskShared.insNames = [{ name: short insurer name, match: comma-separated words }] (first match wins).
+// Per patient on the ESK Patient Records sheet: rec.rems = { hcs: setting id, enrolled: 'YYYY-MM-DD',
+//   re: [{ id, from, to, opened, by, prepared, sent, returned, submitted, confirmed, cx, note }] }. Weekly REMS calls: row '_rems', rec.calls.
+// BIDF: Benefits tab (tblBenefits) columns after the Sohar ones (BIDF_COLS), plus "<year> BIDF" Yes/No on the Master Patient Tracker.
+const BIDF_COLS = ['BIDF Per Treatment', 'BIDF Course Estimate', 'BIDF Deductible Remaining', 'BIDF OOP Remaining', 'BI Completed', 'BI By', 'BI Insurance', 'BIDF Notes'];
+const REMS_STEPS = [['prepared', 'Form prepared'], ['sent', 'Sent to patient'], ['returned', 'Signed and returned'], ['submitted', 'Submitted to REMS'], ['confirmed', 'Re-enrolled']];
+const REMS_CALL_KEY = '_rems';
+const lc1 = t => t ? t[0].toLowerCase() + t.slice(1) : '';   // 'Submitted to REMS' -> 'submitted to REMS'
+// Short insurer names for the tracker ("Blue Shield Blue Cross Platinum 70 PPO" -> "Blue Shield"). Checked in order; Admin can edit.
+const INS_DEF = [['Blue Shield', 'blue shield'], ['Anthem', 'anthem, blue cross'], ['Aetna', 'aetna'], ['Cigna', 'cigna, evernorth'], ['United', 'united, uhc, umr'], ['Kaiser', 'kaiser'],
+  ['Humana', 'humana'], ['Health Net', 'health net, healthnet'], ['Magellan', 'magellan'], ['MHN', 'mhn'], ['Tricare', 'tricare'], ['Carelon', 'carelon, beacon'], ['Medi-Cal', 'medi-cal, medi cal, medicaid'], ['Medicare', 'medicare']].map(([name, match]) => ({ name, match }));
+let _cmc = null, _cmcOf;
+function cmCfg(){
+  const sh = S.shared || {}; if (_cmc && _cmcOf && _cmcOf[0] === sh.rems && _cmcOf[1] === sh.insNames) return _cmc;
+  const r = sh.rems || {};
+  _cmcOf = [sh.rems, sh.insNames];
+  _cmc = { prescribers: (r.prescribers || []).map(p => ({ id: '', name: '', cred: '', npi: '', delegates: [], ...p })), settings: (r.settings || []).map(s => ({ id: '', name: '', remsId: '', dea: '', start: '', end: '', notes: '', ...s })),
+    callDow: r.callDow ?? 1, callPhone: r.callPhone || '', ins: Array.isArray(sh.insNames) && sh.insNames.length ? sh.insNames : INS_DEF };
+  return _cmc;
+}
+// --- insurance names ---
+function insShort(raw){
+  const s = String(raw ?? '').trim(); if (!s) return ''; const l = s.toLowerCase();
+  const m = cmCfg().ins.find(x => String(x.match || x.name).split(',').map(w => w.trim().toLowerCase()).filter(Boolean).some(w => l.includes(w)));
+  return m ? m.name : s;
+}
+const insSame = (a, b) => insShort(a).toLowerCase() === insShort(b).toLowerCase();
+const sohSer = v => { if (v == null || v === '') return null; if (typeof v === 'number') return Math.floor(v); const s = String(v).trim(); return fromIso(s.slice(0, 10)) ?? toSerial(s); };
+// --- prescribers and delegates ---
+const rxrByName = name => { const n = canonProv(name || '').toLowerCase(); return n ? cmCfg().prescribers.find(p => canonProv(p.name).toLowerCase() === n) || null : null; };
+const rxrById = id => cmCfg().prescribers.find(p => p.id === id) || null;
+const delegateOf = tech => { const t = String(tech || '').trim().toLowerCase(); return t ? cmCfg().prescribers.filter(p => (p.delegates || []).some(d => d.trim().toLowerCase() === t)) : []; };
+// --- healthcare settings ---
+const hcsById = id => cmCfg().settings.find(s => s.id === id) || null;
+// The setting patients should be enrolled under now: started (or no start), not ended, the latest start wins.
+function hcsCurrent(){
+  const T = todaySerial(), L = cmCfg().settings.filter(s => !(fromIso(s.end) != null && fromIso(s.end) < T) && (fromIso(s.start) ?? -1) <= T);
+  return L.sort((a, b) => (fromIso(b.start) ?? -1) - (fromIso(a.start) ?? -1))[0] || null;
+}
+const remsPts = () => { const seen = new Set(); return S.P.filter(p => !seen.has(p.mrn) && seen.add(p.mrn) && !/discontinu|did not start/i.test(p.status)); };
+const reOpen = rems => (rems?.re || []).filter(x => !x.confirmed && !x.cx).slice(-1)[0] || null;
+const reStep = x => REMS_STEPS.find(([k]) => !x[k]) || null;   // next step to do
+function remsState(p){
+  const rec = phxRec(p.mrn).rems || {}, cur = hcsCurrent(), hcs = rec.hcs ? hcsById(rec.hcs) : null, open = reOpen(rec);
+  const base = { p, rec, cur, hcs, open };
+  if (!cmCfg().settings.length) return { ...base, st: 'nocfg', label: 'No healthcare settings in Admin', tone: '' };
+  if (open){ const nx = reStep(open), to = hcsById(open.to); return { ...base, st: 're', next: nx, label: `Re-enrolling under ${to?.name || 'new setting'}${nx ? ' · next: ' + lc1(nx[1]) : ''}`, tone: 'info' }; }
+  if (!hcs) return { ...base, st: 'unassigned', label: 'No healthcare setting', tone: 'warn' };
+  if (cur && hcs.id !== cur.id) return { ...base, st: 'needre', label: `Enrolled under ${hcs.name}: re-enroll under ${cur.name}`, tone: 'bad' };
+  return { ...base, st: 'ok', label: `Enrolled under ${hcs.name}${rec.enrolled ? ' ' + fmtD(fromIso(rec.enrolled)) : ''}`, tone: 'ok' };
+}
+// Apply one step date to an open re-enrollment; confirming moves the patient to the new setting (re-enrollment date = confirmed).
+function reSet(rec, step, day){
+  const rems = rec.rems = rec.rems || {}, x = reOpen(rems); if (!x) return rec;
+  x[step] = day || ''; if (!day) return rec;
+  for (const [k] of REMS_STEPS){ if (k === step) break; if (!x[k]) x[k] = day; }   // a later step implies the earlier ones
+  if (step === 'confirmed'){ rems.hcs = x.to; rems.enrolled = day; }
+  return rec;
+}
+function reStart(rec, to, day, by){
+  const rems = rec.rems = rec.rems || {}; if (reOpen(rems)?.to === to) return rec;
+  const o = reOpen(rems); if (o) o.cx = day;   // a newer setting replaces an unfinished re-enrollment
+  rems.re = [...(rems.re || []), { id: Math.random().toString(36).slice(2, 8), from: rems.hcs || '', to, opened: day, by: by || '' }];
+  return rec;
+}
+// --- weekly REMS call (weeks run Sunday to Saturday) ---
+function remsCall(){
+  const T = todaySerial(), w0 = T - dowOf(T), calls = (phxRec(REMS_CALL_KEY).calls || []).slice().sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const week = calls.find(c => (fromIso(c.at) ?? -1) >= w0) || null, dow = +cmCfg().callDow, due = dowOf(T) >= dow;
+  const open = calls.filter(c => c.outcome === 'actions' && !c.done);
+  return { calls, week, due, dow, open, st: week ? 'done' : due ? 'due' : 'later' };
+}
+// --- BIDF and coverage changes ---
+const bidfYearCol = () => `${sDate(todaySerial()).getUTCFullYear()} BIDF`;
+function bidfOf(mrn){
+  const o = benOf(mrn) || {}, v = k => o[norm(k)];
+  return { perTx: v('BIDF Per Treatment') ?? '', course: v('BIDF Course Estimate') ?? '', ded: v('BIDF Deductible Remaining') ?? '', oop: v('BIDF OOP Remaining') ?? '',
+    done: sohSer(v('BI Completed')), by: v('BI By') ?? '', ins: v('BI Insurance') ?? '', note: v('BIDF Notes') ?? '', o };
+}
+// The tracker's insurance against the latest Sohar result. Insurance drives the authorization, so any change means checking the
+// authorization and redoing the BIDF estimate. Sohar discovery results always count as a change until the BI is redone after them.
+function covState(p){
+  const bi = bidfOf(p.mrn), o = bi.o, tr = insShort(p.insurance), so = insShort(o.soharpayer) || insShort(o.plan), sd = sohSer(o.sohardate);
+  const disc = /discover/i.test(String(o.source ?? '')), mismatch = !!so && !insSame(tr, so);
+  const biOther = bi.done != null && !!bi.ins && !!so && !insSame(bi.ins, so);   // BI was done on a different insurer than Sohar shows
+  const redo = (mismatch || disc || biOther) && (bi.done == null || (sd != null && bi.done < sd) || biOther);
+  const why = [mismatch ? `Tracker says ${tr || 'nothing'}, Sohar ${sd != null ? fmtD(sd) + ' ' : ''}says ${so}` : '', disc ? `Sohar discovery${sd != null ? ' ' + fmtD(sd) : ''} found coverage` : '', biOther ? `BIDF was done for ${insShort(bi.ins)}` : ''].filter(Boolean);
+  return { p, bi, tr, so, sd, disc, mismatch, redo, flag: mismatch || redo, why };
+}
+function bidfState(p){
+  const T = todaySerial(), Y = sDate(T).getUTCFullYear(), bi = bidfOf(p.mrn), t = S.tables.patients, c = t?.cols[norm(bidfYearCol())];
+  const cell = c != null ? String(t.get(p.r, norm(bidfYearCol())) ?? '').trim() : '';
+  const thisYear = yes(cell) || (bi.done != null && sDate(bi.done).getUTCFullYear() === Y);
+  return { p, bi, Y, col: c != null, cell, thisYear, cov: covState(p) };
+}
+// ---------- end compliance logic ----------
 
 // ===== page: pharmacy =====
 // Pharmacy › Transfers (who could move, what each pharmacy said, the transfer toggle, rewriting the tracker), Order plan
@@ -6840,6 +6985,13 @@ function demoPharm(T, docs){
     900113: { xf: { resp: { besse: { sub: d(-12), cls: 'oon', at: d(-8) }, advantage: { sub: d(-8), cls: 'cov', at: d(-6) } }, on: true, to: 'advantage' }, rx: { ph: 'genoa', sent: d(-25), kits: 4, req: { at: d(-1), by: 'Taylor R.' } } },
     900105: { rx: { ph: 'genoa', sent: d(-70), kits: 4 } },
   };
+  // REMS (fake): Provider A's setting is ending; Provider B's took over 3 days ago, so everyone re-enrolls under it
+  sh.rems = { prescribers: [{ id: 'prov-a', name: 'Provider A', cred: 'MD', npi: '1000000001', delegates: ['Taylor R.'], delAt: d(-90) }, { id: 'prov-b', name: 'Provider B', cred: 'MD', npi: '1000000002', delegates: ['Taylor R.', 'Sam K.'], delAt: d(-3) }, { id: 'prov-c', name: 'Provider C', cred: 'NP', npi: '1000000003', delegates: [] }],
+    settings: [{ id: 'hcs-a', name: 'SRL (Provider A)', remsId: 'HCS-DEMO-1', dea: 'prov-a', start: '2025-01-06', end: d(30) }, { id: 'hcs-b', name: 'SRL (Provider B)', remsId: 'HCS-DEMO-2', dea: 'prov-b', start: d(-3) }], callDow: 2, callPhone: '555-0199' };
+  for (const m of [900101, 900102, 900104, 900105, 900106, 900107, 900109, 900110, 900113]) (recs[m] = recs[m] || {}).rems = { hcs: 'hcs-a', enrolled: '2025-03-10' };
+  recs[900101].rems.re = [{ id: 'r1', from: 'hcs-a', to: 'hcs-b', opened: d(-2), by: 'Taylor R.', prepared: d(-2), sent: d(-1) }];
+  recs[900106].rems.re = [{ id: 'r2', from: 'hcs-a', to: 'hcs-b', opened: d(-2), by: 'Taylor R.', prepared: d(-2) }];
+  recs[REMS_CALL_KEY] = { calls: [{ id: 'c1', at: d(-8), by: 'Sam K.', outcome: 'actions', note: 'REMS asked for the 10/20 monitoring form for ALDBEN' }, { id: 'c2', at: d(-15), by: 'Sam K.', outcome: 'none', note: '' }] };
   return [PHX_COLS, ...Object.entries(recs).map(([m, r]) => PHX_COLS.map((c, i) => i === 0 ? m : c === 'Data (JSON)' ? JSON.stringify(r) : ''))];
 }
 PAGES.pharmacy = {
@@ -7147,6 +7299,313 @@ function phChange(el){
   return false;
 }
 // ===== /page: pharmacy =====
+
+// ===== page: compliance =====
+// Compliance › REMS enrollment (healthcare setting per patient, re-enrollments when a new setting takes over), Benefits & BIDF
+// (coverage changes, BIDF for the year) and the weekly REMS call. Config: Settings › Admin › REMS and insurance.
+const ACT_CMP = {};
+const cmMemo = (k, fn) => phMemo('cm:' + k, fn);
+const cmRems = () => cmMemo('rems', () => remsPts().map(remsState));
+const cmBidf = () => cmMemo('bidf', () => remsPts().map(bidfState));
+PAGES.compliance = {
+  label: 'Compliance',
+  title: () => 'Compliance <span>REMS enrollment, benefits, weekly REMS call</span>',
+  sub: () => { const r = cmRems().filter(s => s.st === 'needre').length, c = cmBidf().filter(s => s.cov.flag).length, k = remsCall();
+    return [r ? `${r} to re-enroll` : '', c ? `${c} coverage change${c === 1 ? '' : 's'}` : '', k.st === 'due' ? 'REMS call due' : ''].filter(Boolean).join(' · ') || 'Nothing waiting'; },
+  tools: () => '<button class="btn" data-act="cmXlsx">Download…</button>',
+  html: () => complianceHTML(),
+  badge: () => { if (!S.loaded) return null; const n = cmRems().filter(s => s.st === 'needre').length + cmBidf().filter(s => s.cov.flag).length + (remsCall().st === 'due' ? 1 : 0); return n ? { n } : null; },
+};
+const cmTab = () => ['rems', 'bidf', 'call'].includes(S.cmv) ? S.cmv : 'rems';
+function complianceHTML(){
+  const tab = cmTab();
+  return `<div class="ph-wrap"><div class="seg" role="group" aria-label="Compliance view">${[['rems', 'REMS enrollment'], ['bidf', 'Benefits & BIDF'], ['call', 'Weekly REMS call']].map(([k, l]) => `<button data-act="cmView" data-v="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>
+    ${tab === 'rems' ? cmRemsHTML() : tab === 'bidf' ? cmBidfHTML() : cmCallHTML()}</div>`;
+}
+const cmQ = s => { const q = String(S.cmq || '').trim().toLowerCase(); return !q || String(nm(s.p.mrn)).toLowerCase().includes(q) || s.p.mrn.includes(q); };
+const cmSearch = id => `<input class="fld" type="search" id="${id}" data-input="cmq" placeholder="Search by LASFIR or MRN" value="${esc(S.cmq || '')}" aria-label="Search patients" autocomplete="off">`;
+
+// --- REMS enrollment ---
+function cmRemsHTML(){
+  const C = cmCfg(), L = cmRems(), cur = hcsCurrent(), sel = S.cmSel = S.cmSel || new Set(), show = L.filter(cmQ);
+  if (!C.settings.length) return `<section class="card"><div class="msg info">Add the clinic's prescribers and REMS healthcare settings in Settings › Admin › REMS and insurance. Then assign each patient to their setting here.</div></section>`;
+  const n = k => L.filter(s => s.st === k).length, rxr = id => rxrById(id)?.name || '—';
+  const sets = C.settings.map(s => { const pts = L.filter(x => x.hcs?.id === s.id).length, end = fromIso(s.end);
+    return `<div class="adm-row"><span><b>${esc(s.name)}</b>${cur?.id === s.id ? ' ' + tag('ok', 'Current') : end != null && end < todaySerial() ? ' ' + tag('', 'Ended ' + fmtD(end)) : fromIso(s.start) > todaySerial() ? ' ' + tag('info', 'Starts ' + fmtD(fromIso(s.start))) : ''}
+      <span class="small muted"> · DEA prescriber ${esc(rxr(s.dea))}${s.remsId ? ' · REMS ID ' + esc(s.remsId) : ''}${fromIso(s.start) != null ? ' · from ' + fmtD(fromIso(s.start), 'full') : ''} · ${pts} patient${pts === 1 ? '' : 's'}</span></span></div>`; }).join('');
+  const need = L.filter(s => s.st === 'needre');
+  const delegates = C.prescribers.filter(p => p.delegates?.length).map(p => `<div class="small"><b>${esc(p.name)}</b>${p.cred ? ` (${esc(p.cred)})` : ''}: delegates ${p.delegates.map(esc).join(', ')}</div>`).join('');
+  const stepCell = s => { const x = s.open; if (!x) return s.rec.enrolled ? `<span class="small muted">Enrolled ${fmtD(fromIso(s.rec.enrolled))}</span>` : '';
+    const done = REMS_STEPS.filter(([k]) => x[k]), last = done[done.length - 1];
+    return `<div class="small">${last ? `${esc(last[1])} ${fmtD(fromIso(x[last[0]]))}` : 'Started ' + fmtD(fromIso(x.opened))}<div class="muted">step ${done.length} of ${REMS_STEPS.length}</div></div>`; };
+  return `<section class="card"><div class="inv-ch"><h3>REMS healthcare settings</h3></div>${sets}${delegates ? `<div style="margin-top:8px">${delegates}</div>` : ''}
+    ${phTiles([[n('ok'), cur ? `enrolled under ${cur.name}` : 'enrolled', ''], [n('re'), 're-enrolling', n('re') ? 'info' : ''], [n('needre'), 'need re-enrollment', n('needre') ? 'bad' : ''], [n('unassigned'), 'no setting yet', n('unassigned') ? 'warn' : '']])}</section>
+  ${need.length && cur ? `<section class="card"><div class="inv-ch"><h3>New healthcare setting: ${esc(cur.name)} ${tag('bad', String(need.length))}</h3><button class="btn primary sm" data-act="reStartAll">Start re-enrollment for ${need.length}…</button></div>
+    <p class="small muted">${need.length} patient${need.length === 1 ? ' is' : 's are'} enrolled under an earlier setting. ${esc(rxr(cur.dea))} is the DEA prescriber for ${esc(cur.name)}, so each patient's REMS Enrollment Form has to be re-submitted under it. Starting opens a re-enrollment for each: form prepared, sent to the patient, signed and returned, submitted to REMS, re-enrolled.</p></section>` : ''}
+  <section class="card"><div class="ph-bar">${cmSearch('cmqR')}<span class="grow"></span>
+    <select id="cmAct" class="fld" style="max-width:240px" aria-label="Action for selected">${[['assign', 'Assign to the current setting'], ...REMS_STEPS.map(([k, l]) => ['step:' + k, `Mark ${lc1(l)} today`]), ['start', 'Start re-enrollment']].map(([v, l]) => `<option value="${v}" ${S.cmAct === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <button class="btn sm" data-act="cmBulk" ${sel.size ? '' : 'disabled'}>Apply to ${sel.size || ''} selected</button></div>
+    ${show.length ? `<div class="tw"><table class="t rt"><thead><tr><th class="inv-cb"><input type="checkbox" data-cmselall ${show.every(s => sel.has(s.p.mrn)) ? 'checked' : ''} aria-label="Select all"></th><th>Patient</th><th>Prescriber</th><th>Status</th><th>Re-enrollment</th><th></th></tr></thead><tbody>
+      ${show.map(s => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-cmsel="${esc(s.p.mrn)}" ${sel.has(s.p.mrn) ? 'checked' : ''} aria-label="Select ${esc(nm(s.p.mrn))}"></td>
+        <td data-l="Patient"><b>${esc(nm(s.p.mrn))}</b> <span class="small muted">${esc(s.p.mrn)}</span><div class="small muted">${esc(s.p.status || '')}</div></td>
+        <td data-l="Prescriber">${esc(s.p.provider || '—')}${s.p.provider && !rxrByName(s.p.provider) ? '<div class="small muted">not on the prescriber list</div>' : ''}</td>
+        <td data-l="Status">${tag(s.tone, s.label)}</td><td data-l="Re-enrollment">${stepCell(s)}</td>
+        <td data-l=""><div class="ph-acts">${s.open && s.next ? `<button class="btn sm" data-act="reNext" data-m="${esc(s.p.mrn)}">${esc(s.next[1])}</button>` : ''}<button class="linkbtn" data-act="remsEdit" data-m="${esc(s.p.mrn)}">Edit…</button></div></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="msg ok">No patients match.</div>'}
+    <p class="small muted">Saved on the hidden “${PHX_SHEET}” sheet with MRN and short names only.</p></section>`;
+}
+function openRemsEdit(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; const s = remsState(p), C = cmCfg(), x = s.open;
+  openModal(`<h2>REMS enrollment: ${esc(nm(mrn))}</h2><div class="small muted">MRN ${esc(mrn)} · ${esc(p.provider || 'no rendering provider')}</div>
+    <div class="ph-grid" style="margin-top:10px"><label class="lbl">Healthcare setting enrolled under<select id="reHcs" class="fld"><option value="">Not enrolled yet</option>${C.settings.map(h => `<option value="${esc(h.id)}" ${s.rec.hcs === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select></label>
+      <label class="lbl">Enrollment date<input id="reEnr" type="date" class="fld" value="${esc(s.rec.enrolled || '')}"></label></div>
+    ${x ? `<fieldset class="ph-fs"><legend><b>Re-enrollment under ${esc(hcsById(x.to)?.name || '?')}</b> <span class="small muted">started ${fmtD(fromIso(x.opened))}${x.by ? ' by ' + esc(x.by) : ''}</span></legend>
+      <div class="ph-grid">${REMS_STEPS.map(([k, l]) => `<label class="lbl">${esc(l)}<input type="date" class="fld" data-rest="${k}" value="${esc(x[k] || '')}"></label>`).join('')}
+      <label class="lbl ph-note">Note<input id="reNote" class="fld" value="${esc(x.note || '')}" autocomplete="off" placeholder="e.g. sent by portal, patient asked for a paper copy"></label></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn ghost sm" data-act="reCancel" data-m="${esc(mrn)}">Cancel this re-enrollment</button></div></fieldset>`
+      : `<div class="row" style="margin-top:10px"><label class="small muted" for="reTo">Start a re-enrollment under</label><select id="reTo" class="fld" style="max-width:220px">${C.settings.map(h => `<option value="${esc(h.id)}" ${hcsCurrent()?.id === h.id ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</select><button class="btn sm" data-act="reStartOne" data-m="${esc(mrn)}">Start</button></div>`}
+    ${(s.rec.re || []).filter(r => r !== x).length ? `<details class="small" style="margin-top:8px"><summary>Earlier re-enrollments</summary>${(s.rec.re || []).filter(r => r !== x).map(r => `<div>${esc(hcsById(r.to)?.name || r.to)} · started ${fmtD(fromIso(r.opened))}${r.confirmed ? ' · re-enrolled ' + fmtD(fromIso(r.confirmed)) : r.cx ? ' · cancelled ' + fmtD(fromIso(r.cx)) : ''}</div>`).join('')}</details>` : ''}
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="remsSave" data-m="${esc(mrn)}">Save</button></div>`, true);
+}
+const today = () => isoOf(todaySerial());
+async function remsSave(mrn){
+  if (!CFG.me) return openSettings();
+  const hcs = $('#reHcs')?.value || '', enr = $('#reEnr')?.value || '', steps = {}; document.querySelectorAll('[data-rest]').forEach(el => { steps[el.dataset.rest] = el.value || ''; }); const note = $('#reNote')?.value;
+  if (await phxPut(mrn, rec => { const r = rec.rems = rec.rems || {}; if (hcs) r.hcs = hcs; else delete r.hcs; if (enr) r.enrolled = enr; else delete r.enrolled;
+    const x = reOpen(r); if (x){ for (const [k] of REMS_STEPS) if (k in steps){ if (steps[k]) x[k] = steps[k]; else delete x[k]; } if (note != null) x.note = note.trim(); if (x.confirmed){ r.hcs = x.to; r.enrolled = x.confirmed; } }
+    return rec; }, 'REMS enrollment saved.')) closeModal();
+}
+async function cmBulk(){
+  const L = [...(S.cmSel || [])], act = $('#cmAct')?.value || 'assign', cur = hcsCurrent(), day = today(); if (!L.length) return; if (!CFG.me) return openSettings();
+  if ((act === 'assign' || act === 'start') && !cur) return toast('warn', 'No current healthcare setting. Check the start and end dates in Settings › Admin.');
+  let n = 0; busy(`Saving ${L.length}…`);
+  try { for (const mrn of L){ const rec = JSON.parse(JSON.stringify(phxRec(mrn))), r = rec.rems = rec.rems || {};
+      if (act === 'assign'){ if (reOpen(r)) continue; r.hcs = cur.id; r.enrolled = r.enrolled || ''; if (!r.enrolled) delete r.enrolled; }
+      else if (act === 'start'){ if (r.hcs === cur.id && !reOpen(r)) continue; reStart(rec, cur.id, day, CFG.me); }
+      else { if (!reOpen(r)) continue; reSet(rec, act.slice(5), day); }
+      await S.store.savePharm(mrn, phxRow(mrn, rec, { name: nm(mrn), cur: S.byMrn.get(mrn)?.pharmName || '', now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' })); n++; } }
+  catch (e){ console.error(e); toast('bad', esc(e.message || String(e))); }
+  finally { busy(false); S._selfWriteAt = Date.now(); }
+  S.cmSel.clear(); await reload(true); toast('ok', `Updated ${n} patient${n === 1 ? '' : 's'}${n < L.length ? ` (${L.length - n} skipped: nothing to do for them)` : ''}.`);
+}
+function openReStartAll(){
+  const cur = hcsCurrent(), L = cmRems().filter(s => s.st === 'needre'); if (!cur || !L.length) return;
+  openModal(`<h2>Re-enroll under ${esc(cur.name)}</h2><div class="writes"><b>Opens a re-enrollment for ${L.length} patient${L.length === 1 ? '' : 's'}:</b>${L.map(s => `<div class="small" style="margin-left:14px">${esc(nm(s.p.mrn))} · MRN ${esc(s.p.mrn)} · now ${esc(s.hcs?.name || '—')}</div>`).join('')}</div>
+    <p class="small muted">Each then moves through form prepared, sent to the patient, signed and returned, submitted to REMS and re-enrolled. Re-enrolled moves the patient to ${esc(cur.name)}.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="reStartAllGo">Start ${L.length}</button></div>`);
+}
+async function reStartAllGo(){
+  const cur = hcsCurrent(), L = cmRems().filter(s => s.st === 'needre'); if (!cur || !L.length) return; if (!CFG.me) return openSettings();
+  S.cmSel = new Set(L.map(s => s.p.mrn)); S.cmAct = 'start'; closeModal();
+  const el = $('#cmAct'); if (el) el.value = 'start'; await cmBulk();
+}
+const reOne = async (mrn, fn, ok) => { if (!CFG.me){ openSettings(); return false; } return phxPut(mrn, rec => fn(rec) || rec, ok); };
+
+// --- Benefits & BIDF ---
+function cmBidfHTML(){
+  const L = cmBidf(), show = L.filter(cmQ), Y = L[0]?.Y ?? sDate(todaySerial()).getUTCFullYear(), col = bidfYearCol(), hasCol = S.tables.patients?.cols[norm(col)] != null;
+  const flags = show.filter(s => s.cov.flag), need = show.filter(s => !s.thisYear && !s.cov.flag), done = L.filter(s => s.thisYear).length;
+  const insFix = insFixPlan();
+  const row = s => { const c = s.cov, b = s.bi;
+    return `<tr><td data-l="Patient"><b>${esc(nm(s.p.mrn))}</b> <span class="small muted">${esc(s.p.mrn)}</span><div class="small muted">${esc(s.p.status || '')}</div></td>
+      <td data-l="Insurance">${esc(c.tr || '—')}${c.so && !insSame(c.tr, c.so) ? `<div class="small">Sohar: <b>${esc(c.so)}</b>${c.sd != null ? ' ' + fmtD(c.sd) : ''}</div>` : c.sd != null ? `<div class="small muted">Sohar ${fmtD(c.sd)}${c.disc ? ' (discovery)' : ''}</div>` : ''}</td>
+      <td data-l="BI completed">${b.done != null ? `${fmtD(b.done)}${b.by ? ` <span class="small muted">${esc(b.by)}</span>` : ''}${b.ins ? `<div class="small muted">${esc(insShort(b.ins))}</div>` : ''}` : '—'}</td>
+      <td data-l="BIDF" class="num">${b.perTx !== '' ? esc('$' + b.perTx) + '<div class="small muted">per treatment</div>' : '—'}</td>
+      <td data-l="${esc(col)}">${s.col ? esc(s.cell || '—') : '<span class="muted small">no column</span>'}</td>
+      <td data-l="Status" class="inv-wrap" style="min-width:180px">${c.flag ? `${tag('bad', c.redo ? 'Redo BIDF' : 'Update insurance')}<div class="small">${esc(c.why.join(' · '))}</div>` : s.thisYear ? tag('ok', `BIDF ${Y} done`) : tag('warn', `BIDF ${Y} needed`)}</td>
+      <td data-l=""><div class="ph-acts">${c.mismatch && c.so ? `<button class="btn sm" data-act="insSet" data-m="${esc(s.p.mrn)}" data-v="${esc(c.so)}">Tracker: ${esc(c.so)}</button>` : ''}<button class="btn sm${c.redo || !s.thisYear ? ' primary' : ''}" data-act="bidfEdit" data-m="${esc(s.p.mrn)}">${b.done != null ? 'Redo BIDF…' : 'Enter BIDF…'}</button></div></td></tr>`; };
+  const tbl = L2 => `<div class="tw"><table class="t rt"><thead><tr><th>Patient</th><th>Insurance</th><th>BI completed</th><th class="num">BIDF</th><th>${esc(col)}</th><th>Status</th><th></th></tr></thead><tbody>${L2.map(row).join('')}</tbody></table></div>`;
+  return `<section class="card"><div class="inv-ch"><h3>Benefits & BIDF</h3><span class="grow"></span>${insFix.items.length ? `<button class="btn sm" data-act="insFix">Short insurance names on the tracker (${insFix.items.length})…</button>` : ''}</div>
+    <p class="small muted">A coverage change is the tracker's insurance not matching the latest Sohar result, or any Sohar discovery result. Either means the authorization may not cover the visit and the patient could owe more: check the authorization and redo the BIDF estimate. BIDF details go on the ${BEN_SHEET} tab next to the Sohar columns, and “${esc(col)}” on the Master Patient Tracker is set to Yes.</p>
+    ${phTiles([[L.filter(s => s.cov.flag).length, 'coverage changes', L.some(s => s.cov.flag) ? 'bad' : 'ok'], [L.filter(s => !s.thisYear).length, `BIDF ${Y} needed`, L.some(s => !s.thisYear) ? 'warn' : ''], [done, `BIDF ${Y} done`]])}
+    ${hasCol ? '' : `<div class="msg warn small" style="margin-top:10px">The Master Patient Tracker has no “${esc(col)}” column yet. <button class="btn sm" data-act="bidfCol">Add it</button></div>`}</section>
+  <section class="card"><div class="ph-bar">${cmSearch('cmqB')}</div>
+    ${flags.length ? `<h4 class="set-sub">Coverage changes ${tag('bad', String(flags.length))}</h4>${tbl(flags)}` : '<div class="msg ok">No coverage changes against the latest Sohar results.</div>'}
+    ${need.length ? `<h4 class="set-sub" style="margin-top:14px">BIDF ${Y} needed ${tag('warn', String(need.length))}</h4>${tbl(need)}` : ''}
+    <details class="sec" data-open="cm:bidfdone" ${S.open?.['cm:bidfdone'] ? 'open' : ''}><summary>BIDF ${Y} done ${tag('', String(show.filter(s => s.thisYear && !s.cov.flag).length))}</summary>${tbl(show.filter(s => s.thisYear && !s.cov.flag))}</details></section>`;
+}
+function openBidfEdit(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; const s = bidfState(p), b = s.bi, o = b.o || {}, c = s.cov;
+  const f = (id, lab, val, type = 'number', extra = 'min="0" step="0.01"') => `<label class="lbl">${lab}<input id="${id}" type="${type}" class="fld" value="${esc(val ?? '')}" ${extra}></label>`;
+  openModal(`<h2>BIDF: ${esc(nm(mrn))}</h2><div class="small muted">MRN ${esc(mrn)} · tracker insurance ${esc(c.tr || '—')}${c.so ? ` · Sohar ${esc(c.so)}${c.sd != null ? ' ' + fmtD(c.sd) : ''}${c.disc ? ' (discovery)' : ''}` : ' · no Sohar result imported'}</div>
+    ${c.flag ? `<div class="msg warn small" style="margin-top:8px">${esc(c.why.join(' · '))}. Check the authorization: it's tied to the insurance on file.</div>` : ''}
+    <div class="ph-grid" style="margin-top:10px">${f('bdTx', 'BIDF per treatment ($)', b.perTx)}${f('bdCourse', 'BIDF course estimate ($)', b.course)}
+      ${f('bdDed', 'Deductible remaining', b.ded !== '' ? b.ded : o.deductibleremaining ?? '', 'text', 'placeholder="$ or N/A"')}${f('bdOop', 'Out-of-pocket max remaining', b.oop !== '' ? b.oop : o.oopremaining ?? '', 'text', 'placeholder="$ or N/A"')}
+      ${f('bdDone', 'BI completed', isoOf(todaySerial()), 'date', '')}${f('bdIns', 'Insurance it was done for', insShort(c.so || c.tr), 'text', 'autocomplete="off"')}
+      <label class="lbl ph-note">Notes<input id="bdNote" class="fld" value="${esc(b.note || '')}" autocomplete="off" placeholder="e.g. ref #, rep name"></label></div>
+    ${b.done != null ? `<p class="small muted">Replaces the BIDF from ${fmtD(b.done, 'full')}${b.by ? ' by ' + esc(b.by) : ''}.</p>` : ''}
+    <div class="writes" style="margin-top:8px"><b>Will write to the workbook:</b><div><code>${esc(BEN_SHEET)}</code> this MRN's row: ${BIDF_COLS.map(esc).join(', ')}</div>${s.col ? `<div><code>${esc(bidfYearCol())}</code> on the Master Patient Tracker = Yes (when BI completed is in ${s.Y})</div>` : ''}${c.mismatch && c.so ? `<div class="small">The tracker's Insurance stays ${esc(c.tr || 'blank')}; use “Tracker: ${esc(c.so)}” to change it.</div>` : ''}</div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bidfSave" data-m="${esc(mrn)}">Save BIDF</button></div>`, true);
+}
+async function bidfSave(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings();
+  const v = id => String($('#' + id)?.value ?? '').trim(), done = v('bdDone');
+  if (!fromIso(done)) return toast('warn', 'Enter the date the BI was completed.');
+  if (v('bdTx') === '' && v('bdCourse') === '') return toast('warn', 'Enter the BIDF estimate (per treatment or for the course).');
+  const vals = { 'BIDF Per Treatment': v('bdTx'), 'BIDF Course Estimate': v('bdCourse'), 'BIDF Deductible Remaining': v('bdDed'), 'BIDF OOP Remaining': v('bdOop'), 'BI Completed': done, 'BI By': CFG.me || '', 'BI Insurance': v('bdIns'), 'BIDF Notes': v('bdNote') };
+  const t = S.tables.patients, c = t?.cols[norm(bidfYearCol())], Y = sDate(todaySerial()).getUTCFullYear(), items = [];
+  if (c != null && sDate(fromIso(done)).getUTCFullYear() === Y) t.values.forEach((_, r) => { if (mrnKey(t.get(r, 'mrn')) === mrn && !t.isFormula(r, c) && !yes(t.get(r, norm(bidfYearCol())))) items.push({ r, snap: t.snap(r), changes: [[c, 'Yes']] }); });
+  if (await write('Saving BIDF…', async () => { await S.store.saveBidf(mrn, nm(mrn), vals); if (items.length) await S.store.updateMany('patients', items); }, 'BIDF saved.')) closeModal();
+}
+// rewrite the tracker's Insurance to the short name for one patient (from Sohar) or for everyone (insurance names in Admin)
+function insFixPlan(){
+  const t = S.tables.patients, c = t?.cols.insurance, items = []; if (c == null) return { items, c };
+  t.values.forEach((_, r) => { const raw = t.get(r, 'insurance'); if (raw == null || t.isFormula(r, c)) return; const s = String(raw).trim(), want = insShort(s); if (want && want !== s) items.push({ r, snap: t.snap(r), changes: [[c, want]], from: s, to: want }); });
+  return { items, c, t };
+}
+function openInsFix(){
+  const x = insFixPlan(); if (!x.items.length) return toast('ok', 'Every insurance on the tracker already uses a short name.'); S.insFix = x;
+  const grp = {}; x.items.forEach(i => { const k = `${i.from} → ${i.to}`; grp[k] = (grp[k] || 0) + 1; });
+  openModal(`<h2>Short insurance names on the tracker</h2><div class="writes"><b>Will write to the workbook:</b><div><code>${esc(colLetterFor('patients', x.c))}</code> Insurance: ${x.items.length} cell${x.items.length === 1 ? '' : 's'}</div>
+    ${Object.entries(grp).map(([k, n]) => `<div class="small" style="margin-left:14px">${esc(k)} · ${n}</div>`).join('')}</div>
+    <p class="small muted">Names come from Settings › Admin › Insurance names (first match wins). Rows changed by someone else since the last refresh are skipped.</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="insFixGo">Write to the workbook</button></div>`);
+}
+async function insFixGo(){ const x = S.insFix; if (!x) return; let done = [];
+  if (await write('Writing insurance names…', async () => { done = await S.store.updateMany('patients', x.items.map(({ r, snap, changes }) => ({ r, snap, changes }))); }, () => `Insurance rewritten on ${(done || []).length} of ${x.items.length} rows.`)){ S.insFix = null; closeModal(); } }
+async function insSet(mrn, to){
+  const t = S.tables.patients, c = t?.cols.insurance; if (c == null) return toast('bad', 'No Insurance column on the Master Patient Tracker.'); if (!CFG.me) return openSettings();
+  const items = []; t.values.forEach((_, r) => { if (mrnKey(t.get(r, 'mrn')) === mrn && !t.isFormula(r, c)) items.push({ r, snap: t.snap(r), changes: [[c, to]] }); });
+  await write('Updating insurance…', () => S.store.updateMany('patients', items), `Tracker insurance set to ${esc(to)}. Check the authorization and redo the BIDF.`);
+}
+async function bidfCol(){ if (!CFG.me) return openSettings(); const h = bidfYearCol();
+  await write(`Adding ${h}…`, async () => { await S.store.addPtColumn(h); try { await S.store.setDropdown(h, 'Yes/No', (S.ref.yesno && S.ref.yesno.length ? S.ref.yesno : ['Yes', 'No']), false); } catch (e){ console.warn(e); } }, `Added “${esc(h)}” to the Master Patient Tracker.`); }
+
+// --- weekly REMS call ---
+function cmCallHTML(){
+  const k = remsCall(), C = cmCfg(), T = todaySerial();
+  return `<section class="card"><div class="inv-ch"><h3>Weekly REMS call</h3><span class="grow"></span><button class="btn primary sm" data-act="callLog">Log a call…</button></div>
+    <p class="small muted">Call the REMS program once a week (${PHX_DOW[k.dow] || 'Mon'}s${C.callPhone ? ', ' + esc(C.callPhone) : ''}) to ask about any outstanding compliance actions for the clinic's patients, prescribers or healthcare setting. Weeks run Sunday to Saturday.</p>
+    ${k.week ? `<div class="msg ok">Called this week: ${fmtD(fromIso(k.week.at), 'dow')}${k.week.by ? ' by ' + esc(k.week.by) : ''}. ${k.week.outcome === 'actions' ? 'Actions were needed.' : 'Nothing outstanding.'}</div>` : k.due ? `<div class="msg ${dowOf(T) === k.dow ? 'warn' : 'bad'}">Not called yet this week. ${dowOf(T) === k.dow ? 'Due today.' : `It was due ${fmtD(T - dowOf(T) + k.dow, 'dow')}.`}</div>` : `<div class="msg info">Due ${fmtD(T - dowOf(T) + k.dow, 'dow')}.</div>`}</section>
+  ${k.open.length ? `<section class="card"><div class="inv-ch"><h3>Open actions ${tag('warn', String(k.open.length))}</h3></div>${k.open.map(c => `<div class="adm-row"><span><b>${fmtD(fromIso(c.at), 'dow')}</b> ${esc(c.note || '')} <span class="small muted">${esc(c.by || '')}</span></span><button class="btn sm" data-act="callDone" data-at="${esc(c.id)}">Done</button></div>`).join('')}</section>` : ''}
+  <section class="card"><div class="inv-ch"><h3>Calls ${tag('', String(k.calls.length))}</h3></div>${k.calls.length ? `<div class="tw"><table class="t rt"><thead><tr><th>Date</th><th>By</th><th>Result</th><th>Notes</th></tr></thead><tbody>${k.calls.slice(0, 26).map(c => `<tr><td data-l="Date">${fmtD(fromIso(c.at), 'dow')}</td><td data-l="By">${esc(c.by || '')}</td><td data-l="Result">${c.outcome === 'actions' ? tag(c.done ? 'ok' : 'warn', c.done ? `Actions done ${fmtD(fromIso(c.done))}` : 'Actions needed') : tag('', 'Nothing outstanding')}</td><td data-l="Notes" class="inv-wrap">${esc(c.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No calls logged yet.</div>'}</section>`;
+}
+function openCallLog(){
+  openModal(`<h2>Log the REMS call</h2><div class="ph-grid" style="margin-top:8px"><label class="lbl">Date<input id="clAt" type="date" class="fld" value="${esc(today())}"></label>
+    <label class="lbl">Result<select id="clOut" class="fld"><option value="none">Nothing outstanding</option><option value="actions">Actions needed</option></select></label>
+    <label class="lbl ph-note">Notes<input id="clNote" class="fld" autocomplete="off" placeholder="What REMS asked for (short names only)"></label></div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="callSave">Save</button></div>`);
+}
+async function callSave(){
+  if (!CFG.me) return openSettings(); const at = $('#clAt')?.value || '', outcome = $('#clOut')?.value || 'none', note = String($('#clNote')?.value || '').trim();
+  if (!fromIso(at)) return toast('warn', 'Enter the call date.'); if (outcome === 'actions' && !note) return toast('warn', 'Note what REMS asked for.');
+  if (await phxPutKey(REMS_CALL_KEY, 'REMS weekly calls', rec => { rec.calls = [{ id: Math.random().toString(36).slice(2, 8), at, by: CFG.me || '', outcome, note }, ...(rec.calls || [])].slice(0, 104); return rec; }, 'Call logged.')) closeModal();
+}
+async function callDone(id){ if (!CFG.me) return openSettings(); await phxPutKey(REMS_CALL_KEY, 'REMS weekly calls', rec => { const c = (rec.calls || []).find(x => x.id === id); if (c) c.done = today(); return rec; }, 'Marked done.'); }
+async function phxPutKey(key, name, fn, ok){ const rec = fn(JSON.parse(JSON.stringify(phxRec(key)))) || {}; return write('Saving…', () => S.store.savePharm(key, phxRow(key, rec, { name, now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' })), ok); }
+
+// --- Schedule rows and the patient card ---
+function cmTaskRows(){
+  if (!S.loaded) return [];
+  const k = remsCall(), R = cmRems(), need = R.filter(s => s.st === 'needre').length, re = R.filter(s => s.st === 're').length, cov = cmBidf().filter(s => s.cov.flag), go = (v, l) => `<button class="btn sm" data-act="cmGo" data-v="${v}">${l}</button>`;
+  return [
+    k.st === 'done' ? taskRow({ t: 'Weekly REMS call', done: true, d: `Called ${fmtD(fromIso(k.week.at), 'dow')}${k.week.by ? ' by ' + esc(k.week.by) : ''}${k.open.length ? ` · ${k.open.length} open action${k.open.length === 1 ? '' : 's'}` : ''}` })
+      : taskRow({ t: 'Weekly REMS call', tone: k.st === 'due' ? 'warn' : '', d: k.st === 'due' ? 'Not called yet this week: ask REMS about outstanding compliance actions' : `Due ${PHX_DOW[k.dow]}`, btn: go('call', 'Log call') }),
+    need || re ? taskRow({ t: `REMS re-enrollment · ${need + re}`, tone: need ? 'bad' : '', d: [need ? `${need} still enrolled under an earlier healthcare setting` : '', re ? `${re} in progress` : ''].filter(Boolean).join(' · '), btn: go('rems', 'Open') }) : '',
+    cov.length ? taskRow({ t: `Coverage changes · ${cov.length}`, tone: 'bad', d: 'Insurance doesn’t match Sohar, or Sohar discovery found coverage: check the authorization and redo the BIDF', btn: go('bidf', 'Open') }) : '',
+  ].filter(Boolean);
+}
+function cmPatientRows(mrn){
+  const p = S.byMrn.get(mrn); if (!p) return '';
+  const r = remsState(p), b = bidfState(p), go = (v, l) => `<button class="btn sm" data-act="cmGo" data-v="${v}" data-m="${esc(mrn)}">${l}</button>`;
+  return [r.st === 'nocfg' ? '' : taskRow({ t: 'REMS enrollment', d: esc(r.label), done: r.st === 'ok', tone: r.st === 'needre' ? 'bad' : r.st === 'unassigned' ? 'warn' : '', btn: `<button class="btn sm" data-act="remsEdit" data-m="${esc(mrn)}">Update…</button>` }),
+    taskRow({ t: `BIDF ${b.Y}`, d: b.cov.flag ? esc(b.cov.why.join(' · ')) + '. Check the authorization and redo the BIDF.' : b.bi.done != null ? `BI completed ${fmtD(b.bi.done, 'full')}${b.bi.perTx !== '' ? ` · $${esc(b.bi.perTx)} per treatment` : ''}` : 'Not done this year', done: b.thisYear && !b.cov.flag, tone: b.cov.flag ? 'bad' : b.thisYear ? '' : 'warn', btn: `<button class="btn sm" data-act="bidfEdit" data-m="${esc(mrn)}">${b.bi.done != null ? 'Redo…' : 'Enter…'}</button>` })].join('');
+}
+
+// --- Download ---
+function cmXlsxAsk(){
+  openModal(`<h2>Download REMS enrollment and benefits</h2><div class="small">Sheets: REMS enrollment, Healthcare settings, Prescribers, Coverage and BIDF, REMS calls.</div>
+    <div class="alert warn small" style="margin-top:8px"><p>It has MRNs and short names. Keep the file in approved locations (OneDrive or SharePoint), not email or personal drives.</p></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="close">Close</button><button class="btn primary" data-act="cmXlsxGo">Download workbook</button></div>`);
+}
+function cmBook(){
+  const C = cmCfg(), d = s => s == null ? '' : isoOf(s), hn = id => hcsById(id)?.name || id || '';
+  return {
+    'REMS enrollment': [['MRN', 'Patient', 'Status (tracker)', 'Rendering provider', 'Healthcare setting', 'Enrolled', 'Re-enrolling under', 'Started', ...REMS_STEPS.map(([, l]) => l), 'Note', 'REMS status'],
+      ...cmRems().map(s => [s.p.mrn, nm(s.p.mrn), s.p.status, s.p.provider, s.hcs?.name || '', s.rec.enrolled || '', s.open ? hn(s.open.to) : '', s.open?.opened || '', ...REMS_STEPS.map(([k]) => s.open?.[k] || ''), s.open?.note || '', s.label])],
+    'Healthcare settings': [['Name', 'REMS ID', 'DEA prescriber', 'Start', 'End', 'Current', 'Patients', 'Notes'], ...C.settings.map(h => [h.name, h.remsId, rxrById(h.dea)?.name || '', h.start, h.end, hcsCurrent()?.id === h.id ? 'Yes' : '', cmRems().filter(s => s.hcs?.id === h.id).length, h.notes])],
+    Prescribers: [['Prescriber', 'Credential', 'NPI', 'Delegates (technicians)', 'Delegates updated'], ...C.prescribers.map(p => [p.name, p.cred, p.npi, (p.delegates || []).join(', '), p.delAt || ''])],
+    'Coverage and BIDF': [['MRN', 'Patient', 'Tracker insurance', 'Sohar insurer', 'Sohar date', 'Discovery', 'Coverage change', 'Why', 'BI completed', 'BI by', 'BI insurance', 'BIDF per treatment', 'BIDF course', bidfYearCol()],
+      ...cmBidf().map(s => [s.p.mrn, nm(s.p.mrn), s.cov.tr, s.cov.so, d(s.cov.sd), s.cov.disc ? 'Yes' : '', s.cov.flag ? (s.cov.redo ? 'Redo BIDF' : 'Update insurance') : '', s.cov.why.join('; '), d(s.bi.done), s.bi.by, s.bi.ins, s.bi.perTx, s.bi.course, s.cell])],
+    'REMS calls': [['Date', 'By', 'Result', 'Actions done', 'Notes'], ...remsCall().calls.map(c => [c.at, c.by, c.outcome === 'actions' ? 'Actions needed' : 'Nothing outstanding', c.done || '', c.note])],
+  };
+}
+async function cmXlsx(){
+  if (!(await loadXLSX())) return toast('bad', 'Couldn’t load the Excel writer. Check the connection and try again.');
+  const wb = XLSX.utils.book_new();
+  for (const [n, rows] of Object.entries(cmBook())){ const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map((_, c) => ({ wch: Math.min(40, Math.max(10, ...rows.slice(0, 200).map(r => String(r[c] ?? '').length + 2))) })); XLSX.utils.book_append_sheet(wb, ws, n); }
+  const name = `REMS enrollment and benefits - ${(CFG.clinic || 'clinic').replace(/[\\/:*?"<>|]/g, '')} - ${today()}.xlsx`;
+  const ok = downloadText(name, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(ok ? 'ok' : 'warn', ok ? `Downloaded ${esc(name)}.` : 'Download was blocked here. Try from the full-screen view or Excel in a browser.'); if (ok) closeModal();
+}
+
+// --- Settings › Admin › REMS and insurance (shared: eskShared.rems, eskShared.insNames) ---
+function cmTechs(){ const s = new Set(); for (const k of S.K){ if (k.tech) s.add(String(k.tech).trim()); if (k.pct) s.add(String(k.pct).trim()); } for (const p of S.profiles || []) if (p.name) s.add(String(p.name).trim()); if (CFG.me) s.add(CFG.me); return [...s].filter(Boolean).sort((a, b) => a.localeCompare(b)); }
+function admRemsHTML(){
+  const C = cmCfg(), D = S.cmDraft || (S.cmDraft = JSON.parse(JSON.stringify({ prescribers: C.prescribers.map(p => ({ ...p, delegates: (p.delegates || []).join(', ') })), settings: C.settings, callDow: C.callDow, callPhone: C.callPhone, ins: C.ins })));
+  const provs = [...new Set(S.P.map(p => canonProv(p.provider || '')).filter(Boolean))].sort((a, b) => a.localeCompare(b)), techs = cmTechs();
+  const inp = (g, i, k, lab, type = 'text', extra = '') => `<label class="lbl">${lab}<input class="fld" type="${type}" data-cmc="${g}|${i}|${k}" value="${esc(D[g][i][k] ?? '')}" autocomplete="off" ${extra}></label>`;
+  const rxr = (p, i) => `<details class="ph-fs" data-open="cmr:${i}" ${S.open?.['cmr:' + i] || !p.name ? 'open' : ''}><summary><b>${esc(p.name || 'New prescriber')}</b> <span class="small muted">${esc([p.cred, p.delegates ? 'delegates: ' + p.delegates : 'no delegates'].filter(Boolean).join(' · '))}</span></summary><div class="ph-grid">
+    ${inp('prescribers', i, 'name', 'Name (as on the tracker)', 'text', 'list="cmProvList"')}<label class="lbl">Credential<select class="fld" data-cmc="prescribers|${i}|cred">${['', 'MD', 'DO', 'NP', 'PA'].map(v => `<option ${p.cred === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    ${inp('prescribers', i, 'npi', 'NPI', 'text', 'inputmode="numeric"')}<label class="lbl ph-note">Prescriber delegates (technicians, comma-separated)<input class="fld" data-cmc="prescribers|${i}|delegates" value="${esc(p.delegates || '')}" autocomplete="off" list="cmTechList"></label></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost sm" data-act="cmDel" data-g="prescribers" data-i="${i}">Remove</button></div></details>`;
+  const hcs = (h, i) => `<details class="ph-fs" data-open="cmh:${i}" ${S.open?.['cmh:' + i] || !h.name ? 'open' : ''}><summary><b>${esc(h.name || 'New healthcare setting')}</b> <span class="small muted">${esc([h.start ? 'from ' + h.start : '', h.end ? (fromIso(h.end) != null && fromIso(h.end) < todaySerial() ? 'ended ' : 'ends ') + h.end : ''].filter(Boolean).join(' · '))}</span></summary><div class="ph-grid">
+    ${inp('settings', i, 'name', 'Name')}${inp('settings', i, 'remsId', 'REMS healthcare setting ID')}
+    <label class="lbl">DEA prescriber (registrant)<select class="fld" data-cmc="settings|${i}|dea"><option value="">Not set</option>${D.prescribers.map((p, j) => `<option value="${esc(p.id || 'new' + j)}" ${(h.dea || '') === (p.id || 'new' + j) ? 'selected' : ''}>${esc(p.name || 'New prescriber')}</option>`).join('')}</select></label>
+    ${inp('settings', i, 'start', 'Enrolling under it from', 'date')}${inp('settings', i, 'end', 'Ended', 'date')}<label class="lbl ph-note">Notes<input class="fld" data-cmc="settings|${i}|notes" value="${esc(h.notes || '')}" autocomplete="off"></label></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost sm" data-act="cmDel" data-g="settings" data-i="${i}">Remove</button></div></details>`;
+  const ins = (x, i) => `<div class="adm-row"><input class="fld" data-cmc="ins|${i}|name" value="${esc(x.name)}" aria-label="Short name" autocomplete="off" style="max-width:150px"><input class="fld" data-cmc="ins|${i}|match" value="${esc(x.match)}" aria-label="Matches" autocomplete="off"><button class="btn ghost sm" data-act="cmDel" data-g="ins" data-i="${i}">Remove</button></div>`;
+  return `<h4 class="set-sub">REMS and insurance <span class="muted">(shared with everyone)</span></h4>
+    <datalist id="cmProvList">${provs.map(p => `<option value="${esc(p)}">`).join('')}</datalist><datalist id="cmTechList">${techs.map(p => `<option value="${esc(p)}">`).join('')}</datalist>
+    <p class="small"><b>Prescribers</b> <span class="muted">in the clinic, and the technicians with prescriber delegate status for each.</span></p>${D.prescribers.map(rxr).join('')}<div class="row"><button class="btn ghost sm" data-act="cmAdd" data-g="prescribers">Add prescriber</button></div>
+    <p class="small" style="margin-top:10px"><b>REMS healthcare settings</b> <span class="muted">A new setting (usually a different DEA prescriber) means every existing patient's REMS Enrollment Form is re-submitted under it: Compliance › REMS enrollment opens those re-enrollments.</span></p>${D.settings.map(hcs).join('')}<div class="row"><button class="btn ghost sm" data-act="cmAdd" data-g="settings">Add healthcare setting</button></div>
+    <div class="ph-grid" style="margin-top:10px"><label class="lbl">Weekly REMS call on<select class="fld" data-cmg="callDow">${PHX_DOW.map((d, n) => `<option value="${n}" ${+D.callDow === n ? 'selected' : ''}>${d}</option>`).join('')}</select></label><label class="lbl">REMS phone<input class="fld" type="tel" data-cmg="callPhone" value="${esc(D.callPhone || '')}" autocomplete="off"></label></div>
+    <details class="ph-fs" data-open="cm:ins" ${S.open?.['cm:ins'] ? 'open' : ''}><summary><b>Insurance names</b> <span class="small muted">${D.ins.length} short names: ${esc(D.ins.slice(0, 5).map(x => x.name).join(', '))}${D.ins.length > 5 ? '…' : ''}</span></summary><p class="small muted">Short name shown on the tracker, and the words that map a full plan name to it (first match wins).</p>${D.ins.map(ins).join('')}<div class="row"><button class="btn ghost sm" data-act="cmAdd" data-g="ins">Add insurance name</button></div></details>
+    <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" data-act="cmReset">Discard changes</button><button class="btn primary sm" data-act="cmSave">Save REMS and insurance</button></div>`;
+}
+async function cmSave(){
+  const D = S.cmDraft; if (!D) return; if (!adminOn()) return toast('warn', 'Unlock Admin first.');
+  const used = new Set(), idMap = {};
+  const prescribers = D.prescribers.map((p, j) => { const name = String(p.name || '').trim(); if (!name) return null; const id = p.id && !used.has(p.id) ? p.id : phSlug(name, used); used.add(id); idMap[p.id || 'new' + j] = id;
+    const dl = String(p.delegates || '').split(',').map(x => x.trim()).filter(Boolean), was = cmCfg().prescribers.find(x => x.id === p.id);
+    return { id, name, cred: p.cred || '', npi: String(p.npi || '').trim(), delegates: dl, delAt: was && (was.delegates || []).join(',') === dl.join(',') ? was.delAt || '' : (dl.length ? today() : '') }; }).filter(Boolean);
+  const su = new Set(), settings = D.settings.map(h => { const name = String(h.name || '').trim(); if (!name) return null; const id = h.id && !su.has(h.id) ? h.id : phSlug(name, su); su.add(id);
+    return { id, name, remsId: String(h.remsId || '').trim(), dea: idMap[h.dea] || '', start: fromIso(h.start) != null ? h.start : '', end: fromIso(h.end) != null ? h.end : '', notes: String(h.notes || '').trim() }; }).filter(Boolean);
+  const ins = D.ins.filter(x => String(x.name || '').trim()).map(x => ({ name: String(x.name).trim(), match: String(x.match || '').trim() || String(x.name).trim().toLowerCase() }));
+  try { const fresh = (await S.store.freshDoc?.('eskShared')) || S.shared || {};
+    S.shared = { ...fresh, rems: { prescribers, settings, callDow: +D.callDow || 0, callPhone: String(D.callPhone || '').trim(), by: CFG.me || '', at: new Date().toISOString() }, insNames: ins };
+    await S.store.setDoc('eskShared', S.shared); S.cmDraft = null; render(); toast('ok', 'REMS and insurance saved.'); }
+  catch (e){ console.error(e); toast('bad', `Not saved: ${esc(e.message || String(e))}`); }
+}
+Object.assign(ACT_CMP, {
+  cmView: el => { S.cmv = el.dataset.v; render(); window.scrollTo(0, 0); },
+  cmGo: el => { S.view = 'compliance'; S.cmv = el.dataset.v; if (el.dataset.m) S.cmq = nm(el.dataset.m); render(); window.scrollTo(0, 0); },
+  remsEdit: el => openRemsEdit(el.dataset.m), remsSave: el => remsSave(el.dataset.m),
+  reNext: el => { const p = S.byMrn.get(el.dataset.m), s = p && remsState(p); if (!s?.next) return; reOne(el.dataset.m, rec => reSet(rec, s.next[0], today()), `${s.next[1]}: ${fmtD(todaySerial())}.`); },
+  reStartOne: el => { const to = $('#reTo')?.value; if (!to) return; reOne(el.dataset.m, rec => reStart(rec, to, today(), CFG.me), 'Re-enrollment started.').then(ok => { if (ok) openRemsEdit(el.dataset.m); }); },
+  reCancel: el => reOne(el.dataset.m, rec => { const x = reOpen(rec.rems); if (x) x.cx = today(); return rec; }, 'Re-enrollment cancelled.').then(ok => { if (ok) closeModal(); }),
+  reStartAll: () => openReStartAll(), reStartAllGo: () => reStartAllGo(), cmBulk: () => cmBulk(),
+  bidfEdit: el => openBidfEdit(el.dataset.m), bidfSave: el => bidfSave(el.dataset.m), bidfCol: () => bidfCol(),
+  insSet: el => insSet(el.dataset.m, el.dataset.v), insFix: () => openInsFix(), insFixGo: () => insFixGo(),
+  callLog: () => openCallLog(), callSave: () => callSave(), callDone: el => callDone(el.dataset.at),
+  cmXlsx: () => cmXlsxAsk(), cmXlsxGo: () => cmXlsx(),
+  cmAdd: el => { const D = S.cmDraft; if (!D) return; D[el.dataset.g].push(el.dataset.g === 'ins' ? { name: '', match: '' } : el.dataset.g === 'settings' ? { id: '', name: '', remsId: '', dea: '', start: '', end: '', notes: '' } : { id: '', name: '', cred: '', npi: '', delegates: '' }); render(); },
+  cmDel: el => { const D = S.cmDraft; if (!D) return; D[el.dataset.g].splice(+el.dataset.i, 1); render(); },
+  cmReset: () => { S.cmDraft = null; render(); }, cmSave: () => cmSave(),
+});
+function cmInput(el){
+  const D = S.cmDraft; if (el.dataset.cmc && D){ const [g, i, k] = el.dataset.cmc.split('|'); if (D[g]?.[+i]) D[g][+i][k] = el.value; return true; }
+  if (el.dataset.cmg && D){ D[el.dataset.cmg] = el.value; return true; }
+  return false;
+}
+function cmChange(el){
+  if (cmInput(el)) return true;
+  if (el.dataset.cmsel){ S.cmSel = S.cmSel || new Set(); el.checked ? S.cmSel.add(el.dataset.cmsel) : S.cmSel.delete(el.dataset.cmsel); render(); return true; }
+  if (el.dataset.cmselall != null){ S.cmSel = S.cmSel || new Set(); for (const s of cmRems().filter(cmQ)) el.checked ? S.cmSel.add(s.p.mrn) : S.cmSel.delete(s.p.mrn); render(); return true; }
+  if (el.id === 'cmAct'){ S.cmAct = el.value; return true; }
+  return false;
+}
+// ===== /page: compliance =====
 
 // ===== page: reports =====
 // Reports › REMS uploads: same-day rate, outstanding forms and who owns them (Treating Technician on the administered kit).
@@ -7483,10 +7942,10 @@ async function pinHash(salt, pin){
 }
 function adminCardHTML(){
   const head = '<section class="card set-admin"><h3>Admin</h3>', pin = (S.shared || {}).adminPin;
-  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts, pharmacies.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
+  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts, pharmacies, prescribers and REMS settings.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
     : `<p class="small">No admin PIN yet. Set one (4 to 8 digits) to open Admin. It's saved in the workbook for everyone.</p><div class="row"><input id="admPinNew" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="New PIN" aria-label="New admin PIN" style="max-width:140px"><input id="admPinNew2" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Again" aria-label="New admin PIN again" style="max-width:140px"><button class="btn" data-act="admPinSet">Set PIN</button></div>`) + '</section>';
   return head + `<div class="row"><span class="small muted grow">Unlocked on this screen until ${new Date(S.adminUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</span><button class="btn ghost sm" data-act="admPinChange">Change PIN</button><button class="btn ghost sm" data-act="admLock">Lock</button></div>
-    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}${admPharmHTML()}</section>`;
+    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}${admPharmHTML()}${admRemsHTML()}</section>`;
 }
 // Test patients: Settings › Admin only; today only; never in a sheet (see testAppts)
 function admTestHTML(){
@@ -7806,7 +8265,7 @@ const ACT = {
   demoReset: () => { S.store?.reset?.(); location.reload(); },
   dlManifest: el => downloadManifest(!!el.dataset.prov),
 };
-Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_PHARM, ACT_SETTINGS);
+Object.assign(ACT, ACT_TODAY, ACT_SCHEDULE, ACT_INVENTORY, ACT_PATIENTS, ACT_ACCESS, ACT_REPORTS, ACT_PHARM, ACT_CMP, ACT_SETTINGS);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal'){ closeModal(); return; }
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
@@ -7834,6 +8293,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('input', e => {
   const el = e.target;
   if (el.dataset.phc || el.dataset.phk || el.dataset.phg){ phInput(el); return; }   // Admin › Pharmacies draft
+  if (el.dataset.cmc || el.dataset.cmg){ cmInput(el); return; }   // Admin › REMS and insurance draft
   if (el.dataset.prn && S.prn){ const [i, f] = el.dataset.prn.split('|'); if (S.prn.list[+i]) S.prn.list[+i][f] = el.value; }
   if (el.dataset.rk && S.prn){ const [i, f] = el.dataset.rk.split('|'); if (S.prn.rk[+i]) S.prn.rk[+i][f] = el.value; }
   if (el.id === 'coText'){ const first = S.coEdit == null; S.coEdit = el.value; coAutosave(); if (first){ const en = $('#coEditNote'); if (en) en.innerHTML = EDIT_HINT; } }
@@ -7854,6 +8314,7 @@ document.addEventListener('change', e => {
   if (el.id === 'apptShrinkOk'){ const b = $('#apptGo'); if (b) b.disabled = !el.checked; return; }
   if (el.id === 'remsFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) readRemsFile(f); return; }
   if (phChange(el)) return;
+  if (cmChange(el)) return;
   if (el.id === 'bpFile'){ const f = el.files && el.files[0]; el.value = ''; if (f) bpReadFile(f); return; }
   if (el.dataset.repv){ S.rep = S.rep || { r: 'month', owner: '' }; const k = el.dataset.repv; if (k === 'r' && el.value === 'custom'){ const [f0, t0] = repRange(); S.rep.from = isoOf(f0); S.rep.to = isoOf(t0); } S.rep[k] = el.value; render(); }
   if (el.dataset.exp && S.exp){ const set = S.exp[el.dataset.exp]; el.checked ? set.add(el.value) : set.delete(el.value); S.expDraw(); }
@@ -8125,6 +8586,8 @@ function RemoteStore(){
     upsertBenefits: rows => call('upsertBenefits', [rows]),
     upsertRems: rows => call('upsertRems', [rows]),
     savePharm: (mrn, row) => call('savePharm', [mrn, row]),
+    saveBidf: (mrn, name, vals) => call('saveBidf', [mrn, name, vals]),
+    addPtColumn: h => call('addPtColumn', [h]),
     appendVisitLog: rows => call('appendVisitLog', [rows]),
     setCells: (sh, cells) => call('setCells', [sh, cells]),
     clearCells: (k, cells) => call('clearCells', [k, cells]),
@@ -8166,7 +8629,7 @@ function openFull(pop){
       const { rid, op, args } = m;
       if (op === 'nfy'){ try { reply({ rid, ok: true, res: await nfyCall(args[0], ...(args[1] || [])) ?? null }); } catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); } return; }   // Settings sheet / Teams test from the full-screen view
       const read = op === 'load' || op === 'freshDoc';
-      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','savePharm','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','savePharm','saveBidf','addPtColumn','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
