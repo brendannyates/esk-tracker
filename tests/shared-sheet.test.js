@@ -38,7 +38,7 @@ function excel(opts = {}){
 // one pane = one add-in: its own document settings (seeded), the shared workbook. bays: the ESK Bays view.
 function pane(seed = {}, opts = {}){
   const file = JSON.parse(JSON.stringify(seed)), mem = JSON.parse(JSON.stringify(seed));
-  const settings = { get: k => mem[k] ?? null, set: (k, v) => { mem[k] = JSON.parse(JSON.stringify(v)); }, saveAsync: cb => { Object.assign(file, JSON.parse(JSON.stringify(mem))); setTimeout(() => cb && cb({ status: 'succeeded' }), 0); },
+  const settings = { get: k => mem[k] ?? null, set: (k, v) => { mem[k] = JSON.parse(JSON.stringify(v)); }, remove: k => { delete mem[k]; }, saveAsync: cb => { for (const k of Object.keys(file)) delete file[k]; Object.assign(file, JSON.parse(JSON.stringify(mem))); setTimeout(() => cb && cb({ status: 'succeeded' }), 0); },
     refreshAsync: cb => setTimeout(() => cb({ status: 'succeeded' }), 0), addHandlerAsync: () => {} };
   const X = excel(opts);
   const C = { JSON, Object, Promise, setTimeout, Math, Date, String, Array, Number, Map, Set, console: { error(){} },
@@ -149,6 +149,16 @@ const bays0 = () => ({ eskApptList: { sig: 'x' }, eskVisit: { [V1]: { start: 600
     const solo = pane({ eskShared: { bayPlan: MAP } }, { broken: true }); await solo.store.load();
     assert.deepStrictEqual(solo.store.getDoc('eskShared').bayPlan, MAP);
     assert.strictEqual(await solo.store.setDoc('eskShared', { bayPlan: null }), true); assert.strictEqual(solo.mem.eskShared.bayPlan, null);
+  });
+
+  await t('open with the workbook: the tracker\'s own setting, taken off (removed, not left as null) when nobody wants it; never on the shared sheet', async () => {
+    const tr = pane(tracker0()), b = pane(bays0(), { bays: true }), K = 'Office.AutoShowTaskpaneWithDocument';
+    await tr.store.load(); await b.store.load(); await b.store.setDoc(K, true);
+    assert.strictEqual(await tr.store.setDoc(K, null), true);
+    assert(!(K in tr.mem) && !(K in tr.file), 'removed from the tracker\'s document settings and saved');
+    assert.strictEqual(tr.store.getDoc(K), null); assert.strictEqual(b.store.getDoc(K), true, 'ESK Bays keeps its own');
+    assert(!Object.values(rowKeys()).includes(K), 'not on the ESK Shared sheet');
+    assert.strictEqual(await tr.store.setDoc(K, true), true); assert.strictEqual(tr.file[K], true);
   });
   console.log(`${n} passed`);
 })().catch(e => { console.error(e); process.exit(1); });

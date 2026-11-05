@@ -1394,6 +1394,14 @@ function sigFromFile(name, bytes){
   while (L.length && !L[0]) L.shift(); while (L.length && !L[L.length - 1]) L.pop();
   return L.filter((x, i) => x || L[i - 1]).slice(0, 12).join('\n');
 }
+// "Open in full screen whenever I open this workbook": each person's own choice (autoFull in their row on ESK User Settings). Excel can
+// only open an add-in with the workbook for everyone (this add-in's document setting Office.AutoShowTaskpaneWithDocument), so that
+// stays on while anyone on the list has theirs on, or the workbook-wide "open this panel" switch is on. key/on = a change not saved yet.
+const AUTO_SHOW = 'Office.AutoShowTaskpaneWithDocument';
+const autoFullOf = p => !!(p && p.cfg && p.cfg.autoFull === true);
+const autoAny = (profiles, key, on) => (profiles || []).some(p => key && p && p.key === key ? !!on : autoFullOf(p)) || (!!key && !!on);
+// the workbook-wide switch, kept in eskShared.autoPane; before that existed the document setting itself was the switch
+const autoPaneOf = (shared, cur) => shared && typeof shared.autoPane === 'boolean' ? shared.autoPane : cur === true;
 // ---------- who is using it: end ----------
 function wbLocal(){ try { const o = JSON.parse(localStorage.getItem(wbStoreKey()) || 'null'); if (o && typeof o === 'object') return { users: {}, used: [], ...o }; } catch {} return { users: {}, used: [] }; }
 function wbLocalSet(o){ try { localStorage.setItem(wbStoreKey(), JSON.stringify(o)); } catch {} }
@@ -1462,7 +1470,26 @@ function pickUser(key){
   CFG = loadCfg(); applySharedCfg();
   if (!CFG.me || (p.at || '') > (CFG.profAt || '')) cfgFromProfile(p); else { CFG.me = String(p.name || CFG.me).trim(); saveLocal(); }
   S.view = PAGES[S.view] ? S.view : 'today'; render(); presBeat?.(true);
-  if (S.mode === 'pane' && S.canFull && CFG.autoFull && !DLG) openFull();
+  maybeAutoFull();
+}
+// Full screen on open: in the pane, once per session, as soon as we know who's at the desk (today's pick, or the pick at the prompt).
+// Everyone else just gets the pane.
+function maybeAutoFull(){
+  if (S.mode !== 'pane' || PROV_VIEW || S.provView || !S.canFull || S.autoDone || !CFG.profKey || needPick()) return;
+  S.autoDone = true;
+  if (CFG.autoFull && !DLG && !S.full) openFull();
+}
+// After a change to anyone's "Open in full screen" or to the workbook-wide switch (pane: the switch's new value, else undefined):
+// keeps Office's open-with-this-workbook setting on while either wants it, and takes it off when nothing does. False if a save failed.
+async function autoShowSync(pane){
+  if (!S.store?.live || PROV_VIEW) return true;
+  const cur = S.store.getDoc(AUTO_SHOW) === true;
+  let sh = S.shared || {};
+  if (pane === undefined) pane = autoPaneOf(sh, cur);
+  if (sh.autoPane !== pane){ sh = { ...((await S.store.freshDoc?.('eskShared')) || sh) }; sh.autoPane = pane; S.shared = sh; if (await S.store.setDoc('eskShared', sh) === false) return false; }
+  const want = pane || autoAny(S.profiles, CFG.profKey, CFG.autoFull);
+  if (want === cur) return true;
+  return (await S.store.setDoc(AUTO_SHOW, want ? true : null)) !== false;
 }
 function dropPick(){ const L = wbLocal(); delete L.pick; wbLocalSet(L); CFG_DAY = ''; CFG = loadCfg(); applySharedCfg(); S.adminUntil = 0; }
 function switchUser(){ dropPick(); closeModal(); render(); window.scrollTo(0, 0); }
@@ -2092,7 +2119,7 @@ function OfficeStore(){
     getDoc(key){ try { return shared(key) ? clone(sh.get(key)?.v) : docs().get(key); } catch { return null; } },   // a copy: callers change what they get
     // true once saved: to the shared sheet (and this add-in's own settings, for an older pane), or only the settings without the sheet
     setDoc(key, val){
-      const own = new Promise(res => { try { docs().set(key, val); docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });
+      const own = new Promise(res => { try { if (val == null && !shared(key)) docs().remove(key); else docs().set(key, val); docs().saveAsync(r => res(r?.status !== 'failed')); } catch { res(false); } });
       if (!shared(key)){ if (seen) seen[key] = sig(key); return own; }
       // visits: written only over what this pane last read (saveVisit merges again and retries when someone saved in between)
       return Excel.run(ctx => shWrite(ctx, key, val, key === 'eskVisit')).then(ok => { if (ok && seen) seen[key] = sig(key); return ok; }, e => { console.error(e); return false; });
@@ -7873,7 +7900,7 @@ function setDraftSaved(){
     if (id === 'sVitS') return CFG.vitSound === x;
     if (id === 'sVitA') return String(CFG.vitAhead ?? 5) === String(x);
     if (id === 'sFull') return !!CFG.autoFull === x;
-    if (id === 'sAuto') return !S.store?.live || !!S.store.getDoc('Office.AutoShowTaskpaneWithDocument') === x;
+    if (id === 'sAuto') return !S.store?.live || autoPaneOf(S.shared, S.store.getDoc(AUTO_SHOW)) === x;
     return true;
   });
 }
@@ -7882,14 +7909,14 @@ function setDraftSaved(){
 function setAfterSave(){
   if (!S._setSaving || !setDraftSaved()) return;
   S._setSaving = null; S.setDraft = null; setEditing(false); if (CFG.me) S.firstRun = false;
-  const r = S.setReturn; S.setReturn = null;
-  setTimeout(() => { if (r && r !== 'settings' && S.view === 'settings'){ S.view = r; render(); window.scrollTo(0, 0); toast('ok', 'Saved. Try that again.'); } else toast('ok', 'Settings saved.'); }, 0);
+  const r = S.setReturn, m = S._setMsg; S.setReturn = null; S._setMsg = null;   // m: what cfgSave has to say about full screen on open
+  setTimeout(() => { if (r && r !== 'settings' && S.view === 'settings'){ S.view = r; render(); window.scrollTo(0, 0); toast(m ? m[0] : 'ok', m ? m[1] : 'Saved. Try that again.'); } else toast(m ? m[0] : 'ok', m ? m[1] : 'Settings saved.'); }, 0);
 }
 function settingsHTML(){
   setAfterSave();
   if (setDirty()) setEditing(true);
   const D = S.setDraft || {}, val = (id, x) => id in D ? D[id] : x, on = (id, x) => (id in D ? D[id] : x) ? 'checked' : '';
-  const live = !!S.store?.live, dirty = setDirty();
+  const live = !!S.store?.live, dirty = setDirty(), picked = live && !!CFG.profKey && !needPick();   // picked: we know who's at the desk
   const f = (id, label, o = {}) => { const k = SET_CFG[id], v = String(val(id, CFG[k] ?? '')), ph = o.ph ? ` placeholder="${esc(o.ph)}"` : '';
     return `<div class="set-f${o.wide ? ' wide' : ''}"><label class="lbl" for="${id}">${label}</label>${o.rows
       ? `<textarea id="${id}" class="fld" data-cfg="${k}" rows="${o.rows}"${ph}>${esc(v)}</textarea>`
@@ -7917,7 +7944,7 @@ function settingsHTML(){
     <div class="set-row"><button class="btn" data-act="alertsOpen">${alertsAny() ? 'Show alerts window' : 'Open alerts window'}</button></div>
     <div class="set-hint">${notifyHint()} The alerts window is a small browser window that shows pop-ups even when Excel is in the background. Open it once each time you open the workbook.</div>
     <div class="set-f wide"><label class="lbl" for="sSnd">Shared sound links <span class="muted">(everyone, saved with the workbook)</span></label><textarea id="sSnd" class="fld" rows="4" placeholder="bing = https://mymhs-my.sharepoint.com/:u:/…">${esc(val('sSnd', sndFormat((S.shared || {}).soundLinks)))}</textarea><div class="set-hint">One line per sound: bing, boom, bop or bow, then its OneDrive link (Share › Anyone with the link). If a link doesn’t play, the add-in’s built-in copy of that sound plays, then the browser chime.</div></div>
-    ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
+    ${S.mode !== 'demo' && !PROV_VIEW ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}${picked ? '' : ' disabled'}><span class="l">Open in full screen whenever I open this workbook<small>${picked ? 'Saved with your name. While anyone has this on, the tracker opens by itself when the workbook opens (beside the sheet for everyone else).' : 'Pick who’s at the desk first.'}</small></span></label>` : ''}
   </section>`;
   const sumV = (+val('sV40', CFG.vitalsMin) || DEF.vitalsMin) + (+val('sDis', CFG.disAfter) || DEF.disAfter);
   // Clinic fields: anyone fills one while the workbook has it blank (the first entry saves it for everyone); once set, Admin changes it.
@@ -7989,7 +8016,7 @@ function settingsHTML(){
     <div class="set-grid">
       <div class="set-f wide"><label class="lbl" for="sMedInv">Medication Inventory Tracker link</label><input id="sMedInv" class="fld" value="${esc(val('sMedInv', (S.shared || {}).medInvUrl || ''))}" placeholder="Paste the SharePoint link to Medication Inventory Tracker.xlsx"><div class="set-hint">Used for the link on the Tx report and the documentation checklist. Starts with https://</div></div>
     </div>
-    ${live ? `<label class="check"><input type="checkbox" id="sAuto" ${on('sAuto', S.store.getDoc('Office.AutoShowTaskpaneWithDocument'))}><span class="l">Open this panel automatically whenever this workbook opens<small>For anyone with the add-in</small></span></label>` : ''}
+    ${live ? `<label class="check"><input type="checkbox" id="sAuto" ${on('sAuto', autoPaneOf(S.shared, S.store.getDoc(AUTO_SHOW)))}><span class="l">Open this panel automatically whenever this workbook opens<small>For anyone with the add-in.${autoAny(S.profiles, CFG.profKey, CFG.autoFull) ? ' It also opens by itself while anyone has “Open in full screen whenever I open this workbook” on.' : ''}</small></span></label>` : ''}
     ${factsDL([['Templates & chairs', `${c.chairs ? `${c.chairs} chair${c.chairs === 1 ? '' : 's'}, ${chairWk} visits a week` : 'Chairs not set'} · ${tmplWk ? `${tmplWk} template slots a week` : 'no templates yet'} <button class="linkbtn" data-act="capEdit">Edit…</button>`]])}
     ${bayMapSetHTML()}
   </section>`;
@@ -8454,7 +8481,17 @@ const ACT = {
     if (chDiff || vrDiff){ S.shared = { ...sh0, ...(vrDiff ? { vitRange: vrNew } : {}), ...(chDiff ? { clinicCfg: { ...cur, ...ch, by: CFG.me || '', at: new Date().toISOString() } } : {}) }; await S.store.setDoc('eskShared', S.shared); }
     applySharedCfg();   // what the workbook sets is what everyone uses
     const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; CFG.vitAhead = +($('#sVitA')?.value ?? 5); if (vn.checked && !alertsWinOk()) await askNotify(); }
-    const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
+    // "Open in full screen whenever I open this workbook" is saved with your name straight away (not after the usual pause), then
+    // Office's open-with-this-workbook setting is worked out again from everyone's choices and the workbook-wide switch
+    const sf = $('#sFull'), auto = $('#sAuto'), wasFull = !!CFG.autoFull, live = !!S.store?.live && !PROV_VIEW;
+    if (sf && !sf.disabled) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg();
+    const fullCh = !!CFG.autoFull !== wasFull, paneCh = !!auto && live && auto.checked !== autoPaneOf(S.shared, S.store.getDoc(AUTO_SHOW));
+    if (fullCh && live && CFG.profKey){ clearTimeout(S._profT); await saveProfile(); }
+    if (live && (fullCh || paneCh)){
+      let ok = false; try { ok = await autoShowSync(paneCh ? auto.checked : undefined); } catch (e){ console.error(e); }
+      if (!ok) S._setMsg = ['warn', 'Your settings are saved, but the workbook didn’t save whether the tracker opens with it. Try Save settings again.'];
+      else if (fullCh) S._setMsg = ['ok', CFG.autoFull ? 'Saved. Next time you open this workbook, the tracker opens in full screen.' : S.store.getDoc(AUTO_SHOW) === true ? 'Saved. You’ll open beside the sheet; the tracker still opens with the workbook, because someone else has full screen on or the workbook-wide switch is on.' : 'Saved. The tracker no longer opens by itself with this workbook.'];
+    }
     closeModal(); render();
   },
   pickUser: el => pickUser(el.dataset.k),
@@ -8999,7 +9036,7 @@ async function wbIdentify(){
   if (demo){ S.askedName = true; CFG = loadCfg(); applyTheme(); start(DemoStore()).then(seedDemo); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } wbIdentify().then(() => start(OfficeStore())).then(() => { if (S.canFull && CFG.autoFull && S.loaded && !S.provView) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } wbIdentify().then(() => start(OfficeStore())).then(() => { if (S.loaded) maybeAutoFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>

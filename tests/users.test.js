@@ -6,7 +6,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'taskpane.html'), 
 const between = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); assert(i > 0 && j > i, a); return src.slice(i, j); };
 const C = { TextDecoder, TextEncoder, crypto: globalThis.crypto }; vm.createContext(C);
 vm.runInContext(between('// ---------- who is using it: pure helpers', '// ---------- who is using it: end')
-  + '\nObject.assign(globalThis, { wbHash, wbKeyFor, clinicFromName, pickOrder, PERSONAL_CFG, profCfg, CLINIC_OWN, localOnly, sigFromFile, htmlText });', C);
+  + '\nObject.assign(globalThis, { wbHash, wbKeyFor, clinicFromName, pickOrder, PERSONAL_CFG, profCfg, CLINIC_OWN, localOnly, sigFromFile, htmlText, AUTO_SHOW, autoFullOf, autoAny, autoPaneOf });', C);
 vm.runInContext(between('async function pinHash(', 'function adminCardHTML') .replace(/^/, '') + '\n'
   + between('const ADMIN_CODE =', '\n', ) + '\n' + between('async function adminCodeOk(', '\n') + '\nObject.assign(globalThis, { pinHash, adminCodeOk, ADMIN_CODE });', C);
 let n = 0; const tests = [];
@@ -78,6 +78,25 @@ t('nothing carries over between workbooks: no SRL / San Rafael defaults, no seed
   assert.strictEqual(reads.filter(r => r === 'LEGACY_CFG').length, 2, 'eskCfg is read only for the theme fallback and Settings › Use the values this computer had before');
   assert(!/return t\.some\(Boolean\) \? t : \[CFG\.me/.test(src), 'no "signature blank → your name + clinic"');
   assert(/sentBy: CFG\.me \|\| ''/.test(src), 'Teams Sent By is the person picked today, blank otherwise');
+});
+t('full screen on open: each person\'s choice; the workbook opens the tracker while anyone has it on or the workbook-wide switch is on', () => {
+  const P = [{ key: 'name:sam r.', name: 'Sam R.', cfg: { autoFull: true } }, { key: 'name:ana t.', name: 'Ana T.', cfg: {} }, { key: 'name:lee w.', name: 'Lee W.', cfg: { autoFull: 'yes' } }];
+  assert.strictEqual(C.AUTO_SHOW, 'Office.AutoShowTaskpaneWithDocument');
+  assert.strictEqual(C.autoFullOf(P[0]), true); assert.strictEqual(C.autoFullOf(P[1]), false); assert.strictEqual(C.autoFullOf(P[2]), false, 'only true counts'); assert.strictEqual(C.autoFullOf(null), false);
+  assert.strictEqual(C.autoAny(P), true);
+  assert.strictEqual(C.autoAny(P, 'name:sam r.', false), false, 'Sam turns it off: nobody else has it');
+  assert.strictEqual(C.autoAny(P, 'name:ana t.', true), true);
+  assert.strictEqual(C.autoAny([], 'name:new p.', true), true, 'not on the list yet');
+  assert.strictEqual(C.autoAny([], 'name:new p.', false), false); assert.strictEqual(C.autoAny(null), false);
+  assert.strictEqual(C.autoPaneOf({ autoPane: false }, true), false, 'the switch, once saved, wins');
+  assert.strictEqual(C.autoPaneOf({ autoPane: true }, false), true);
+  assert.strictEqual(C.autoPaneOf({}, true), true, 'before the switch was kept apart, the setting was the switch');
+  assert.strictEqual(C.autoPaneOf(null, null), false);
+  const set = between('function settingsHTML(){', '\nfunction ');
+  assert(set.includes('Open in full screen whenever I open this workbook') && /id="sFull"[^`]*picked \? '' : ' disabled'/.test(set), 'the checkbox waits for the pick');
+  const boot = between('function maybeAutoFull(){', '\n}\n');
+  assert(/S\.autoDone/.test(boot) && /S\.mode !== 'pane'/.test(boot) && /needPick\(\)/.test(boot), 'once per session, in the pane, once someone is picked');
+  assert(/displayInIframe: true/.test(between('function openFull(pop){', '\n}\n')), 'full screen floats over the page');
 });
 t('the user picker only lists the user sheet: no datalist of names from the Inventory, no name typed into Settings', () => {
   assert(!src.includes("datalist('dlMe'")); assert(!/f\('sMe'/.test(src));
