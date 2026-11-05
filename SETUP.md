@@ -17,7 +17,12 @@ Open the tracker in Excel on the web → **Home → Add-ins → More Add-ins →
 An **ESK Tracker** button appears on the Home tab.
 
 ## 4. First run
-Enter your name, default supervising physician and practice manager in Settings (⚙).
+The tracker asks **Who's using the tracker?** once a day on each computer, listing the people registered in this workbook. Pick your name, or choose **I'm not on the list** to add yourself. Nothing about you carries over to another clinic's workbook: each workbook has its own list, and each computer remembers who used it per workbook.
+
+The clinic's settings (clinic code, location, practice manager, order and cc emails, MADRS cc) belong to the workbook. The clinic and location start from the workbook's name when it says (for example "Castro ESK Tracker"); otherwise they're blank. The first person to fill in a blank one in Settings saves it for everyone; after that, changing it needs Admin (the workbook's PIN or the MHS admin code).
+
+Emails end with "Thank you," and no signature, because Outlook adds yours. If it doesn't, open Settings › **Add a signature** and type it or pick your Outlook signature file (`%APPDATA%\Microsoft\Signatures`, the .txt or .htm).
+
 Optional: tick "Open this panel automatically whenever this workbook opens".
 
 ## Other staff
