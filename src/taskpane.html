@@ -1101,6 +1101,17 @@ button.doc{cursor:pointer} button.doc:hover{background:color-mix(in srgb,var(--s
 .pg-settings textarea.fld{min-height:96px;padding:10px 12px;resize:vertical;line-height:1.4}
 .pg-settings h2.set-sec{margin:24px 0 10px}
 .pg-settings .set-hint{margin-top:6px;font-size:13px;color:var(--muted)}
+.pg-settings .set-ro{padding:6px 0;overflow-wrap:anywhere}
+.pg-settings .set-sig > summary{cursor:pointer;font-weight:600;padding:4px 0}
+.pg-settings .set-sig[open] > summary{margin-bottom:6px}
+.adm-users{list-style:none;margin:6px 0 12px;padding:0}
+.adm-users li{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line, #e5e0d6)}
+.pick-wrap{max-width:560px;margin:24px auto;padding:0 12px}
+.pick-card h2{margin:0 0 6px}
+.pick-list{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+.pick-btn{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;min-height:44px}
+.pick-tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--chip, rgba(0,0,0,.06));color:var(--muted)}
+.pick-new > summary{cursor:pointer;font-weight:600;margin-top:6px}
 .pg-settings .set-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .pg-settings .set-row .grow{flex:1 1 200px}
 .pg-settings .set-snd{margin-top:4px;padding-left:36px}
@@ -1312,19 +1323,106 @@ function parseScan(raw){
   return { s, mg, serial, exp, lot };
 }
 
-// ---------- settings (this device only; no patient data) ----------
-const DEF = { me:'', sup:'', pm:'', clinic:'SRL', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5, vitSysMax:140, vitDiaMax:90, vitHrMax:110, vitHrMin:50, vitO2Min:92, vitEmSys:180, vitEmDia:120 };   // vitals ranges: team defaults, set in Settings
-// The demo keeps its own settings (eskCfgDemo), pre-filled with fake names, so it never touches a real person's Settings.
-const DEMO_CFG = { me: 'Taylor R.', sup: 'Provider A', pm: 'Jordan P.', prov: 'Provider A', genoaEmail: 'genoa.demo@example.com', cc: 'lead.demo@example.com', sig: 'Taylor R., ESK Clinic (demo)' };
-let CFG_KEY = /[?&]demo\b/.test(location.search) ? 'eskCfgDemo' : 'eskCfg';
-const loadCfg = () => { try { return Object.assign({}, DEF, CFG_KEY === 'eskCfgDemo' ? DEMO_CFG : {}, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch { return { ...DEF }; } };
-let CFG = loadCfg();
-function saveLocal(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); } catch {} applyTheme(); }
-function saveCfg(){ if (S.store?.live && CFG.me){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
+// ---------- settings (no patient data) ----------
+// Nothing follows a person or a clinic from one workbook into another:
+//  • the workbook holds the clinic's settings (CLINIC_KEYS, eskShared.clinicCfg) and each person's own settings (hidden user sheet);
+//  • this computer keeps, for each workbook separately (localStorage "eskWb:<workbook key>"), who picked themselves today, who has
+//    used this computer in it, and a copy of each of their own settings;
+//  • only the theme is kept for every workbook on this computer (eskTheme), so the page paints right before anyone is picked.
+// The old one-for-every-workbook copy (eskCfg) is no longer read, except by Settings' "Use the values this computer had before".
+const DEF = { me:'', sup:'', pm:'', clinic:'', locName:'', email:'eskorders@mymhs.com', schedDays:30, genoaDays:14, theme:'', autoFull:false, genoaEmail:'', cc:'', helpEmail:'', leadEmail:'', provEmails:'', sig:'', vitalsMin:40, disAfter:60, vitNotify:false, vitSound:'bing', vitAhead:5, vitSysMax:140, vitDiaMax:90, vitHrMax:110, vitHrMin:50, vitO2Min:92, vitEmSys:180, vitEmDia:120 };   // vitals ranges: team defaults, set in Settings
+// The demo keeps its own settings (workbook key "demo"), pre-filled with fake names, so it never touches a real person's Settings.
+// Its clinic settings are in the demo workbook (DemoStore's eskShared.clinicCfg), like a real one.
+const DEMO_CFG = { me: 'Taylor R.', sup: 'Provider A', prov: 'Provider A' };
+const PROV_VIEW = /[?&]view=bays\b/.test(location.search);   // ESK Bays: no daily pick; its own settings slot per workbook
+const BAYS_SLOT = '_bays', LEGACY_CFG = 'eskCfg';
+let WB_KEY = /[?&]demo\b/.test(location.search) ? 'demo' : '';   // set at start-up (wbIdentify) before anything is read or saved
+let CFG_DAY = '';   // the day this pane's pick was made: a pane left open overnight asks again
+const wbStoreKey = () => 'eskWb:' + WB_KEY;
+// ---------- who is using it: pure helpers (tests/users.test.js) ----------
+// Which workbook this is, for this computer's memory: its address (hashed), else an id saved in the workbook's own document settings.
+// The address comes first because a copied file carries the copy's id along with it.
+function wbHash(s){ let a = 2166136261, b = 5381; for (const c of String(s)){ const x = c.charCodeAt(0); a = Math.imul(a ^ x, 16777619) >>> 0; b = (Math.imul(b, 33) ^ x) >>> 0; } return a.toString(36) + b.toString(36); }
+// A file's own address drops its query (?web=1 and the like); a page address (Doc.aspx?sourcedoc=…) keeps it, since the query is
+// what names the file there, so two workbooks never share a key.
+function wbKeyFor(url, id){
+  let u = String(url || '').trim().toLowerCase().replace(/#.*$/, '');
+  if (/\.(xlsx|xlsm|xlsb|xls)(\?|$)/.test(u)) u = u.replace(/\?.*$/, '');
+  return u ? 'u' + wbHash(u) : id ? 'i' + String(id) : '';
+}
+// The clinic in a workbook's name: "San Rafael ESK Tracker" → San Rafael (SRL), "Esketamine Master Tracker - Castro" → Castro (CAS).
+// null when the name doesn't say ("Esketamine Master Tracker"): then the first person to fill it in Settings sets it.
+const CLINIC_CODES = { 'san rafael': 'SRL', castro: 'CAS', 'san francisco': 'SF' }, CODE_NAMES = { SRL: 'San Rafael', CAS: 'Castro', SF: 'San Francisco' };
+function clinicFromName(name){
+  const s = String(name || '').replace(/^.*[\\/]/, '').replace(/\.(xlsx|xlsm|xlsb|xls)$/i, '').replace(/^copy of\s+/i, '').replace(/\s*\(\d+\)\s*$/, '').replace(/_+/g, ' ').trim();
+  const W = '(?:esk|esketamine|spravato|ivk|tms|magv|mag\\s?venture|brainsway|master|patient|pt|tracker|treatment)';
+  const tidy = x => String(x || '').replace(/\b(19|20)\d{2}\b/g, '').replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+  const ok = x => !!x && !new RegExp('^' + W + '\\b', 'i').test(x) && !/^(copy|new|test|template|mhs|mindful|draft|backup)\b/i.test(x);
+  const before = tidy((s.match(new RegExp('^(.*?)\\s+' + W + '\\b', 'i')) || [])[1]), after = tidy((s.match(new RegExp('\\b' + W + '\\b.*?\\s[-–—:]\\s*(.+)$', 'i')) || [])[1]);
+  const n = ok(before) ? before : ok(after) ? after : '';
+  if (!n) return null;
+  const up = n.toUpperCase(); if (CODE_NAMES[up]) return { name: CODE_NAMES[up], code: up };
+  return { name: n, code: CLINIC_CODES[n.toLowerCase()] || n };
+}
+// The daily pick lists only this workbook's registered people: the ones who have used this computer in it first ("On this computer"),
+// then everyone else, each group by name. Nobody is pre-selected.
+function pickOrder(profiles, used){
+  const u = new Set(used || []);
+  return (profiles || []).filter(p => p && p.key && String(p.name || '').trim()).map(p => ({ key: p.key, name: String(p.name).trim(), here: u.has(p.key) }))
+    .sort((a, b) => (b.here - a.here) || a.name.localeCompare(b.name));
+}
+// What goes into a profile row: a person's own settings only. Anything else in an old row (clinic, cc, practice manager…) is ignored.
+const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov', 'pvSound', 'pvTipOff'];
+const profCfg = c => Object.fromEntries(PERSONAL_CFG.filter(k => c && c[k] !== undefined).map(k => [k, c[k]]));
+// What this computer keeps for a person in a workbook: everything but the clinic's settings (those are the workbook's alone).
+const CLINIC_OWN = ['clinic', 'locName', 'pm'];
+const localOnly = (c, clinicKeys) => { const skip = new Set([...clinicKeys, 'profKey']); return Object.fromEntries(Object.entries(c || {}).filter(([k]) => !skip.has(k))); };
+// A signature file from Outlook (%APPDATA%\Microsoft\Signatures): .txt as is, .htm/.html as its text. UTF-8 or UTF-16 with a BOM,
+// else Windows-1252 (what Outlook writes). Plain text only, blank-line runs collapsed, at most 12 lines.
+function htmlText(h){
+  return String(h).replace(/<!--[\s\S]*?-->/g, '').replace(/<(head|style|script|xml|title)\b[\s\S]*?<\/\1>/gi, '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&amp;/gi, '&');
+}
+function sigFromFile(name, bytes){
+  let t;
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) t = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  else if (bytes[0] === 0xFE && bytes[1] === 0xFF) t = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  else { try { t = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { t = new TextDecoder('windows-1252').decode(bytes); } }
+  t = t.replace(/^﻿/, '');
+  if (/\.html?$/i.test(name) || /<(html|body|p|div|br)\b/i.test(t)) t = htmlText(t);
+  const L = t.replace(/\r\n?/g, '\n').split('\n').map(x => x.replace(/[\t  ]+/g, ' ').trim());
+  while (L.length && !L[0]) L.shift(); while (L.length && !L[L.length - 1]) L.pop();
+  return L.filter((x, i) => x || L[i - 1]).slice(0, 12).join('\n');
+}
+// ---------- who is using it: end ----------
+function wbLocal(){ try { const o = JSON.parse(localStorage.getItem(wbStoreKey()) || 'null'); if (o && typeof o === 'object') return { users: {}, used: [], ...o }; } catch {} return { users: {}, used: [] }; }
+function wbLocalSet(o){ try { localStorage.setItem(wbStoreKey(), JSON.stringify(o)); } catch {} }
+const clinicKeys = () => [...CLINIC_SHARED, ...VIT_RANGE, ...CLINIC_OWN];
+const curSlot = () => PROV_VIEW ? BAYS_SLOT : CFG.profKey || '';
+function machineTheme(){ try { const t = localStorage.getItem('eskTheme'); if (t != null) return t; return JSON.parse(localStorage.getItem(LEGACY_CFG) || '{}').theme || ''; } catch { return ''; } }
+function loadCfg(){
+  const base = { ...DEF, ...(WB_KEY === 'demo' ? DEMO_CFG : {}), theme: machineTheme() };
+  if (!WB_KEY) return base;
+  const L = wbLocal(), day = isoOf(todaySerial());
+  const k = PROV_VIEW ? BAYS_SLOT : WB_KEY === 'demo' ? 'demo' : (L.pick && L.pick.day === day ? L.pick.key : '');
+  if (!k) return base;
+  CFG_DAY = day;
+  const c = Object.assign(base, localOnly(L.users[k], clinicKeys()));
+  if (k !== BAYS_SLOT) c.profKey = k;
+  return c;
+}
+let CFG = { ...DEF, ...(WB_KEY === 'demo' ? DEMO_CFG : {}), theme: machineTheme() };   // nobody yet: boot runs loadCfg() once it knows the workbook
+function saveLocal(){
+  try { localStorage.setItem('eskTheme', CFG.theme || ''); } catch {}
+  const k = curSlot();
+  if (WB_KEY && k){ const L = wbLocal(); L.users[k] = localOnly(CFG, clinicKeys()); if (k !== BAYS_SLOT && k !== 'demo' && !L.used.includes(k)) L.used.push(k); wbLocalSet(L); }
+  applyTheme();
+}
+function saveCfg(){ if (S.store?.live && CFG.me && CFG.profKey && !PROV_VIEW){ CFG.profAt = new Date().toISOString(); saveProfileSoon(); } saveLocal(); }
 
-// ---------- user profiles: a backup of everyone's Settings on the hidden "ESK User Settings" sheet ----------
-// One row per person. This device's copy (localStorage) is used first; the sheet wins when it's newer, and restores Settings
-// on a new computer or after the browser cache is cleared. Fields outside PERSONAL_CFG seed a new person's Settings from the team.
+// ---------- user profiles: everyone's own Settings on the hidden "ESK User Settings" sheet ----------
+// One row per person registered in this workbook; the list the daily "Who's using the tracker?" offers. This computer's copy is used
+// first; the sheet wins when it's newer, and restores Settings on a new computer or after the browser cache is cleared.
 const PROF_SHEET = 'ESK User Settings', PROF_HDR = ['Profile', 'Name', 'Microsoft account', 'Updated', 'Settings (JSON)'];
 // Who has the tracker open: hidden "ESK Active Users", one row per open panel, written only by that panel (see "who's active").
 const PRES_SHEET = 'ESK Active Users', PRES_HDR = ['Session', 'Name', 'View', 'Where', 'Seen', 'Input'], PRES_ROWS = 200;
@@ -1332,35 +1430,64 @@ const PRES_QUIET = new Set();   // worksheet ids whose edits never trigger a ref
 // the hidden sheet every ESK add-in on the workbook shares its settings through (see OfficeStore); SH_MOVED marks, in each add-in's
 // own document settings, that they were copied over
 const SH_SHEET = 'ESK Shared', SH_PART = 30000, SH_PARTS = 60, SH_ROWS = 80, SH_MOVED = 'eskSharedSheet', SH_MOVED2 = 'eskSharedSheet2';
-const PERSONAL_CFG = ['me', 'meSrc', 'sig', 'theme', 'autoFull', 'sup', 'vitNotify', 'vitSound', 'vitAhead', 'bayMap', 'prov', 'pvSound', 'pvTipOff'];
 function parseProfiles(values){
   const out = [];
   (values || []).slice(1).forEach(([key, name, acct, at, json]) => { if (!key) return; let cfg; try { cfg = JSON.parse(json); } catch { return; } out.push({ key: String(key), name: String(name || ''), acct: String(acct || '').toLowerCase(), at: String(at || ''), cfg }); });
   return out;
 }
-const profKeyNew = () => S.msAcct || 'name:' + CFG.me.trim().toLowerCase();
-function profFor(){
-  const L = S.profiles || [];
-  return (CFG.profKey && L.find(p => p.key === CFG.profKey)) || (S.msAcct && L.find(p => p.acct === S.msAcct)) || (!CFG.profKey && CFG.me && L.find(p => p.key === 'name:' + CFG.me.trim().toLowerCase())) || null;
-}
-function cfgFromProfile(p){ const c = { ...p.cfg }; delete c.profKey; delete c.profAt; Object.assign(CFG, c, { profKey: p.key, profAt: p.at }); saveLocal(); }
-// after every read: take the sheet's copy when it's newer, push ours when it's newer or missing
+const profKeyNew = name => S.msAcct && !(S.profiles || []).some(p => p.key === S.msAcct) ? S.msAcct : 'name:' + String(name || '').trim().toLowerCase();
+const profFor = () => (CFG.profKey && (S.profiles || []).find(p => p.key === CFG.profKey)) || null;
+function cfgFromProfile(p){ for (const k of PERSONAL_CFG) if (p.cfg && k in p.cfg) CFG[k] = p.cfg[k]; CFG.me = String(p.name || p.cfg?.me || '').trim(); CFG.profKey = p.key; CFG.profAt = p.at; saveLocal(); }
+// after every read: take the sheet's copy when it's newer, push ours when it's newer. Someone taken off the list picks again.
 function applyProfiles(){
-  if (!S.store?.live || !S.profiles) return;
+  if (!S.store?.live || !S.profiles || PROV_VIEW || !CFG.profKey) return;
   const p = profFor();
-  if (p){ if (p.at > (CFG.profAt || '')) cfgFromProfile(p); else if ((CFG.profAt || '') > p.at) saveProfileSoon(); return; }
-  if (CFG.me){ CFG.profAt = CFG.profAt || new Date().toISOString(); saveLocal(); saveProfileSoon(); return; }   // set up before profiles existed
-  if (!S._seeded){ S._seeded = true; const last = S.profiles.slice().sort((a, b) => b.at.localeCompare(a.at))[0];   // new person: team fields from the latest profile
-    if (last){ for (const [k, v] of Object.entries(last.cfg)) if (!PERSONAL_CFG.includes(k) && k !== 'profKey' && k !== 'profAt' && (CFG[k] === DEF[k] || CFG[k] == null)) CFG[k] = v; saveLocal(); } }
+  if (!p){ dropPick(); return; }
+  if ((p.at || '') > (CFG.profAt || '')) cfgFromProfile(p); else if ((CFG.profAt || '') > (p.at || '')) saveProfileSoon();
 }
 function saveProfileSoon(){ clearTimeout(S._profT); S._profT = setTimeout(saveProfile, 1500); }
 async function saveProfile(){
-  if (!S.store?.live || !CFG.me) return;
-  CFG.profKey = CFG.profKey || profKeyNew(); CFG.profAt = CFG.profAt || new Date().toISOString(); saveLocal();
-  const cfg = { ...CFG }; delete cfg.profKey; delete cfg.profAt;
-  const p = { key: CFG.profKey, name: CFG.me, acct: S.msAcct || (profFor()?.acct ?? ''), at: CFG.profAt, cfg };
+  if (!S.store?.live || !CFG.me || !CFG.profKey || PROV_VIEW) return;
+  CFG.profAt = CFG.profAt || new Date().toISOString(); saveLocal();
+  const p = { key: CFG.profKey, name: CFG.me, acct: profFor()?.acct || S.msAcct || '', at: CFG.profAt, cfg: profCfg(CFG) };
   try { await S.store.saveProfile(p); S.profiles = [...(S.profiles || []).filter(x => x.key !== p.key), p]; }
   catch (e){ console.error(e); if (!S._profWarned){ S._profWarned = true; toast('warn', `Settings are saved on this computer, but the backup on the ${esc(PROF_SHEET)} sheet failed: ${esc(e.message || String(e))}`); } }
+}
+// ---------- the daily pick: "Who's using the tracker?" ----------
+const pickDay = () => isoOf(todaySerial());
+const needPick = () => !!S.store?.live && !PROV_VIEW && S.mode !== 'demo' && (!CFG.profKey || CFG_DAY !== pickDay());
+function pickUser(key){
+  const p = (S.profiles || []).find(x => x.key === key); if (!p) return toast('bad', 'That name isn’t on this workbook’s list any more. Refresh and try again.');
+  const L = wbLocal(); L.pick = { day: pickDay(), key }; if (!L.used.includes(key)) L.used.push(key); wbLocalSet(L);
+  CFG = loadCfg(); applySharedCfg();
+  if (!CFG.me || (p.at || '') > (CFG.profAt || '')) cfgFromProfile(p); else { CFG.me = String(p.name || CFG.me).trim(); saveLocal(); }
+  S.view = PAGES[S.view] ? S.view : 'today'; render(); presBeat?.(true);
+  if (S.mode === 'pane' && S.canFull && CFG.autoFull && !DLG) openFull();
+}
+function dropPick(){ const L = wbLocal(); delete L.pick; wbLocalSet(L); CFG_DAY = ''; CFG = loadCfg(); applySharedCfg(); S.adminUntil = 0; }
+function switchUser(){ dropPick(); closeModal(); render(); window.scrollTo(0, 0); }
+// A flow that needs to know who is doing it (it signs the workbook with the name).
+function askWho(){ if (PROV_VIEW || S.mode === 'demo' || !S.store?.live) return openSettings(); switchUser(); toast('warn', 'Pick your name first.'); }
+async function registerUser(raw){
+  const name = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!name) return toast('warn', 'Type your name: first name and last initial is fine.');
+  if (name.length > 60) return toast('warn', 'That name is too long.');
+  const key = profKeyNew(name);
+  if ((S.profiles || []).some(p => p.key === key || String(p.name || '').trim().toLowerCase() === name.toLowerCase())) return toast('warn', `${esc(name)} is already on the list. Pick it above.`);
+  const p = { key, name, acct: key === S.msAcct ? S.msAcct : '', at: new Date().toISOString(), cfg: { me: name } };
+  busy('Adding you…');
+  try { await S.store.saveProfile(p); } catch (e){ console.error(e); busy(false); return toast('bad', `Couldn’t add you to the ${esc(PROF_SHEET)} sheet: ${esc(e.message || String(e))}`); }
+  busy(false); S.profiles = [...(S.profiles || []), p]; pickUser(key); toast('ok', `Welcome, ${esc(name)}. You’re on this workbook’s list now.`);
+}
+function pickHTML(){
+  const list = pickOrder(S.profiles, wbLocal().used);
+  return `<main class="pick-wrap"><section class="card pick-card" aria-labelledby="pickH"><h2 id="pickH">Who’s using the tracker?</h2>
+    <p class="small muted">Pick your name once a day. Your changes, emails and Teams posts are signed with it. The list is the people registered in this workbook.</p>
+    ${list.length ? `<div class="pick-list">${list.map(p => `<button class="btn pick-btn" data-act="pickUser" data-k="${esc(p.key)}"><span>${esc(p.name)}</span>${p.here ? '<span class="pick-tag">On this computer</span>' : ''}</button>`).join('')}</div>` : '<p class="small">No one is registered in this workbook yet.</p>'}
+    <details class="pick-new"${list.length ? '' : ' open'}><summary>I’m not on the list</summary>
+      <div class="row" style="margin-top:8px"><input id="pkName" class="fld" placeholder="First name and last initial" aria-label="Your name" autocomplete="off" value="${esc(S.msName || '')}"><button class="btn primary" data-act="regUser">Add me</button></div>
+      <p class="small muted">Adds you to this workbook’s list (the hidden “${esc(PROF_SHEET)}” sheet). Other workbooks keep their own lists.</p></details>
+  </section></main>`;
 }
 // Your name defaults to the signed-in Microsoft account (Office single sign-on). Needs the Entra app registration's
 // client ID here and in the downloaded manifest; while it's blank, or if sign-on fails, the name typed in Settings is used.
@@ -1376,8 +1503,7 @@ async function msName(){
   } catch (e){ console.warn('Microsoft sign-on unavailable', e); return ''; }
 }
 async function useMsName(){
-  const n = await msName(); S.msName = n; S.msTried = true;
-  if (n && (!CFG.me || CFG.meSrc === 'ms') && CFG.me !== n){ CFG.me = n; CFG.meSrc = 'ms'; saveLocal(); }   // not stamped: a saved profile for this account still wins
+  const n = await msName(); S.msName = n; S.msTried = true;   // only offered as the name in "I'm not on the list"; it never picks anyone
   applyProfiles(); render();
 }
 function applyTheme(){ if (CFG.theme) document.documentElement.dataset.theme = CFG.theme; else delete document.documentElement.dataset.theme; }
@@ -1816,6 +1942,14 @@ function OfficeStore(){
         await ctx.sync();
       });
     },
+    async removeProfile(key){   // Admin › People on this workbook's list: blanks the row (saveProfile reuses blank rows)
+      return Excel.run(async ctx => {
+        const ws = ctx.workbook.worksheets.getItemOrNullObject(PROF_SHEET); await ctx.sync(); if (ws.isNullObject) return false;
+        const keys = ws.getRange('A1:A500'); keys.load('values'); await ctx.sync();
+        const row = keys.values.findIndex((v, i) => i > 0 && String(v[0]) === String(key)); if (row < 0) return false;
+        ws.getRange(`A${row + 1}:E${row + 1}`).values = [['', '', '', '', '']]; await ctx.sync(); return true;
+      });
+    },
     async update(k, r, snap, changes){
       return Excel.run(async ctx => {
         const t = ctx.workbook.tables.getItem(names[k]);
@@ -2058,15 +2192,15 @@ function DemoStore(){
   const ptCalc = () => ptVals.forEach(r => { r[9] = inv.filter(k => k[2] === r[0] && k[8] === k[23] && k[8] !== '').length; r[10] = 0; });
   ptCalc();
   const F = (vals, fset) => vals.map(r => r.map((v, c) => fset.has(c) ? '=FORMULA()' : v));
-  const besse = [['BESSE WEEKLY ORDERING GUIDE','','','','','','','','','','',''],['Clinic','Date','Dose','Besse O/H','Appts Next Week','Appts 2 Week Out','Approved Overage','To Be Ordered','','DATE',56,84],['SRL',T-3,'56mg',1,0,0,1,'','',T-3,'',''],['','','84mg',13,12,6,-2,'','',T+4,'','']];
+  const besse = [['BESSE WEEKLY ORDERING GUIDE','','','','','','','','','','',''],['Clinic','Date','Dose','Besse O/H','Appts Next Week','Appts 2 Week Out','Approved Overage','To Be Ordered','','DATE',56,84],['DEMO',T-3,'56mg',1,0,0,1,'','',T-3,'',''],['','','84mg',13,12,6,-2,'','',T+4,'','']];
   const AUD_H = ['Location','Date','Auditor Name (First and Last)','Auditor 2','Scan Here','Pharmacy/Drug Source','Serial Number ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
   const AUD_F = new Set([0,5,6,7,8,9,10,11]); const audVals = Array.from({ length: 15 }, () => Array(12).fill(''));
   { let n = 0, skip = 0; for (const r of inv){ if (!r[1] || r[11] !== '' || r[19] === 'Yes') continue; if (r[3] === 'Besse' && skip < 1 && r[2] === ''){ skip++; continue; } if (n >= audVals.length) audVals.push(Array(12).fill('')); const row = audVals[n++]; row[1] = T - 1; row[2] = 'Taylor R.'; row[3] = 'Sam K.'; row[4] = r[1]; } }
   const DC_H = ['Date','Auditor Name (First and Last)','Scan Here','Pharmacy/Drug Source','Serial Number  ','Lot Number','Dose (mg)','Inventory Status','Administered','Duplicate Entry'];
   const DC_F = new Set([0,3,4,5,6,7,8,9]); const dcVals = Array.from({ length: 40 }, () => Array(10).fill(''));
   audVals.filter(r => r[4]).slice(0, 6).forEach((r, i) => { dcVals[i][1] = 'Taylor R.'; dcVals[i][2] = r[4]; });
-  const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','San Rafael']], formulas: null };
-  const docs = { eskShared: { bayPlan: { ...JSON.parse(JSON.stringify(BP_DEFAULT)), name: 'ESK rooms (demo)', savedBy: 'Taylor R.', savedAt: new Date(Date.now() - 864e5).toISOString() } } };   // the demo clinic has loaded a bay map
+  const dh = { sheet: 'Daily Count', values: [['Auditor 1 Name (First and Last)','Taylor R.'],['Auditor 2 Name (First and Last)','Sam K.'],['Date',T-1],['Location','Demo Clinic']], formulas: null };
+  const docs = { eskShared: { bayPlan: { ...JSON.parse(JSON.stringify(BP_DEFAULT)), name: 'ESK rooms (demo)', savedBy: 'Taylor R.', savedAt: new Date(Date.now() - 864e5).toISOString() }, clinicCfg: { clinic: 'DEMO', locName: 'Demo Clinic', pm: 'Jordan P.', genoaEmail: 'genoa.demo@example.com', cc: 'lead.demo@example.com', by: 'Taylor R.', at: new Date(Date.now() - 864e5).toISOString() } } };   // the demo clinic has loaded a bay map
   const rems = [], vlogDemo = [], phxDemo = demoPharm(T, docs);
   { let n = 0; for (const a of apVals){ if (a[5] !== 'Kept' || a[2] >= T) continue; n++; if (n % 7 === 3) continue; const late = n % 9 === 4 ? 1 : 0, w = isoOf(a[2] + late) + ' 1' + (n % 6) + ':' + String(10 + n % 50).padStart(2, '0');
     rems.push([String(1550000 + n), 'REMS PT Monitoring Form', '', a[1], w, 'Taylor R.', w, 'Taylor R.', w, 'Taylor R.', isoOf(T - 1) + ' 17:00']); }
@@ -3137,7 +3271,7 @@ function render(){
       <main id="main" class="pg-today pg-bays">${S.mode === 'pane' && S.canFull && !CFG.pvTipOff ? pvTipHTML(true) : ''}${body}</main></div></div>`;
     return;
   }
-  if (!CFG.me && S.msTried && (S.loaded || !S.store?.live) && !S.askedName){ S.askedName = true; S.view = 'settings'; S.firstRun = true; }   // first run: the Settings page asks for a name (live: after the first read, so saved profiles are known)
+  if (needPick()){ CFG = loadCfg(); applySharedCfg(); applyProfiles(); if (needPick()){ app.innerHTML = pickHTML(); return; } }   // once a day, per workbook and computer: who is using it (a pane left open overnight asks again)
   if (!PAGES[S.view]) S.view = 'today';
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id));   // rail counts come from PAGES.<view>.badge()
   const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
@@ -3161,6 +3295,7 @@ function render(){
       <div class="sec">
         ${S.mode === 'demo' ? `<button class="ni rt" data-act="demoBack" title="Back to the install page">← Back</button><button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <div class="pres pres-chip" data-pres="chip">${presenceHTML('chip')}</div>
+        ${S.store.live && S.mode !== 'demo' && CFG.me ? `<button class="ni rt me-btn" data-act="switchUser" aria-label="You are ${esc(CFG.me)}. Switch user" title="You: ${esc(CFG.me)}. Switch user">${esc(presInitials(CFG.me))}</button>` : ''}
         <button class="ni rt ico" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button>
         <button class="ni rt ico" data-act="refresh" aria-label="Refresh" title="Refresh: read the workbook again">${NAV_IC.refresh}</button>
         ${conn}</div>
@@ -3645,12 +3780,34 @@ async function prnSyncKit(key){
 const prnMissingCols = rescue => PRN_TRACK.filter(t => (rescue || []).some(r => t.med.test(r.med || '')) && !prnColKey(t)).map(t => t.label);
 // Vitals ranges (Settings › Vitals ranges, shared as eskShared.vitRange). vitOut(x) = what's past them, e.g. ['BP 152/96'], [] when fine.
 const VIT_RANGE = ['vitSysMax', 'vitDiaMax', 'vitHrMax', 'vitHrMin', 'vitO2Min', 'vitEmSys', 'vitEmDia'];
-// Workbook settings an admin sets for everyone (Settings › Workbook settings, PIN): order emails, MADRS reminders, timing.
-// Saved as eskShared.clinicCfg; vitals ranges stay eskShared.vitRange. A workbook without them keeps each person's own values.
+// The clinic's settings, one set for everyone in the workbook (Settings › Clinic and Workbook settings): order emails, MADRS reminders,
+// timing, plus the clinic code, location name and practice manager (CLINIC_OWN). Saved as eskShared.clinicCfg; vitals ranges stay
+// eskShared.vitRange. They are never kept on a computer or in anyone's profile, so a workbook without them shows the defaults (blank
+// emails), never someone else's. The clinic and location start from the workbook's name when it says (clinicFromName).
 const CLINIC_SHARED = ['email', 'genoaEmail', 'cc', 'helpEmail', 'leadEmail', 'provEmails', 'vitalsMin', 'disAfter', 'schedDays', 'genoaDays'];
+// Anyone may fill these while the workbook has them blank (the first entry saves it for everyone); after that, Admin changes them.
+const CLINIC_FIRST = ['clinic', 'locName', 'pm', 'genoaEmail', 'cc', 'helpEmail', 'leadEmail', 'provEmails'];
+const wbClinic = () => { const c = (S.shared || {}).clinicCfg; return c && typeof c === 'object' ? c : {}; };
+const wbHas = k => String(wbClinic()[k] ?? '').trim() !== '';
 function applySharedCfg(){
-  const sh = S.shared || {}; Object.assign(CFG, sh.vitRange || {});
-  const c = sh.clinicCfg; if (c && typeof c === 'object') for (const k of CLINIC_SHARED) if (k in c && c[k] != null) CFG[k] = c[k];
+  const sh = S.shared || {}, vr = sh.vitRange || {}; for (const k of VIT_RANGE) CFG[k] = vr[k] != null && vr[k] !== '' ? vr[k] : DEF[k];
+  const c = wbClinic(), n = clinicFromName(S.wbName), base = n ? { clinic: n.code, locName: n.name } : {};
+  for (const k of [...CLINIC_SHARED, ...CLINIC_OWN]) CFG[k] = c[k] != null && String(c[k]).trim() !== '' ? c[k] : base[k] ?? DEF[k] ?? '';
+}
+// Settings › Clinic: what this computer had before settings were kept per workbook (the old eskCfg), offered once a workbook has
+// none of them. Only on a click, and only into the form: the person checks them and presses Save.
+function legacyClinic(){
+  if (WB_KEY === 'demo' || CLINIC_FIRST.some(wbHas)) return null;
+  let o; try { o = JSON.parse(localStorage.getItem(LEGACY_CFG) || 'null'); } catch { o = null; }
+  if (!o || typeof o !== 'object') return null;
+  const out = Object.fromEntries(CLINIC_FIRST.filter(k => String(o[k] ?? '').trim()).map(k => [k, String(o[k]).trim()]));
+  return Object.keys(out).length ? out : null;
+}
+// Save fields to the workbook's clinic settings (merge). Callers decide who may: Admin, or anyone for a field that's still blank.
+async function saveClinic(ch){
+  if (!Object.keys(ch).length) return false;
+  S.shared = { ...(S.shared || {}), clinicCfg: { ...wbClinic(), ...ch, by: CFG.me || '', at: new Date().toISOString() } };
+  await S.store.setDoc('eskShared', S.shared); applySharedCfg(); return true;
 }
 function vitOut(x, R = CFG){
   if (!x) return [];
@@ -4459,7 +4616,7 @@ async function adminSave(){
   if (k.test){ const { mg, tech, sup } = S.adm, at = fromHHMM(S.adm.at); await testKitSet(it.a.key, { mg: +mg, tech, sup }); if (at != null) await visitSet(it.a.key, { adm: at }); closeModal(); render(); return toast('ok', `Test: recorded ${mg} mg (nothing written to the workbook).`); }
   const obj = { administeredmg: +S.adm.mg, dateadministered: { date: S.day }, treatingtechnician: S.adm.tech, supervisingphysician: S.adm.sup, ...prnTotals(visitGet(it.a.key)?.rescue) };
   if (!k.mrn) obj.mrn = mrnVal(it.a.mrn); if (!k.comments) obj.comments = nm(it.a.mrn);
-  CFG.sup = S.adm.sup; if (!CFG.me) CFG.me = S.adm.tech; saveCfg();
+  CFG.sup = S.adm.sup; saveCfg();   // who you are comes only from the daily pick
   const { out } = changesFor('kits', obj);
   const ok = await write('Recording administration…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), `Recorded ${S.adm.mg} mg for ${nm(it.a.mrn)}.`);
   if (ok){ const d = isoOf(S.day); if (S.pull[d]) { delete S.pull[d][it.a.key]; savePull(); } const at = fromHHMM(S.adm.at); if (at != null) await visitSet(it.a.key, { adm: at }); closeModal(); render(); }
@@ -4510,7 +4667,7 @@ async function recvScan(raw){
   const sn = normScan(p.serial);
   const dup = S.K.find(k => k.serialN === sn) || (S.rcvHold || []).find(h => normScan(h.serial) === sn);
   if (dup) return setMsg('recvMsg', 'bad', `Serial ${esc(p.serial)} was already scanned${dup.r != null ? ` (row ${dup.r + 3}${dup.mrn ? ', ' + esc(nm(dup.mrn)) : ''})` : ''}.`);
-  const me = CFG.me; if (!me) { openSettings(); return setMsg('recvMsg', 'warn', 'Add your name in Settings first — it goes in Logging PCT.'); }
+  const me = CFG.me; if (!me) { askWho(); return setMsg('recvMsg', 'warn', 'Pick your name first — it goes in Logging PCT.'); }
   if (S.recvPharm === 'Genoa'){
     const L = recvQueue();
     const fits = k => { const m = lineMg(k); return !m || m === p.mg; };
@@ -4538,7 +4695,7 @@ async function recvScan(raw){
 async function rcvAdd(i){
   const h = (S.rcvHold || [])[i]; if (!h) return; const T = todaySerial();
   const mrn = mrnFromInput($('#hold' + i)?.value); if (!mrn || !S.byMrn.has(mrn)) return setMsg('recvMsg', 'bad', 'Choose the patient from the list first.');
-  if (!CFG.me){ openSettings(); return; }
+  if (!CFG.me){ askWho(); return; }
   const { out } = changesFor('kits', { loggingpct: CFG.me, scanhere: h.scan, mrn: mrnVal(mrn), pharmacy: pharmText(S.byMrn.get(mrn)?.pharm || 'GENOA'), datereceived: { date: T }, comments: `${nm(mrn)} | Received without an open order ${fmtD(T)}` });
   if (await write('Adding to inventory…', () => S.store.add('kits', out), `Added for ${nm(mrn)}.`)){ S.rcvHold.splice(i, 1); rcvLogAdd({ id: 'S:' + normScan(h.serial), who: nm(mrn), mg: h.mg, serial: h.serial, warn: 'received without an open order' }); render(); }
 }
@@ -4602,7 +4759,7 @@ function besseHTML(){
 }
 async function genoaOrder(){
   const g = genoaModel(); const rows = g.rows.filter(r => r.cover === 'need' && S.genoaSel.has(r.a.key)); if (!rows.length) return;
-  if (!CFG.me) return openSettings();
+  if (!CFG.me) return askWho();
   const T = todaySerial();
   const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
     await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: phOrderText(r.inf), dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
@@ -4647,7 +4804,7 @@ async function saveBesse(){
   }
   const lines = [];
   if (S.logLines !== false) for (const mg of [56, 84]) for (let n = 0; n < m.rows[mg].order; n++) lines.push(changesFor('kits', { loggingpct: CFG.me, pharmacy: pharmText('BESSE'), dateordered: { date: S.orderDate }, comments: `Besse ${mg} mg order` }).out);
-  if (lines.length && !CFG.me) return openSettings();
+  if (lines.length && !CFG.me) return askWho();
   if (!cells.length && !lines.length) return toast('info', 'Nothing to record.');
   await write('Recording order…', async () => { if (cells.length) await S.store.setCells(S.besseSheet, cells); await S.store.addMany('kits', lines); },
     `Order recorded${cells.length ? ' on the Besse Order tab' : ''}${histNote}${lines.length ? `; ${lines.length} kit${lines.length > 1 ? 's' : ''} now in transit` : ''}.`);
@@ -4665,11 +4822,11 @@ function followRows(ids){
 }
 const FU_HEAD = ['Patient', 'MRN', 'Pharmacy', 'Dose', 'Ordered', 'Needed by', 'Time'];
 const FU_C = { band: '#e8f1f9', bar: '#2d6fa8', head: '#cddff0' }, PT_C = { band: '#fdf5e2', bar: '#b8860b', head: '#f4e2b5' }, BE_C = { band: '#f9ebe4', bar: '#b5532f', head: '#efd3c6' };
-// Sign-off and cc from Settings (per computer). Signature blank → your name + clinic.
+// Sign-off: “Thank you,” and, only if the person added one in Settings, their signature (Outlook normally adds its own). Cc: the workbook's.
 const splitEmails = v => String(v || '').split(/[;,\s]+/).map(x => x.trim()).filter(x => /@/.test(x));
-const sigLines = () => { const t = String(CFG.sig || '').split(/\r?\n/).map(x => x.trimEnd()); while (t.length && !t[t.length - 1]) t.pop(); return t.some(Boolean) ? t : [CFG.me || '', CFG.clinic || ''].filter(Boolean); };
-const sigHTML = () => `<p style="margin-top:16px">Thank you,<br>${sigLines().map(esc).join('<br>')}</p>`;
-const sigText = () => `\n\nThank you,\n${sigLines().join('\n')}`;
+const sigLines = () => { const t = String(CFG.sig || '').split(/\r?\n/).map(x => x.trimEnd()); while (t.length && !t[t.length - 1]) t.pop(); return t.some(Boolean) ? t : []; };
+const sigHTML = () => `<p style="margin-top:16px">Thank you,${sigLines().map(l => '<br>' + esc(l)).join('')}</p>`;
+const sigText = () => `\n\nThank you,${sigLines().map(l => '\n' + l).join('')}`;
 const ccFor = to => { const t = splitEmails(to).map(x => x.toLowerCase()); return [...new Set(splitEmails(CFG.cc))].filter(x => !t.includes(x.toLowerCase())); };
 const hdrsHTML = (to, subj) => { const cc = ccFor(to); return `<div class="emhdrs small" style="display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:6px 0 4px"><b>To</b><span>${esc(to) || '<span class="muted">set in Settings</span>'}</span><b>Cc</b><span>${cc.length ? esc(cc.join('; ')) : '<span class="muted">none — add one in Settings</span>'}</span><b>Subject</b><span>${esc(subj)}</span></div>`; };
 function openMail(to, subj){ const cc = ccFor(to); const a = document.createElement('a'); a.href = `mailto:${splitEmails(to).map(encodeURIComponent).join(';')}?${cc.length ? 'cc=' + cc.map(encodeURIComponent).join(';') + '&' : ''}subject=${encodeURIComponent(subj)}`; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
@@ -4798,7 +4955,7 @@ function auditHTML(){
   </div>`;
 }
 const LOGO_URI = 'data:image/png;base64,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';
-const locName = () => CFG.locName || ({ SRL: 'San Rafael', CAS: 'Castro', SF: 'San Francisco' }[String(CFG.clinic || '').toUpperCase()] || CFG.clinic || '');
+const locName = () => CFG.locName || CODE_NAMES[String(CFG.clinic || '').toUpperCase()] || CFG.clinic || '';
 // Daily audit printout — same layout as the workbook's Daily Count sheet (landscape, one page), detail on page 2.
 function auditDoc(){
   const m = auditModel(); const A = m.A; const T = fromIso(A.date) ?? todaySerial();
@@ -5045,7 +5202,7 @@ async function dispSave(){
   const k = S.K.find(x => x.id === S.disp.id); if (!k) return; const T = todaySerial();
   const obj = { markedfordisposal: 'Yes', dateofdisposal: { date: T }, disposalmethod: S.disp.method, mgdisposed: +S.disp.mg, disposingpct: S.disp.pct, practicemanager: S.disp.pm };
   if (!k.administered && k.adminRaw == null) obj.administeredmg = 'Marked For Disposal';
-  CFG.pm = S.disp.pm; saveCfg();
+  if (!wbHas('pm') && String(S.disp.pm || '').trim()) saveClinic({ pm: String(S.disp.pm).trim() }).catch(e => console.error(e));   // the first practice manager entered becomes the workbook's
   const { out } = changesFor('kits', obj);
   if (await write('Recording disposal…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), 'Disposal recorded.')){ closeModal(); render(); }
 }
@@ -5090,7 +5247,6 @@ function openSettings(){
   if (S.view === 'settings'){ S.setDraft = null; setEditing(false); }   // profRestore: show the restored values
   else { S.setReturn = S.view; S.view = 'settings'; }
   closeModal(); render(); window.scrollTo(0, 0);
-  if (!CFG.me) setTimeout(() => $('#sMe')?.focus(), 30);
 }
 
 // ---------- modal / toast / busy ----------
@@ -6987,7 +7143,7 @@ function demoPharm(T, docs){
   };
   // REMS (fake): Provider A's setting is ending; Provider B's took over 3 days ago, so everyone re-enrolls under it
   sh.rems = { prescribers: [{ id: 'prov-a', name: 'Provider A', cred: 'MD', npi: '1000000001', delegates: ['Taylor R.'], delAt: d(-90) }, { id: 'prov-b', name: 'Provider B', cred: 'MD', npi: '1000000002', delegates: ['Taylor R.', 'Sam K.'], delAt: d(-3) }, { id: 'prov-c', name: 'Provider C', cred: 'NP', npi: '1000000003', delegates: [] }],
-    settings: [{ id: 'hcs-a', name: 'SRL (Provider A)', remsId: 'HCS-DEMO-1', dea: 'prov-a', start: '2025-01-06', end: d(30) }, { id: 'hcs-b', name: 'SRL (Provider B)', remsId: 'HCS-DEMO-2', dea: 'prov-b', start: d(-3) }], callDow: 2, callPhone: '555-0199' };
+    settings: [{ id: 'hcs-a', name: 'DEMO (Provider A)', remsId: 'HCS-DEMO-1', dea: 'prov-a', start: '2025-01-06', end: d(30) }, { id: 'hcs-b', name: 'DEMO (Provider B)', remsId: 'HCS-DEMO-2', dea: 'prov-b', start: d(-3) }], callDow: 2, callPhone: '555-0199' };
   for (const m of [900101, 900102, 900104, 900105, 900106, 900107, 900109, 900110, 900113]) (recs[m] = recs[m] || {}).rems = { hcs: 'hcs-a', enrolled: '2025-03-10' };
   recs[900101].rems.re = [{ id: 'r1', from: 'hcs-a', to: 'hcs-b', opened: d(-2), by: 'Taylor R.', prepared: d(-2), sent: d(-1) }];
   recs[900106].rems.re = [{ id: 'r2', from: 'hcs-a', to: 'hcs-b', opened: d(-2), by: 'Taylor R.', prepared: d(-2) }];
@@ -7071,7 +7227,7 @@ async function phxPut(mrn, fn, okText){
   return write('Saving…', () => S.store.savePharm(mrn, row), okText || 'Saved.');
 }
 async function phxSave(mrn){
-  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings();
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return askWho();
   const resp = {}; document.querySelectorAll('[data-phe]').forEach(el => { const [id, f] = el.dataset.phe.split('|'); const v = String(el.value || '').trim(); (resp[id] = resp[id] || {})[f] = v; });
   for (const r of Object.values(resp)) for (const k of Object.keys(r)) if (!r[k]) delete r[k];
   for (const [id, r] of Object.entries(resp)) if (r.cls && !r.at) r.at = isoOf(todaySerial());   // a response picked today is dated today
@@ -7085,12 +7241,12 @@ async function phxSave(mrn){
   if (ok) closeModal();
 }
 async function phxToggle(mrn, on){
-  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const s = phxState(p);
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return askWho(); const s = phxState(p);
   const to = s.xf.to || s.best?.id; if (on && !to){ render(); return toast('warn', 'No pharmacy has answered eligible for this patient yet.'); }
   await phxPut(mrn, rec => { const xf = rec.xf = rec.xf || {}; if (on){ xf.on = true; xf.to = to; } else { xf.on = false; delete xf.to; } return rec; }, on ? `Transferring to ${esc(phName(to))}.` : 'Transfer turned off.');
 }
 async function phxSubmit(){
-  const to = $('#phSubTo')?.value, L = [...(S.phSel || [])]; if (!to || !L.length) return; if (!CFG.me) return openSettings();
+  const to = $('#phSubTo')?.value, L = [...(S.phSel || [])]; if (!to || !L.length) return; if (!CFG.me) return askWho();
   const day = isoOf(todaySerial()); let n = 0;
   busy(`Marking ${L.length} submitted…`);
   try { for (const mrn of L){ const p = S.byMrn.get(mrn); if (!p || !phBetter(p).some(ph => ph.id === to)) continue;
@@ -7122,7 +7278,7 @@ function openPhxApply(){
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="phxApplyGo" ${x.items.length ? '' : 'disabled'}>Write to the workbook</button></div>`);
 }
 async function phxApplyGo(){
-  const x = S.phApply; if (!x) return; if (!CFG.me) return openSettings(); let done = [];
+  const x = S.phApply; if (!x) return; if (!CFG.me) return askWho(); let done = [];
   const ok = await write('Writing to the Master Patient Tracker…', async () => {
     done = await S.store.updateMany('patients', x.items.map(({ r, snap, changes }) => ({ r, snap, changes })));
     if (x.missing.length) await S.store.setDropdown(x.t.headers[x.c], 'Pharmacy', [...(S.ref.pharmacy || []), ...x.missing], false);
@@ -7150,7 +7306,7 @@ function phPlanHTML(){
 }
 async function phOrder(phId, day){
   const ph = phById(phId), x = phxPlan(S.phDays || 42).find(p => p.ph.id === phId), g = x?.groups.find(g => g.date === +day); if (!ph || !g) return;
-  const rows = g.need.filter(r => r.cover === 'need'); if (!rows.length) return; if (!CFG.me) return openSettings();
+  const rows = g.need.filter(r => r.cover === 'need'); if (!rows.length) return; if (!CFG.me) return askWho();
   const T = todaySerial(), refv = (S.ref.pharmacy || []).find(v => phMatch(v)?.id === ph.id) || ph.name;
   await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, () => S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: refv, dateordered: { date: T }, comments: nm(r.a.mrn) }).out)),
     `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered from ${esc(ph.name)}.`);
@@ -7184,13 +7340,13 @@ function openRxEdit(mrn){
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="rxSave" data-m="${esc(mrn)}">Save</button></div>`);
 }
 async function rxSave(mrn){
-  if (!CFG.me) return openSettings();
+  if (!CFG.me) return askWho();
   const ph = $('#rxPh')?.value || '', sent = $('#rxSent')?.value || '', ref = Math.max(0, Math.round(+($('#rxRef')?.value || 0))), adj = Math.max(0, Math.round(+($('#rxAdj')?.value || 0)));
   if (!fromIso(sent)) return toast('warn', 'Enter the date the Rx or refill was sent.');
   if (await phxPut(mrn, rec => { rec.rx = { ph, sent, kits: ref + 1, ...(adj ? { adj } : {}), by: CFG.me || '' }; return rec; }, 'Prescription saved.')) closeModal();
 }
 async function rxReq(mrn){
-  if (!CFG.me) return openSettings();
+  if (!CFG.me) return askWho();
   await phxPut(mrn, rec => { rec.rx = { ...(rec.rx || {}), req: { at: isoOf(todaySerial()), by: CFG.me || '' } }; return rec; }, 'Marked as requested from the provider.');
 }
 
@@ -7369,14 +7525,14 @@ function openRemsEdit(mrn){
 }
 const today = () => isoOf(todaySerial());
 async function remsSave(mrn){
-  if (!CFG.me) return openSettings();
+  if (!CFG.me) return askWho();
   const hcs = $('#reHcs')?.value || '', enr = $('#reEnr')?.value || '', steps = {}; document.querySelectorAll('[data-rest]').forEach(el => { steps[el.dataset.rest] = el.value || ''; }); const note = $('#reNote')?.value;
   if (await phxPut(mrn, rec => { const r = rec.rems = rec.rems || {}; if (hcs) r.hcs = hcs; else delete r.hcs; if (enr) r.enrolled = enr; else delete r.enrolled;
     const x = reOpen(r); if (x){ for (const [k] of REMS_STEPS) if (k in steps){ if (steps[k]) x[k] = steps[k]; else delete x[k]; } if (note != null) x.note = note.trim(); if (x.confirmed){ r.hcs = x.to; r.enrolled = x.confirmed; } }
     return rec; }, 'REMS enrollment saved.')) closeModal();
 }
 async function cmBulk(){
-  const L = [...(S.cmSel || [])], act = $('#cmAct')?.value || 'assign', cur = hcsCurrent(), day = today(); if (!L.length) return; if (!CFG.me) return openSettings();
+  const L = [...(S.cmSel || [])], act = $('#cmAct')?.value || 'assign', cur = hcsCurrent(), day = today(); if (!L.length) return; if (!CFG.me) return askWho();
   if ((act === 'assign' || act === 'start') && !cur) return toast('warn', 'No current healthcare setting. Check the start and end dates in Settings › Admin.');
   let n = 0; busy(`Saving ${L.length}…`);
   try { for (const mrn of L){ const rec = JSON.parse(JSON.stringify(phxRec(mrn))), r = rec.rems = rec.rems || {};
@@ -7395,11 +7551,11 @@ function openReStartAll(){
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="reStartAllGo">Start ${L.length}</button></div>`);
 }
 async function reStartAllGo(){
-  const cur = hcsCurrent(), L = cmRems().filter(s => s.st === 'needre'); if (!cur || !L.length) return; if (!CFG.me) return openSettings();
+  const cur = hcsCurrent(), L = cmRems().filter(s => s.st === 'needre'); if (!cur || !L.length) return; if (!CFG.me) return askWho();
   S.cmSel = new Set(L.map(s => s.p.mrn)); S.cmAct = 'start'; closeModal();
   const el = $('#cmAct'); if (el) el.value = 'start'; await cmBulk();
 }
-const reOne = async (mrn, fn, ok) => { if (!CFG.me){ openSettings(); return false; } return phxPut(mrn, rec => fn(rec) || rec, ok); };
+const reOne = async (mrn, fn, ok) => { if (!CFG.me){ askWho(); return false; } return phxPut(mrn, rec => fn(rec) || rec, ok); };
 
 // --- Benefits & BIDF ---
 function cmBidfHTML(){
@@ -7438,7 +7594,7 @@ function openBidfEdit(mrn){
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="bidfSave" data-m="${esc(mrn)}">Save BIDF</button></div>`, true);
 }
 async function bidfSave(mrn){
-  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings();
+  const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return askWho();
   const v = id => String($('#' + id)?.value ?? '').trim(), done = v('bdDone');
   if (!fromIso(done)) return toast('warn', 'Enter the date the BI was completed.');
   if (v('bdTx') === '' && v('bdCourse') === '') return toast('warn', 'Enter the BIDF estimate (per treatment or for the course).');
@@ -7464,11 +7620,11 @@ function openInsFix(){
 async function insFixGo(){ const x = S.insFix; if (!x) return; let done = [];
   if (await write('Writing insurance names…', async () => { done = await S.store.updateMany('patients', x.items.map(({ r, snap, changes }) => ({ r, snap, changes }))); }, () => `Insurance rewritten on ${(done || []).length} of ${x.items.length} rows.`)){ S.insFix = null; closeModal(); } }
 async function insSet(mrn, to){
-  const t = S.tables.patients, c = t?.cols.insurance; if (c == null) return toast('bad', 'No Insurance column on the Master Patient Tracker.'); if (!CFG.me) return openSettings();
+  const t = S.tables.patients, c = t?.cols.insurance; if (c == null) return toast('bad', 'No Insurance column on the Master Patient Tracker.'); if (!CFG.me) return askWho();
   const items = []; t.values.forEach((_, r) => { if (mrnKey(t.get(r, 'mrn')) === mrn && !t.isFormula(r, c)) items.push({ r, snap: t.snap(r), changes: [[c, to]] }); });
   await write('Updating insurance…', () => S.store.updateMany('patients', items), `Tracker insurance set to ${esc(to)}. Check the authorization and redo the BIDF.`);
 }
-async function bidfCol(){ if (!CFG.me) return openSettings(); const h = bidfYearCol();
+async function bidfCol(){ if (!CFG.me) return askWho(); const h = bidfYearCol();
   await write(`Adding ${h}…`, async () => { await S.store.addPtColumn(h); try { await S.store.setDropdown(h, 'Yes/No', (S.ref.yesno && S.ref.yesno.length ? S.ref.yesno : ['Yes', 'No']), false); } catch (e){ console.warn(e); } }, `Added “${esc(h)}” to the Master Patient Tracker.`); }
 
 // --- weekly REMS call ---
@@ -7487,11 +7643,11 @@ function openCallLog(){
     <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary" data-act="callSave">Save</button></div>`);
 }
 async function callSave(){
-  if (!CFG.me) return openSettings(); const at = $('#clAt')?.value || '', outcome = $('#clOut')?.value || 'none', note = String($('#clNote')?.value || '').trim();
+  if (!CFG.me) return askWho(); const at = $('#clAt')?.value || '', outcome = $('#clOut')?.value || 'none', note = String($('#clNote')?.value || '').trim();
   if (!fromIso(at)) return toast('warn', 'Enter the call date.'); if (outcome === 'actions' && !note) return toast('warn', 'Note what REMS asked for.');
   if (await phxPutKey(REMS_CALL_KEY, 'REMS weekly calls', rec => { rec.calls = [{ id: Math.random().toString(36).slice(2, 8), at, by: CFG.me || '', outcome, note }, ...(rec.calls || [])].slice(0, 104); return rec; }, 'Call logged.')) closeModal();
 }
-async function callDone(id){ if (!CFG.me) return openSettings(); await phxPutKey(REMS_CALL_KEY, 'REMS weekly calls', rec => { const c = (rec.calls || []).find(x => x.id === id); if (c) c.done = today(); return rec; }, 'Marked done.'); }
+async function callDone(id){ if (!CFG.me) return askWho(); await phxPutKey(REMS_CALL_KEY, 'REMS weekly calls', rec => { const c = (rec.calls || []).find(x => x.id === id); if (c) c.done = today(); return rec; }, 'Marked done.'); }
 async function phxPutKey(key, name, fn, ok){ const rec = fn(JSON.parse(JSON.stringify(phxRec(key)))) || {}; return write('Saving…', () => S.store.savePharm(key, phxRow(key, rec, { name, now: new Date().toISOString().slice(0, 16).replace('T', ' '), by: CFG.me || '' })), ok); }
 
 // --- Schedule rows and the patient card ---
@@ -7709,7 +7865,8 @@ function setDirty(){ return !!(S.setDraft && Object.keys(S.setDraft).length); }
 // True when everything in the draft is what cfgSave would have stored, i.e. the save went through.
 function setDraftSaved(){
   return Object.entries(S.setDraft || {}).every(([id, x]) => {
-    if (SET_CFG[id]){ const k = SET_CFG[id]; let want = SET_NUM.has(id) ? Math.max(1, +x || DEF[k]) : String(x).trim(); if (id === 'sMe' && S.msName && (!want || want === S.msName)) want = S.msName; return CFG[k] === want; }
+    if (SET_CFG[id]){ const k = SET_CFG[id]; if ([...CLINIC_SHARED, ...CLINIC_OWN, ...VIT_RANGE].includes(k)) return true;   // the workbook's: cfgSave saved what it may, the form is done
+      const want = SET_NUM.has(id) ? Math.max(1, +x || DEF[k]) : String(x).trim(); return String(CFG[k]) === String(want); }
     if (id === 'sMedInv') return String(x).trim() === ((S.shared || {}).medInvUrl || '');
     if (id === 'sSnd') return sndFormat(sndParse(x)) === sndFormat((S.shared || {}).soundLinks);
     if (id === 'sVitN') return !!CFG.vitNotify === x;
@@ -7737,15 +7894,20 @@ function settingsHTML(){
     return `<div class="set-f${o.wide ? ' wide' : ''}"><label class="lbl" for="${id}">${label}</label>${o.rows
       ? `<textarea id="${id}" class="fld" data-cfg="${k}" rows="${o.rows}"${ph}>${esc(v)}</textarea>`
       : `<input id="${id}" class="fld"${o.num ? ' type="number" min="1"' : ''} data-cfg="${k}"${o.list ? ` list="${o.list}"` : ''} value="${esc(v)}"${ph}>`}${o.hint ? `<div class="set-hint">${o.hint}</div>` : ''}</div>`; };
-  const saved = live && !CFG.me ? (S.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
-  const meHint = S.msName ? (CFG.meSrc === 'ms' ? 'From your Microsoft account.' : `Your Microsoft account says ${esc(S.msName)}. Clear this box to use it.`) : '';
   const snd = val('sVitS', CFG.vitSound);
-  const you = `<section class="card set-you"><h3>You</h3><p class="small muted set-intro">Only yours. ${live ? `Saved on this computer and backed up in this workbook (hidden “${esc(PROF_SHEET)}” sheet), so you only enter them once.` : 'Saved on this computer only.'}</p>
-    ${saved.length ? `<div class="alert info"><p><b>Set up before?</b> Pick your name to restore your settings.</p><div class="set-row"><select id="sProf" class="fld" aria-label="Saved settings">${saved.map(p => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join('')}</select><button class="btn primary sm" data-act="profRestore">Restore</button></div></div>` : ''}
+  const sigOpen = !!String(val('sSig', CFG.sig || '')).trim();
+  const who = S.mode === 'demo' || !live ? `<div class="set-f wide"><div class="lbl">You</div><div><b>${esc(CFG.me || 'Not set')}</b></div></div>`
+    : `<div class="set-f wide set-who"><div class="lbl">You (Logging PCT / technician)</div><div class="set-row"><b class="grow">${esc(CFG.me)}</b><button class="btn sm" data-act="switchUser">Switch user</button></div><div class="set-hint">Picked from this workbook’s list once a day on this computer. Someone else using this computer? Switch user.</div></div>`;
+  const you = `<section class="card set-you"><h3>You</h3><p class="small muted set-intro">Only yours, and only in this workbook. ${live ? `Saved on this computer and backed up in this workbook (hidden “${esc(PROF_SHEET)}” sheet), so you only enter them once.` : 'Saved on this computer only.'}</p>
     <div class="set-grid">
-      ${f('sMe', 'Your name (Logging PCT / technician)', { list: 'dlMe', wide: true, hint: meHint })}
+      ${who}
       ${f('sSup', 'Supervising physician (default)', { list: 'dlSup2', wide: true })}
-      ${f('sSig', 'Email signature (after “Thank you,”)', { rows: 4, wide: true, ph: [CFG.me || 'Your name', 'Title', CFG.clinic || 'Clinic', 'Phone'].join('\n'), hint: 'Blank uses your name and clinic code.' })}
+      <details class="set-f wide set-sig"${sigOpen ? ' open' : ''}><summary>Add a signature <span class="muted">(only if Outlook doesn’t add yours)</span></summary>
+        <p class="set-hint">Emails from the tracker end with “Thank you,” and no signature, because Outlook adds yours when it’s set up there (Outlook › Settings › Signatures, then turn on adding it to new messages). If yours doesn’t show up, add it here.</p>
+        ${f('sSig', 'Signature (goes after “Thank you,”)', { rows: 4, wide: true, ph: 'Your name\nTitle\nPhone' })}
+        <div class="set-row"><label class="btn sm" for="sSigFile" tabindex="0">Use a signature file…</label><input type="file" id="sSigFile" accept=".txt,.htm,.html" hidden><span class="small muted grow">.txt or .htm</span></div>
+        <p class="set-hint">Outlook on this computer keeps your signatures in <b>%APPDATA%\\Microsoft\\Signatures</b>: paste that into File Explorer’s address bar and pick your signature’s .txt (or .htm) file. Its text lands in the box above as plain text; check it, then Save settings.</p>
+      </details>
       <div class="set-f wide"><label class="lbl" for="sTheme">Theme</label><select id="sTheme" class="fld" data-cfg="theme">${[['', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}" ${val('sTheme', CFG.theme) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     <h2 class="set-sec">Vitals alerts</h2>
@@ -7758,16 +7920,25 @@ function settingsHTML(){
     ${S.mode !== 'demo' ? `<h2 class="set-sec">Full screen</h2><label class="check"><input type="checkbox" id="sFull" ${on('sFull', CFG.autoFull)}><span class="l">Open full screen automatically when the panel opens</span></label>` : ''}
   </section>`;
   const sumV = (+val('sV40', CFG.vitalsMin) || DEF.vitalsMin) + (+val('sDis', CFG.disAfter) || DEF.disAfter);
-  const clinic = `<section class="card set-clinic"><h3>Clinic</h3><p class="small muted set-intro">Yours: filled in from the team the first time; changes here are yours.</p>
+  // Clinic fields: anyone fills one while the workbook has it blank (the first entry saves it for everyone); once set, Admin changes it.
+  const vr = k => CFG[k] ?? DEF[k], dash = v => String(v ?? '').trim() ? esc(String(v)) : '<span class="muted">not set</span>';
+  const fromName = clinicFromName(S.wbName);
+  const cf = (id, label, o = {}) => { const k = SET_CFG[id];
+    if (adminOn() || !wbHas(k)) return f(id, label, { ...o, hint: o.hint || (!wbHas(k) ? (fromName && (k === 'clinic' || k === 'locName') ? 'From the workbook’s name. Save to keep it for everyone.' : 'Not set for this workbook yet. The first person to save it sets it for everyone.') : '') });
+    return `<div class="set-f${o.wide ? ' wide' : ''}"><div class="lbl">${label}</div><div class="set-ro">${o.rows ? dash(CFG[k]).replace(/\n/g, '<br>') : dash(CFG[k])}</div><div class="set-hint">Set for this workbook. Admin changes it.</div></div>`; };
+  const legacy = live && !wbLocal().legacyOff ? legacyClinic() : null;
+  const clinic = `<section class="card set-clinic"><h3>Clinic</h3><p class="small muted set-intro">This workbook’s clinic, the same for everyone who opens it. Nothing here comes from another workbook or computer.</p>
+    ${legacy ? `<div class="alert info"><p>This computer has clinic settings saved before they were kept per workbook (${Object.keys(legacy).length} field${Object.keys(legacy).length === 1 ? '' : 's'}). They may belong to another clinic.</p><div class="set-row"><button class="btn sm" data-act="legacyUse">Use the values this computer had before</button><button class="btn ghost sm" data-act="legacyOff">Not for this workbook</button></div></div>` : ''}
     <div class="set-grid">
-      ${f('sClinic', 'Clinic code')}
-      ${f('sLoc', 'Location name (audit sheet)', { ph: locName() })}
-      ${f('sPm', 'Practice manager (default)', { list: 'dlPm2', wide: true })}
+      ${cf('sClinic', 'Clinic code')}
+      ${cf('sLoc', 'Location name (audit sheet)', { ph: 'For example Castro' })}
+      ${cf('sPm', 'Practice manager', { list: 'dlPm2', wide: true })}
     </div>
   </section>`;
-  // Workbook settings: admin only (PIN). Unlocked: the fields (saved for everyone) and Teams notifications. Locked: what's set, read-only.
-  const sharedNote = (S.shared || {}).clinicCfg ? 'Set for everyone in this workbook.' : 'Not set for this workbook yet: each person still uses their own copy until an admin saves these.';
-  const vr = k => CFG[k] ?? DEF[k], dash = v => String(v ?? '').trim() ? esc(String(v)) : '<span class="muted">not set</span>';
+  // Workbook settings: admin only (PIN or the admin code). Unlocked: the fields (saved for everyone) and Teams notifications. Locked:
+  // what's set, read-only, plus an entry box for any email still blank (first entry saves it).
+  const sharedNote = (S.shared || {}).clinicCfg ? 'Set for everyone in this workbook.' : 'Not set for this workbook yet: the defaults apply until someone saves these.';
+  const openFields = ['sGEmail', 'sCc', 'sHelp', 'sLead', 'sProv'].filter(id => !wbHas(SET_CFG[id]));
   const adminWb = adminOn()
     ? `<section class="card set-adminwb"><h3>Workbook settings <span class="muted small">admin</span></h3><p class="small muted set-intro">${sharedNote} Changes save for everyone when you press Save.</p>
     <h2 class="set-sec">Order emails</h2>
@@ -7804,6 +7975,10 @@ function settingsHTML(){
     </div>
   </section>${nfyCardHTML()}`
     : `<section class="card set-adminwb"><h3>Workbook settings</h3><p class="small muted set-intro">Order emails, MADRS reminders, timing, vitals ranges and Teams notifications are set by the practice lead or an admin, for everyone in this workbook. Unlock <b>Admin</b> to change them.</p>
+    ${openFields.length ? `<h2 class="set-sec">Not set yet</h2><p class="set-hint">The first person to save one of these sets it for everyone in this workbook.</p><div class="set-grid">${openFields.map(id => ({
+      sGEmail: () => f('sGEmail', 'Genoa order email', { ph: 'pharmacy or team address' }), sCc: () => f('sCc', 'Always cc on order &amp; follow-up emails', { wide: true, ph: 'name@mymhs.com; name2@mymhs.com' }),
+      sHelp: () => f('sHelp', 'Help email (MADRS cc)', { ph: 'team help address' }), sLead: () => f('sLead', 'Practice leader email (MADRS cc)', { ph: 'name@mymhs.com' }),
+      sProv: () => f('sProv', 'Provider emails, one per line', { rows: 4, wide: true, ph: 'Rendering provider name = email, as it appears on the Master Patient Tracker' }) }[id])()).join('')}</div>` : ''}
     ${factsDL([['Besse order email', dash(CFG.email)], ['Genoa order email', dash(CFG.genoaEmail)], ['Always cc', dash(CFG.cc)],
       ['MADRS cc', [CFG.helpEmail, CFG.leadEmail].filter(x => String(x || '').trim()).map(esc).join(', ') || '<span class="muted">not set</span>'],
       ['Timing', `2nd vitals ${vr('vitalsMin')} min after the dose · final ${vr('disAfter')} min after that · booked through ${vr('schedDays')} days`],
@@ -7823,10 +7998,8 @@ function settingsHTML(){
     <p class="set-hint">Sohar Eligibility final tracker file (CSV or xlsx) → Benefits tab, matched by MRN. You see a preview before anything is written.</p></section>`;
   const tb = Object.values(S.tables);
   const wb = `<section class="card set-wb"><h3>Workbook</h3>${syncLagText() ? `<p class="small">${syncLagText()}</p>` : ''}<h2>Connected tables</h2>${tb.length ? factsDL(tb.map(x => [x.sheet, esc(x.name)])) : '<p class="muted small">None yet.</p>'}</section>`;
-  const lists = `${datalist('dlMe', [...distinct('kits', 'loggingpct'), ...distinct('kits', 'treatingtechnician')])}${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
-  if (S.firstRun && !CFG.me && !S._setFocus){ S._setFocus = true; setTimeout(() => $('#sMe')?.focus(), 30); }
-  return `${!CFG.me ? '<div class="alert warn set-first" role="status"><p>Add your name so your changes are signed.</p></div>' : ''}
-  ${pageCols('two', you + imports + wb + adminCardHTML(), clinic + adminWb + shared)}${lists}
+  const lists = `${datalist('dlSup2', distinct('kits', 'supervisingphysician'))}${datalist('dlPm2', distinct('kits', 'practicemanager'))}`;
+  return `${pageCols('two', you + imports + wb + adminCardHTML(), clinic + adminWb + shared)}${lists}
   <div class="set-save${dirty ? ' dirty' : ''}"><span id="setState" class="small" role="status">${dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="grow"></span><button class="btn ghost mute" id="setDiscard" data-act="setDiscard" ${dirty ? '' : 'hidden'}>Discard</button><button class="btn primary" data-act="cfgSave">Save settings</button></div>`;
 }
 // ---------- Settings › Teams notifications: the Settings sheet (notify-settings.js) ----------
@@ -7934,6 +8107,10 @@ document.addEventListener('change', e => { const k = e.target.dataset?.nfyc; if 
 // PIN: eskShared.adminPin = { salt, h } (SHA-256 of salt + PIN). Anyone who can open the workbook could read the hash, so it's a speed bump,
 // not security. Unlocked for 30 min on this screen. Every change goes through the visit save, so it's in the visit log with who did it.
 const ADMIN_MIN = 30;
+// The MHS admin code opens Admin in every workbook, beside each workbook's own PIN. Only its salted hash is here; the repo is public,
+// so it keeps people out of Admin by accident, it isn't a lock. h = SHA-256, f = the no-crypto fallback below.
+const ADMIN_CODE = { salt: 'esk-admin-v1', h: '304f2c742a6e2517fbfeff06392b4b19c92460164e63e447abbde3366df1b776', f: 'f54ec4687' };
+async function adminCodeOk(v){ const h = await pinHash(ADMIN_CODE.salt, String(v || '').trim()); return h === ADMIN_CODE.h || h === ADMIN_CODE.f; }
 const adminOn = () => (S.adminUntil || 0) > Date.now();
 async function pinHash(salt, pin){
   const txt = salt + '|' + pin;
@@ -7942,10 +8119,18 @@ async function pinHash(salt, pin){
 }
 function adminCardHTML(){
   const head = '<section class="card set-admin"><h3>Admin</h3>', pin = (S.shared || {}).adminPin;
-  if (!adminOn()) return head + (pin ? `<p class="small muted">Test patients, undo, clearing alerts, pharmacies, prescribers and REMS settings.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Admin PIN" aria-label="Admin PIN" style="max-width:160px"><button class="btn" data-act="admUnlock">Unlock</button></div>`
-    : `<p class="small">No admin PIN yet. Set one (4 to 8 digits) to open Admin. It's saved in the workbook for everyone.</p><div class="row"><input id="admPinNew" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="New PIN" aria-label="New admin PIN" style="max-width:140px"><input id="admPinNew2" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Again" aria-label="New admin PIN again" style="max-width:140px"><button class="btn" data-act="admPinSet">Set PIN</button></div>`) + '</section>';
+  const unlock = `<p class="small muted">Test patients, undo, clearing alerts, pharmacies, prescribers, REMS and the clinic’s settings.</p><div class="row"><input id="admPin" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="${pin ? 'PIN or admin code' : 'Admin code'}" aria-label="Admin PIN or admin code" style="max-width:170px"><button class="btn" data-act="admUnlock">Unlock</button></div>`;
+  if (!adminOn()) return head + unlock + (pin ? ''
+    : `<p class="small" style="margin-top:10px">Or set this workbook’s own admin PIN (4 to 8 digits). It's saved in the workbook for everyone.</p><div class="row"><input id="admPinNew" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="New PIN" aria-label="New admin PIN" style="max-width:140px"><input id="admPinNew2" class="fld" type="password" inputmode="numeric" autocomplete="off" placeholder="Again" aria-label="New admin PIN again" style="max-width:140px"><button class="btn" data-act="admPinSet">Set PIN</button></div>`) + '</section>';
   return head + `<div class="row"><span class="small muted grow">Unlocked on this screen until ${new Date(S.adminUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.</span><button class="btn ghost sm" data-act="admPinChange">Change PIN</button><button class="btn ghost sm" data-act="admLock">Lock</button></div>
-    ${admTestHTML()}${admVisitHTML()}${admClearHTML()}${admPharmHTML()}${admRemsHTML()}</section>`;
+    ${admUsersHTML()}${admTestHTML()}${admVisitHTML()}${admClearHTML()}${admPharmHTML()}${admRemsHTML()}</section>`;
+}
+// Admin › People on this workbook's list: the names the daily pick offers here. Someone who doesn't work at this clinic can come off
+// (two taps); they can add themselves again from the pick.
+function admUsersHTML(){
+  if (!S.store?.live) return '';
+  const L = pickOrder(S.profiles, []);
+  return `<h2 class="set-sec">People on this workbook’s list</h2><p class="set-hint">Who “Who’s using the tracker?” offers in this workbook. Take off anyone who doesn’t work here.</p>${L.length ? `<ul class="adm-users">${L.map(p => `<li><span class="grow">${esc(p.name)}</span><button class="btn ghost sm" data-act="admUserDel" data-k="${esc(p.key)}">${S._delUser === p.key ? 'Tap again to remove' : 'Remove'}</button></li>`).join('')}</ul>` : '<p class="small muted">No one yet.</p>'}`;
 }
 // Test patients: Settings › Admin only; today only; never in a sheet (see testAppts)
 function admTestHTML(){
@@ -8030,8 +8215,10 @@ Object.assign(ACT_SETTINGS, {
     if ((S.shared || {}).adminPin && !adminOn()) return toast('warn', 'Unlock Admin first.');
     const salt = Math.random().toString(36).slice(2, 10); S.shared = { ...(S.shared || {}), adminPin: { salt, h: await pinHash(salt, a), by: CFG.me || '', at: new Date().toISOString() } }; await S.store.setDoc('eskShared', S.shared);
     S.adminUntil = Date.now() + ADMIN_MIN * 60000; S._admPinNew = false; render(); toast('ok', 'Admin PIN saved for this workbook.'); },
-  admUnlock: async () => { const p = (S.shared || {}).adminPin, v = String($('#admPin')?.value || ''); if (!p) return; if (await pinHash(p.salt, v) !== p.h){ $('#admPin').value = ''; return toast('bad', 'Wrong PIN.'); } S.adminUntil = Date.now() + ADMIN_MIN * 60000; render(); },
+  admUnlock: async () => { const p = (S.shared || {}).adminPin, v = String($('#admPin')?.value || ''); if (!v) return; if (!(await adminCodeOk(v)) && (!p || await pinHash(p.salt, v) !== p.h)){ $('#admPin').value = ''; return toast('bad', 'Wrong PIN.'); } S.adminUntil = Date.now() + ADMIN_MIN * 60000; render(); },
   admLock: () => { S.adminUntil = 0; render(); },
+  admUserDel: async el => { const k = el.dataset.k; if (!adminOn()) return; if (S._delUser !== k){ S._delUser = k; render(); return; } S._delUser = null;
+    if (await write('Removing…', () => S.store.removeProfile(k), 'Removed from this workbook’s list.')){ S.profiles = (S.profiles || []).filter(p => p.key !== k); if (k === CFG.profKey) switchUser(); else render(); } },
   admPinChange: () => { S.shared = { ...(S.shared || {}) }; const old = S.shared.adminPin; delete S.shared.adminPin; render(); S.shared.adminPin = old; setTimeout(() => { const n = $('#admPinNew'); if (n) n.focus(); }, 30); },
   admTpAdd: async () => { const t = testOn() || { day: todaySerial(), pts: [], kits: {} }, used = new Set(t.pts.map(p => p.mrn)); let n = 1; while (used.has('TEST' + String(n).padStart(2, '0'))) n++;
     const mrn = 'TEST' + String(n).padStart(2, '0'), name = String($('#admTpName')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9 ]/g, '') || mrn, time = fromHHMM($('#admTpTime')?.value), provider = $('#admTpProv')?.value || '';
@@ -8053,7 +8240,7 @@ document.addEventListener('change', e => { if (e.target.id === 'admVisit'){ S.ad
 const setBackLabel = () => { const r = S.setReturn; return r && r !== 'settings' && PAGES[r] ? PAGES[r].label : ''; };
 Object.assign(PAGES.settings, {
   sub: () => CFG.me ? `Signed as ${esc(CFG.me)}` : 'No name yet',
-  tools: () => setBackLabel() ? `<button class="btn ghost" data-act="setBack">Back to ${esc(setBackLabel())}</button>` : '',
+  tools: () => (setBackLabel() ? `<button class="btn ghost" data-act="setBack">Back to ${esc(setBackLabel())}</button>` : '') + (S.store?.live && S.mode !== 'demo' ? '<button class="btn ghost" data-act="switchUser">Switch user</button>' : ''),
   html: () => settingsHTML(),
 });
 Object.assign(ACT_SETTINGS, {
@@ -8068,6 +8255,17 @@ function setDraftEv(e){
 }
 document.addEventListener('input', setDraftEv);
 document.addEventListener('change', setDraftEv);
+// Settings › Add a signature › Use a signature file: Outlook's .txt (or .htm, turned into plain text) goes into the box as a draft.
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'sSigFile') return; const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
+  if (file.size > 200000) return toast('warn', 'That file is too big for a signature. Pick the .txt one.');
+  try { const t = sigFromFile(file.name, new Uint8Array(await file.arrayBuffer())); if (!t) return toast('warn', 'No text found in that file. Try the .txt one.');
+    const ta = $('#sSig'); if (!ta) return; ta.value = t; setDraftEv({ target: ta }); ta.focus(); toast('ok', 'Signature filled in. Check it, then Save settings.'); }
+  catch (e2){ console.error(e2); toast('bad', 'Couldn’t read that file.'); }
+});
+document.addEventListener('keydown', e => { if (e.target.id === 'pkName' && e.key === 'Enter'){ e.preventDefault(); registerUser(e.target.value); } });
+// Another window on this workbook (the full-screen view, or the pane behind it) picked or switched: follow it.
+window.addEventListener('storage', e => { if (!WB_KEY || WB_KEY === 'demo' || e.key !== wbStoreKey() || PROV_VIEW) return; const was = CFG.profKey || ''; CFG = loadCfg(); applySharedCfg(); applyProfiles(); if ((CFG.profKey || '') !== was && S.loaded) render(); });
 // Capture phase, so it runs before the ACT delegate: mark a Save click (see setAfterSave), forget the way back when the
 // user leaves on their own, and pick up the textarea that "Fill suggested emails" fills in (after the handler has run).
 function setClickCap(e){
@@ -8192,7 +8390,7 @@ const ACT = {
   madrsDo: el => openMadrs(el.dataset.m),
   madrsSave: el => madrsSave(el.dataset.m),
   taskUndo: el => taskSet(el.dataset.m, el.dataset.k, false),
-  orderFor: async el => { const mrn = el.dataset.m; const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return openSettings(); const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText(p.pharm), dateordered: { date: todaySerial() }, comments: `${nm(mrn)} | Ordered after scheduling ${fmtD(todaySerial())}` }); await write('Opening an order line…', () => S.store.add('kits', out), `${nm(mrn)} marked as ordered.`); },
+  orderFor: async el => { const mrn = el.dataset.m; const p = S.byMrn.get(mrn); if (!p) return; if (!CFG.me) return askWho(); const { out } = changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(mrn), pharmacy: pharmText(p.pharm), dateordered: { date: todaySerial() }, comments: `${nm(mrn)} | Ordered after scheduling ${fmtD(todaySerial())}` }); await write('Opening an order line…', () => S.store.add('kits', out), `${nm(mrn)} marked as ordered.`); },
   selAll: el => { const k = el.dataset.k; if (k === 'fu'){ followItems(S.fuPh).forEach(x => S.fuSel.add(x.id)); S.fuDraw(); } else if (k === 'fu2'){ followItems(S.oPh).forEach(x => S.oFu.add(x.id)); S.oDraw(); } else { patientOrderItems().forEach(x => S.oPt.add(x.id)); S.oDraw(); } },
   selNone: el => { const k = el.dataset.k; if (k === 'fu'){ S.fuSel.clear(); S.fuDraw(); } else if (k === 'fu2'){ S.oFu.clear(); S.oDraw(); } else { S.oPt.clear(); S.oDraw(); } },
   goInv: el => { const from = S.view; S.view = 'inventory'; S.invTab = el.dataset.v; render(); if (from !== 'inventory') window.scrollTo(0, 0); },
@@ -8243,22 +8441,27 @@ const ACT = {
   dispSave,
   saveRow: el => saveRow(el.dataset.t, +el.dataset.r),
   cfgSave: async () => {
-    document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; CFG[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
-    if (S.msName){ CFG.meSrc = !CFG.me || CFG.me === S.msName ? 'ms' : ''; if (CFG.meSrc) CFG.me = S.msName; }   // a typed name sticks; clearing it goes back to the Microsoft name
+    const typed = {}, ck = new Set([...CLINIC_SHARED, ...CLINIC_OWN, ...VIT_RANGE]);
+    document.querySelectorAll('[data-cfg]').forEach(el => { const k = el.dataset.cfg; typed[k] = el.type === 'number' ? Math.max(1, +el.value || DEF[k]) : el.value.trim(); });
+    for (const [k, v] of Object.entries(typed)) if (!ck.has(k)) CFG[k] = v;   // your own settings; the clinic's go to the workbook below
     const mi = $('#sMedInv'); if (mi){ const u = mi.value.trim(); if (u !== ((S.shared || {}).medInvUrl || '')){ if (u && !/^https:\/\//i.test(u)) return toast('warn', 'The Medication Inventory link should start with https://'); S.shared = { ...(S.shared || {}), medInvUrl: u }; await S.store.setDoc('eskShared', S.shared); } }
     const sn = $('#sSnd'); if (sn){ const o = sndParse(sn.value); if (sndFormat(o) !== sndFormat((S.shared || {}).soundLinks)){ if (Object.values(o).some(u => !/^https:\/\//i.test(u))) return toast('warn', 'Sound links should start with https://'); S.shared = { ...(S.shared || {}), soundLinks: o }; for (const k of Object.keys(soundUrl)) delete soundUrl[k]; await S.store.setDoc('eskShared', S.shared); } }
-    if (adminOn() && $('#sV40')){   // workbook settings (admin, PIN): order emails, MADRS reminders, timing and vitals ranges, one set for everyone
-      const vr = Object.fromEntries(VIT_RANGE.map(k => [k, CFG[k]])), cc = Object.fromEntries(CLINIC_SHARED.map(k => [k, CFG[k] ?? '']));
-      if (JSON.stringify(vr) !== JSON.stringify((S.shared || {}).vitRange || {}) || JSON.stringify(cc) !== JSON.stringify(Object.fromEntries(CLINIC_SHARED.map(k => [k, ((S.shared || {}).clinicCfg || {})[k] ?? '']))) || !(S.shared || {}).clinicCfg){
-        S.shared = { ...(S.shared || {}), vitRange: vr, clinicCfg: { ...cc, by: CFG.me || '', at: new Date().toISOString() } };
-        await S.store.setDoc('eskShared', S.shared); }
-    }
-    applySharedCfg();   // a person's own copy never overrides what the workbook sets
+    // The clinic's settings, one set for everyone: Admin saves any of them; anyone else only fills a field the workbook still has blank.
+    const sh0 = S.shared || {}, cur = wbClinic(), admWb = adminOn() && !!$('#sV40');
+    const ch = Object.fromEntries(Object.entries(typed).filter(([k, v]) => ck.has(k) && !VIT_RANGE.includes(k) && (adminOn() || (CLINIC_FIRST.includes(k) && !wbHas(k) && String(v).trim()))));
+    const vrNew = admWb ? Object.fromEntries(VIT_RANGE.map(k => [k, typed[k] ?? CFG[k]])) : null;
+    const chDiff = Object.keys(ch).some(k => String(ch[k]) !== String(cur[k] ?? '')) || (admWb && !sh0.clinicCfg), vrDiff = !!vrNew && JSON.stringify(vrNew) !== JSON.stringify(sh0.vitRange || {});
+    if (chDiff || vrDiff){ S.shared = { ...sh0, ...(vrDiff ? { vitRange: vrNew } : {}), ...(chDiff ? { clinicCfg: { ...cur, ...ch, by: CFG.me || '', at: new Date().toISOString() } } : {}) }; await S.store.setDoc('eskShared', S.shared); }
+    applySharedCfg();   // what the workbook sets is what everyone uses
     const vn = $('#sVitN'); if (vn){ CFG.vitNotify = vn.checked; CFG.vitSound = $('#sVitS').value; CFG.vitAhead = +($('#sVitA')?.value ?? 5); if (vn.checked && !alertsWinOk()) await askNotify(); }
     const sf = $('#sFull'); if (sf) CFG.autoFull = sf.checked; delete CFG.fullWin; saveCfg(); const auto = $('#sAuto'); if (auto && S.store?.live) await S.store.setDoc('Office.AutoShowTaskpaneWithDocument', auto.checked);
     closeModal(); render();
   },
-  profRestore: () => { const p = (S.profiles || []).find(x => x.key === $('#sProf')?.value); if (!p) return; cfgFromProfile(p); openSettings(); toast('ok', `Restored settings for ${esc(p.name)}.`); },
+  pickUser: el => pickUser(el.dataset.k),
+  regUser: () => registerUser($('#pkName')?.value),
+  switchUser: () => switchUser(),
+  legacyUse: () => { const o = legacyClinic(); if (!o) return; const id = Object.fromEntries(Object.entries(SET_CFG).map(([i, k]) => [k, i])); S.setDraft = { ...(S.setDraft || {}) }; for (const [k, v] of Object.entries(o)) if (id[k] && !wbHas(k)) S.setDraft[id[k]] = v; setEditing(true); render(); toast('info', 'Filled in from this computer. Check every field, then Save settings.'); },
+  legacyOff: () => { const L = wbLocal(); L.legacyOff = true; wbLocalSet(L); render(); },
   demo: el => startDemo(!!el.dataset.prov),
   fsDemo: () => fsToggle(),
   demoBack: () => { if (fsOn()) document.exitFullscreen?.()?.catch?.(() => {}); location.href = location.pathname; },   // back to the install page (no ?demo)
@@ -8595,6 +8798,7 @@ function RemoteStore(){
     updateMany: (k, items) => call('updateMany', [k, items]),
     setDropdown: (...a) => call('setDropdown', a),
     saveProfile: p => call('saveProfile', [p]),
+    removeProfile: k => call('removeProfile', [k]),
     getDoc: k => docs[k] ?? null,
     async setDoc(k, v){ docs[k] = v; await call('setDoc', [k, v]); },
     async freshDoc(k){ const v = await call('freshDoc', [k]); docs[k] = v; return v; },
@@ -8613,7 +8817,7 @@ let DLG = null;
 function openFull(pop){
   pop = !!pop && S.provView;
   if (DLG){ try { DLG.close(); } catch {} DLG = null; S.full = false; }
-  const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog' + (S.provView ? '&view=bays' : '');
+  const url = location.href.replace(/[?#].*$/, '') + '?mode=dialog' + (S.provView ? '&view=bays' : '') + '&wb=' + encodeURIComponent(WB_KEY) + '&wbn=' + encodeURIComponent(S.wbName || '');   // the dialog can't see the workbook: the key for this computer's memory, and the name for the clinic
   // promptBeforeOpen false: no "ESK Bays wants to display a new window" bar first (Office's own, pale and easy to miss). The click
   // that called this lets the browser open it; a browser that still blocks it lands in the toast below.
   Office.context.ui.displayDialogAsync(url, pop ? { height: 80, width: 50, displayInIframe: false, promptBeforeOpen: false } : { height: 96, width: 96, displayInIframe: true }, res => {
@@ -8629,7 +8833,7 @@ function openFull(pop){
       const { rid, op, args } = m;
       if (op === 'nfy'){ try { reply({ rid, ok: true, res: await nfyCall(args[0], ...(args[1] || [])) ?? null }); } catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); } return; }   // Settings sheet / Teams test from the full-screen view
       const read = op === 'load' || op === 'freshDoc';
-      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','updateMany','setDropdown','upsertRems','savePharm','saveBidf','addPtColumn','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
+      try { if (!['load','freshDoc','update','add','addMany','setCells','setDoc','clearCells','replaceAppts','saveProfile','removeProfile','updateMany','setDropdown','upsertRems','savePharm','saveBidf','addPtColumn','appendVisitLog'].includes(op)) throw new Error('Unknown request'); let res; if (op === 'load'){ const d = await S.store.load(); res = packLoad(d, S.store); } else if (read) res = await S.store.freshDoc(...(args || [])); else { S._writing = true; res = await S.store[op](...(args || [])); } reply({ rid, ok: true, res: res ?? null }); }
       catch (e){ reply({ rid, ok: false, err: e.message || String(e) }); }
       finally { if (!read){ S._writing = false; S._selfWriteAt = Date.now(); } }   // the dialog reloads after its own writes; don't relay them back
     });
@@ -8671,6 +8875,17 @@ const fsOn = () => !!document.fullscreenElement;
 function fsToggle(){ const p = fsOn() ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.(); p?.catch?.(() => toast('warn', 'This browser didn’t allow full screen here.')); }
 document.addEventListener('fullscreenchange', () => { if (S.loaded) render(); });
 let startDemo;
+// Which workbook this pane is in (WB_KEY, for this computer's memory) and its name (S.wbName, for the clinic), then this person's
+// settings for it. The address is hashed; when Office gives none, a random id is kept in this add-in's document settings.
+async function wbIdentify(){
+  let url = ''; try { url = Office.context.document.url || ''; } catch {}
+  let id = '';
+  if (!url){ try { const ds = Office.context.document.settings; id = ds.get('eskWbId') || ''; if (!id){ id = Math.random().toString(36).slice(2, 12); ds.set('eskWbId', id); ds.saveAsync(() => {}); } } catch {} }
+  WB_KEY = wbKeyFor(url, id) || 'none';
+  try { S.wbName = decodeURIComponent(String(url).replace(/[?#].*$/, '').split(/[\\/]/).pop() || ''); } catch { S.wbName = ''; }
+  try { await Excel.run(async ctx => { ctx.workbook.load('name'); await ctx.sync(); if (ctx.workbook.name) S.wbName = ctx.workbook.name; }); } catch {}   // ExcelApi 1.7; the address's file name otherwise
+  CFG = loadCfg(); applyTheme();
+}
 (function boot(){
   const demo = /[?&]demo\b/.test(location.search);
   S.provView = /[?&]view=bays\b/.test(location.search);   // the "ESK Bays" provider add-in
@@ -8679,13 +8894,15 @@ let startDemo;
   // From the "not in Excel" page: start the demo in place (no page load), so the same click can also go full screen.
   startDemo = prov => { fsOn() || document.documentElement.requestFullscreen?.().catch(() => {});
     if (typeof history.replaceState === 'function') history.replaceState(null, '', '?demo=1' + (prov ? '&view=bays' : ''));   // office.js blanks it; the URL is only for reloads
-    CFG_KEY = 'eskCfgDemo'; CFG = loadCfg(); applyTheme();
+    WB_KEY = 'demo'; CFG = loadCfg(); applyTheme();
     S.provView = !!prov; S.mode = 'demo'; S.askedName = true; S.view = 'today'; $('#app').innerHTML = ''; start(DemoStore()).then(seedDemo); };
-  if (S.mode === 'dialog'){ if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
-  if (demo){ S.askedName = true; start(DemoStore()).then(seedDemo); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
+  // The full-screen view can't see the workbook's address: the pane passes its workbook key and name in the dialog's URL.
+  if (S.mode === 'dialog'){ const q = new URLSearchParams(location.search); WB_KEY = q.get('wb') || 'none'; S.wbName = q.get('wbn') || ''; CFG = loadCfg(); applyTheme();
+    if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; } Office.onReady(() => start(RemoteStore())); return; }
+  if (demo){ S.askedName = true; CFG = loadCfg(); applyTheme(); start(DemoStore()).then(seedDemo); if (location.hash === '#consent') setTimeout(() => openConsent(S.P[0]?.mrn), 1500); const hv = { '#dash':'today', '#schedule':'schedule', '#access':'access', '#settings':'settings' }[location.hash]; if (hv) setTimeout(() => { closeModal(); S.view = hv; render(); }, 1500); return; }   // demo screenshots: #consent opens the consent pop-up; #dash, #schedule, #access and #settings open that page (#dash also skips the first-run Settings page)
   if (typeof Office === 'undefined'){ $('#app').innerHTML = notInExcelHTML(); return; }
   let settled = false;
-  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } start(OfficeStore()).then(() => { if (S.canFull && CFG.autoFull && S.loaded && !S.provView) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
+  Office.onReady(info => { settled = true; if (info.host === Office.HostType.Excel){ try { S.canFull = Office.context.requirements.isSetSupported('DialogApi', '1.2'); } catch { S.canFull = false; } wbIdentify().then(() => start(OfficeStore())).then(() => { if (S.canFull && CFG.autoFull && S.loaded && !S.provView) openFull(); }); } else $('#app').innerHTML = notInExcelHTML(); });   // full screen opens after the first read, so the pane and the dialog don't both read the workbook while it opens
   setTimeout(() => { if (!settled) $('#app').innerHTML = notInExcelHTML(); }, 4000);
 })();
 </script>
