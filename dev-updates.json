@@ -1,10 +1,11 @@
 {
   "updates": [
     {
-      "id": "2026-11-07-bell-name-screen",
+      "id": "2026-11-07-toolbar-bell-name-screen",
       "date": "2026-11-07",
       "bullets": [
-        "New: This bell shows what changed in the ESK Tracker. Drag it anywhere and it stays put on this computer. If a screen puts a button under it, it steps aside to the nearer side.",
+        "New: This bell shows what changed in the ESK Tracker. It sits at the right end of the toolbar, after light/dark mode.",
+        "Changed: The toolbar icons are refresh, full screen, then light/dark (\"sun / moon\": press the one on the right to switch). Hover over any icon to see what it does.",
         "Changed: The name screen now says \"Enter your name\", with the names right below it. Anyone can be using the tracker: tech, RN, MA or provider."
       ]
     }

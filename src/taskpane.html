@@ -90,6 +90,20 @@ h3:first-child{margin-top:0}
 .tbtn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:12px;background:transparent;color:var(--muted);cursor:pointer}
 .tbtn:hover{background:var(--surface2);color:var(--ink)}.tbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tbtn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+/* toolbar hover labels: what the press does (the theme says the mode it switches to) */
+.tbtn,.btn.ico{position:relative}
+.tbtn[data-tip]:hover::after,.tbtn[data-tip]:focus-visible::after,.btn.ico[data-tip]:hover::after,.btn.ico[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);right:0;white-space:nowrap;padding:5px 9px;border-radius:8px;background:var(--ink);color:var(--surface);font-size:12px;font-weight:500;line-height:1.2;pointer-events:none;z-index:60}
+/* light / dark: "sun / moon"; the right one is the one to press, the left is where you are. They swap places on a change. */
+.tbtn.theme,.btn.ico.theme{width:auto;padding:0 8px;display:inline-flex;align-items:center;gap:3px}
+.tbtn.theme svg,.btn.ico.theme svg{width:16px;height:16px}
+.theme .tsl{font-size:14px;color:var(--faint,var(--muted));line-height:1}
+.theme .tcur{opacity:.45}.theme .tgo{color:var(--ink)}
+.theme .tcur,.theme .tgo{display:grid;place-items:center}
+.theme.swap .tcur{animation:eskswapL .38s cubic-bezier(.3,.7,.3,1)}
+.theme.swap .tgo{animation:eskswapR .38s cubic-bezier(.3,.7,.3,1)}
+@keyframes eskswapL{from{transform:translateX(26px) rotate(-90deg);opacity:1}}
+@keyframes eskswapR{from{transform:translateX(-26px) rotate(90deg);opacity:.45}}
+.rtools{display:none}
 .pres{position:relative;display:flex;align-items:center}.pres:empty{display:none}.rail .sec .pres-chip{display:none}
 .pres-btn{display:flex;align-items:center;height:44px;padding:0 6px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
 .pres-btn:hover{background:var(--surface2)}.pres-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -144,6 +158,8 @@ main>.alert{margin:0 0 16px}
   .rail .navarr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   .rail .sec>.ni.ico{width:36px;padding:0;justify-content:center}
   .rail .sec .ni.ico{display:flex}.pbar .tbtns{display:none}   /* narrow pane: they stay in the top row */
+  .rail .rtools{order:1;display:flex;align-items:center;gap:2px;flex:none}
+  .rail .sec>[data-act=full],.rail .sec>[data-act=exitFull],.rail .sec>[data-act=fsDemo]{display:none}   /* full screen is the icon in .rtools */
   .rail .sec .pres-chip{display:flex}.pres-chip:empty{display:none}.pbar .pres-wide{display:none}
   .pres-chip .pres-btn{height:36px;gap:6px;padding:0 10px 0 4px;background:var(--surface2);font-size:13px;font-weight:500;white-space:nowrap}
   .pres-chip .pres-av{width:26px;height:26px;font-size:10px;border-color:var(--surface2)}.pres-chip .pres-av+.pres-av{margin-left:-7px}
@@ -3329,15 +3345,14 @@ function render(){
         ${S.mode === 'demo' ? `<button class="ni rt" data-act="demoBack" title="Back to the install page">← Back</button><button class="ni rt" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : ''}${S.mode === 'pane' && S.canFull ? '<button class="ni rt" data-act="full" title="Open full screen over Excel">Full screen</button>' : ''}${S.mode === 'dialog' ? '<button class="ni rt" data-act="exitFull">Exit full screen</button>' : ''}
         <div class="pres pres-chip" data-pres="chip">${presenceHTML('chip')}</div>
         ${S.store.live && S.mode !== 'demo' && CFG.me ? `<button class="ni rt me-btn" data-act="switchUser" aria-label="You are ${esc(CFG.me)}. Switch user" title="You: ${esc(CFG.me)}. Switch user">${esc(presInitials(CFG.me))}</button>` : ''}
-        <button class="ni rt ico" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button>
-        <button class="ni rt ico" data-act="refresh" aria-label="Refresh" title="Refresh: read the workbook again">${NAV_IC.refresh}</button>
         ${conn}</div>
+      <div class="rtools">${toolIcons(NARROW.matches)}</div>
     </aside>
     <div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
       ${emBannerHTML()}${S.unsaved ? '<div class="msg bad noprint" role="alert" style="margin:8px 12px"><b>A visit change hasn’t reached the workbook yet.</b> The tracker keeps trying; keep this panel open.</div>' : ''}${freshHTML()}
       <header class="pbar"><div class="ptitle"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
-        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"><div class="tbtns"><button type="button" class="tbtn" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button><button type="button" class="tbtn" data-act="refresh" aria-label="Refresh" title="Refresh: read the workbook again">${NAV_IC.refresh}</button></div></div></header>
+        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"><div class="tbtns">${toolIcons(!NARROW.matches)}</div></div></header>
       <main id="main" class="pg-${S.view}">${body}</main>
     </div></div>`;
   { const nv = app.querySelector('.rail .nav'), cur = nv && nv.querySelector('[aria-current="page"]');   // pane: keep the current area visible in the scrolling nav row
@@ -6107,13 +6122,29 @@ document.addEventListener('click', e => { const b = e.target.closest?.('.navarr'
   n.scrollBy({ left: (b.classList.contains('l') ? -1 : 1) * Math.max(120, n.clientWidth * 0.7), behavior: 'smooth' }); });
 document.addEventListener('scroll', e => { if (e.target?.classList?.contains('nav')) navArrows(); }, true);
 window.addEventListener('resize', navArrows);
+// Toolbar, top right: refresh, full screen, light / dark ("sun / moon": the right one is the mode a press switches to; they swap
+// places on a change), then the slot the Dev Update bell docks in (dev-updates.js). Labels are what a press does (data-tip).
+// Only the visible toolbar gets the slot (the narrow top row or the wide header), so the bell docks where it can be seen.
+const NARROW = window.matchMedia ? matchMedia('(max-width:899px)') : { matches: false };
+NARROW.addEventListener?.('change', () => { if (S.loaded) render(); });
+const FULL_IC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+function themeIcon(cls){
+  const dark = isDark(), tl = dark ? 'Light mode' : 'Dark mode';
+  return `<button type="button" class="${cls} theme${dark ? ' is-dark' : ''}${S.themeSwap ? ' swap' : ''}" data-act="pvTheme" data-tip="${tl}" aria-label="Switch to ${tl.toLowerCase()}" aria-pressed="${dark}">${dark ? `<span class="tcur">${PV_IC.moon}</span><span class="tsl">/</span><span class="tgo">${PV_IC.sun}</span>` : `<span class="tcur">${PV_IC.sun}</span><span class="tsl">/</span><span class="tgo">${PV_IC.moon}</span>`}</button>`;
+}
+function toolIcons(slot){
+  const full = S.mode === 'pane' && S.canFull ? ['full', 'Full screen'] : S.mode === 'dialog' ? ['exitFull', 'Exit full screen'] : S.mode === 'demo' ? ['fsDemo', fsOn() ? 'Exit full screen' : 'Full screen'] : null;
+  return `<button type="button" class="tbtn" data-act="refresh" data-tip="Refresh" aria-label="Refresh">${NAV_IC.refresh}</button>`
+    + (full ? `<button type="button" class="tbtn" data-act="${full[0]}" data-tip="${full[1]}" aria-label="${full[1]}">${FULL_IC}</button>` : '')
+    + themeIcon('tbtn') + (slot ? '<span class="du-slot"></span>' : '');
+}
 const PV_IC = {
   sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>',
   moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>',
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0"/></svg>',
   mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/></svg>' };
-const pvIconsHTML = () => `<button class="btn ico" data-act="pvTheme" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" title="${isDark() ? 'Light mode' : 'Dark mode'}">${isDark() ? PV_IC.sun : PV_IC.moon}</button>`
-  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals and vitals out of range. Click to turn off.' : 'Sound off. Click to hear arrivals and vitals out of range.'} PRN approval requests always sound.">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button>`;
+const pvIconsHTML = () => themeIcon('btn ico')
+  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals and vitals out of range. Click to turn off.' : 'Sound off. Click to hear arrivals and vitals out of range.'} PRN approval requests always sound.">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button><span class="du-slot"></span>`;
 // What happened to this provider's patients since the last look: roomed, each vitals set, rechecks, PRNs given, discharged, overdue.
 // The first look (or a new provider name) only takes stock. New ones: a toast; with the bell on, the sound and, where the browser
 // allows it (the popped-out window), a pop-up with the bay and event only, no patient name.
@@ -6145,7 +6176,7 @@ function pvEvents(){
   if (notifyPerm() === 'granted') for (const [id, e] of fresh.slice(0, 3)) try { new Notification(`${e.b} · ${e.what}`, { body: e.detail || 'ESK Bays', tag: 'eskb-' + id, icon: 'assets/icon-80.png' }); } catch {}
 }
 Object.assign(ACT_TODAY, {
-  pvTheme: () => { CFG.theme = isDark() ? 'light' : 'dark'; saveLocal(); render(); },
+  pvTheme: () => { CFG.theme = isDark() ? 'light' : 'dark'; saveLocal(); S.themeSwap = true; render(); S.themeSwap = false; },
   pvSound: async () => { CFG.pvSound = !CFG.pvSound; saveLocal(); render(); if (CFG.pvSound){ playSound(); if (window.top === window && notifyPerm() === 'default') try { await Notification.requestPermission(); } catch {} toast('ok', 'Sound on for your patients.'); } },   // pop-ups only where the browser can ask: the popped-out window
   pvTipOff: () => { CFG.pvTipOff = true; saveLocal(); render(); },
 });
