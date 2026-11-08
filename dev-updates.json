@@ -1,0 +1,12 @@
+{
+  "updates": [
+    {
+      "id": "2026-11-07-bell-name-screen",
+      "date": "2026-11-07",
+      "bullets": [
+        "New: This bell shows what changed in the ESK Tracker. Drag it anywhere and it stays put on this computer. If a screen puts a button under it, it steps aside to the nearer side.",
+        "Changed: The name screen now says \"Enter your name\", with the names right below it. Anyone can be using the tracker: tech, RN, MA or provider."
+      ]
+    }
+  ]
+}
