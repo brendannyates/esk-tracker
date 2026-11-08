@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=58"></script>
-<script src="notify.js?v=58"></script>
-<link rel="stylesheet" href="dev-updates.css?v=58">
-<script src="dev-updates.js?v=58"></script>
+<script src="notify-settings.js?v=59"></script>
+<script src="notify.js?v=59"></script>
+<link rel="stylesheet" href="dev-updates.css?v=59">
+<script src="dev-updates.js?v=59"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -103,11 +103,13 @@ h3:first-child{margin-top:0}
 .theme.swap .tgo{animation:eskswapR .38s cubic-bezier(.3,.7,.3,1)}
 @keyframes eskswapL{from{transform:translateX(12px) rotate(-90deg);opacity:1}}
 @keyframes eskswapR{from{transform:translateX(-12px) rotate(90deg);opacity:.6}}
-/* half and half: the left half of where you are, the slash, the right half of the mode to press */
-.tbtn.theme,.btn.ico.theme{gap:0;padding:0 9px}.tbtn.theme svg,.btn.ico.theme svg{width:20px;height:20px}
-.theme .tcur svg{clip-path:inset(0 50% 0 0)}.theme .tgo svg{clip-path:inset(0 0 0 50%)}
-.theme .tcur{margin-right:-8px;opacity:.6}.theme .tgo{margin-left:-8px}
-.theme .tsl{position:relative;z-index:1;padding:0 1px}
+/* both symbols whole, the same size as the toolbar icons beside them (19px; 20px in ESK Bays) */
+.tbtn.theme svg{width:19px;height:19px}
+.app.prov .btn.ico.theme{width:auto;padding:0 8px}.app.prov .btn.ico.theme svg{width:20px;height:20px}
+/* full screen only: the Dev Update bell's home (dev-updates.js), right of the logo and name, level with the page title */
+.rail .brand{position:relative}
+.rail .brand .du-home{position:absolute;right:-6px;top:-5px}
+.pbar h1 .du-home{vertical-align:middle;margin:-12px 0 -10px 10px}
 .rtools{display:none}
 .pres{position:relative;display:flex;align-items:center}.pres:empty{display:none}.rail .sec .pres-chip{display:none}
 .pres-btn{display:flex;align-items:center;height:44px;padding:0 6px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
@@ -148,6 +150,7 @@ main>.alert{margin:0 0 16px}
   .rail .brand .bt{display:flex;align-items:baseline;gap:8px;min-width:0}
   .rail .brand b,.rail .brand strong,.rail .brand>span{font-size:15px}
   .rail .brand small,.rail .brand .bt>span{flex:0 1 auto;min-width:0}
+  .rail .brand .du-home{position:static;margin:-9px -6px -9px auto}
   .rail .sec{order:1;flex:0 1 auto;min-width:0;flex-direction:row;align-items:center;gap:4px;margin:0;padding:0;overflow-x:auto;scrollbar-width:none}
   .rail .sec>button,.rail .sec>.btn{width:auto;flex:none;min-height:36px;padding:0 10px;font-size:14px}
   .rail .conn{order:9;padding:0 4px;gap:0}
@@ -3320,7 +3323,7 @@ function render(){
       S.mode === 'dialog' ? '<button class="btn" data-act="exitFull">Close</button>' : '', S.mode === 'demo' ? `<button class="btn" data-act="demoBack" title="Back to the install page">← Back</button><button class="btn" data-act="fsDemo">${fsOn() ? 'Exit full screen' : 'Full screen'}</button>` : '', pvIconsHTML(), '<button class="btn" data-act="refresh" title="Read the workbook again">Refresh</button>'].join('');
     app.innerHTML = `<div class="app prov" data-mode="${S.mode}"><div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
-      <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span></h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
+      <header class="pbar"><div class="ptitle"><h1>Bays <span>${DAYNAME[dowOf(T)]}, ${fmtD(T, 'full')}</span>${S.mode === 'dialog' ? DU_HOME : ''}</h1><div class="sub">${esc(CFG.clinic)} · updated ${new Date(S.loadedAt || Date.now()).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div></div>
         <div class="tools">${tools}</div></header>
       <main id="main" class="pg-today pg-bays">${S.mode === 'pane' && S.canFull && !CFG.pvTipOff ? pvTipHTML(true) : ''}${body}</main></div></div>`;
     return;
@@ -3329,7 +3332,7 @@ function render(){
   if (!PAGES[S.view]) S.view = 'today';
   S._la = lastAudit(); S._re = new Set(reassignModel().map(x => x.k.id));   // rail counts come from PAGES.<view>.badge()
   const upd = S.loadedAt ? new Date(S.loadedAt).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : '';
-  const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bt"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div></div>`;
+  const brand = `<div class="brand"><img class="mlogo" src="${LOGO_URI}" alt="Mindful Health Solutions"><div class="bt"><b>ESK Tracker</b><span>${esc(CFG.clinic)}${upd ? ' · updated ' + upd : ''}</span></div>${S.mode === 'dialog' ? DU_HOME : ''}</div>`;
   const connT = !S.store.live ? 'Demo data. Nothing is saved.' : S.mode === 'dialog' ? 'Saves go through the Excel pane. Keep it open.' : 'Connected to the workbook';
   const conn = `<div class="conn${!S.store.live ? ' demo' : ''}" role="status" title="${connT}"><i aria-hidden="true"></i><span class="ct">${connT}</span></div>`;   // the pane shows only the dot; the text stays for screen readers and as the tooltip
   if (S.full){
@@ -6128,8 +6131,9 @@ document.addEventListener('click', e => { const b = e.target.closest?.('.navarr'
 document.addEventListener('scroll', e => { if (e.target?.classList?.contains('nav')) navArrows(); }, true);
 window.addEventListener('resize', navArrows);
 // Toolbar, top right: refresh, full screen, light / dark ("sun / moon": the right one is the mode a press switches to; they swap
-// places on a change). Labels are what a press does (data-tip). The Dev Update bell floats (dev-updates.js): it starts bottom
-// right and can be dragged anywhere, so no toolbar holds a slot for it.
+// places on a change). Labels are what a press does (data-tip). The Dev Update bell (dev-updates.js) shows only in full screen,
+// on DU_HOME right of the rail name (ESK Bays: right of its title); none in the pane, loading or name screen. No toolbar slot.
+const DU_HOME = '<span class="du-home" aria-hidden="true"></span>';
 const NARROW = window.matchMedia ? matchMedia('(max-width:899px)') : { matches: false };
 NARROW.addEventListener?.('change', () => { if (S.loaded) render(); });
 const FULL_IC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
@@ -6149,7 +6153,7 @@ const PV_IC = {
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0"/></svg>',
   mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4zM10 20.6a2.2 2.2 0 0 0 4 0M3.5 3.5l17 17"/></svg>' };
 const pvIconsHTML = () => themeIcon('btn ico')
-  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals and vitals out of range. Click to turn off.' : 'Sound off. Click to hear arrivals and vitals out of range.'} PRN approval requests always sound.">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button><span class="du-slot"></span>`;
+  + `<button class="btn ico${CFG.pvSound ? ' on' : ''}" data-act="pvSound" aria-pressed="${!!CFG.pvSound}" aria-label="Sound alerts for your patients" title="${CFG.pvSound ? 'Sound on: arrivals and vitals out of range. Click to turn off.' : 'Sound off. Click to hear arrivals and vitals out of range.'} PRN approval requests always sound.">${CFG.pvSound ? PV_IC.bell : PV_IC.mute}</button>`;
 // What happened to this provider's patients since the last look: roomed, each vitals set, rechecks, PRNs given, discharged, overdue.
 // The first look (or a new provider name) only takes stock. New ones: a toast; with the bell on, the sound and, where the browser
 // allows it (the popped-out window), a pop-up with the bay and event only, no patient name.
