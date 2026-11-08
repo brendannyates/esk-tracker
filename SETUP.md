@@ -17,7 +17,7 @@ Open the tracker in Excel on the web → **Home → Add-ins → More Add-ins →
 An **ESK Tracker** button appears on the Home tab.
 
 ## 4. First run
-The tracker asks **Who's using the tracker?** once a day on each computer, listing the people registered in this workbook. Pick your name, or choose **I'm not on the list** to add yourself. Nothing about you carries over to another clinic's workbook: each workbook has its own list, and each computer remembers who used it per workbook.
+After it reads the workbook, the tracker asks **Enter your name** once a day on each computer (tech, RN, MA or provider), with the people registered in this workbook listed below. Pick your name, or choose **I'm not on the list** to add yourself. Nothing about you carries over to another clinic's workbook: each workbook has its own list, and each computer remembers who used it per workbook.
 
 The clinic's settings (clinic code, location, practice manager, order and cc emails, MADRS cc) belong to the workbook. The clinic and location start from the workbook's name when it says (for example "Castro ESK Tracker"); otherwise they're blank. The first person to fill in a blank one in Settings saves it for everyone; after that, changing it needs Admin (the workbook's PIN or the MHS admin code).
 
