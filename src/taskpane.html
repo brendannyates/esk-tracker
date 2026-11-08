@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=57"></script>
-<script src="notify.js?v=57"></script>
-<link rel="stylesheet" href="dev-updates.css?v=57">
-<script src="dev-updates.js?v=57"></script>
+<script src="notify-settings.js?v=58"></script>
+<script src="notify.js?v=58"></script>
+<link rel="stylesheet" href="dev-updates.css?v=58">
+<script src="dev-updates.js?v=58"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -101,8 +101,13 @@ h3:first-child{margin-top:0}
 .theme .tcur,.theme .tgo{display:grid;place-items:center}
 .theme.swap .tcur{animation:eskswapL .38s cubic-bezier(.3,.7,.3,1)}
 .theme.swap .tgo{animation:eskswapR .38s cubic-bezier(.3,.7,.3,1)}
-@keyframes eskswapL{from{transform:translateX(26px) rotate(-90deg);opacity:1}}
-@keyframes eskswapR{from{transform:translateX(-26px) rotate(90deg);opacity:.45}}
+@keyframes eskswapL{from{transform:translateX(12px) rotate(-90deg);opacity:1}}
+@keyframes eskswapR{from{transform:translateX(-12px) rotate(90deg);opacity:.6}}
+/* half and half: the left half of where you are, the slash, the right half of the mode to press */
+.tbtn.theme,.btn.ico.theme{gap:0;padding:0 9px}.tbtn.theme svg,.btn.ico.theme svg{width:20px;height:20px}
+.theme .tcur svg{clip-path:inset(0 50% 0 0)}.theme .tgo svg{clip-path:inset(0 0 0 50%)}
+.theme .tcur{margin-right:-8px;opacity:.6}.theme .tgo{margin-left:-8px}
+.theme .tsl{position:relative;z-index:1;padding:0 1px}
 .rtools{display:none}
 .pres{position:relative;display:flex;align-items:center}.pres:empty{display:none}.rail .sec .pres-chip{display:none}
 .pres-btn{display:flex;align-items:center;height:44px;padding:0 6px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
@@ -3346,13 +3351,13 @@ function render(){
         <div class="pres pres-chip" data-pres="chip">${presenceHTML('chip')}</div>
         ${S.store.live && S.mode !== 'demo' && CFG.me ? `<button class="ni rt me-btn" data-act="switchUser" aria-label="You are ${esc(CFG.me)}. Switch user" title="You: ${esc(CFG.me)}. Switch user">${esc(presInitials(CFG.me))}</button>` : ''}
         ${conn}</div>
-      <div class="rtools">${toolIcons(NARROW.matches)}</div>
+      <div class="rtools">${toolIcons()}</div>
     </aside>
     <div class="page">
       ${S.store.live ? '' : '<div class="topnote">Demo mode: fake data. Nothing here touches a real workbook. Open the ESK Tracker and ESK Bays demos side by side: they share it. <button class="linkbtn" data-act="demoReset">Reset demo</button></div>'}
       ${emBannerHTML()}${S.unsaved ? '<div class="msg bad noprint" role="alert" style="margin:8px 12px"><b>A visit change hasn’t reached the workbook yet.</b> The tracker keeps trying; keep this panel open.</div>' : ''}${freshHTML()}
       <header class="pbar"><div class="ptitle"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
-        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"><div class="tbtns">${toolIcons(!NARROW.matches)}</div></div></header>
+        <div class="tools">${tools}<div class="pres pres-wide" data-pres="wide">${presenceHTML('wide')}</div><input id="gq" class="search fld" autocomplete="off" placeholder="Find a patient, MRN or kit serial" aria-label="Find a patient, MRN or kit serial" value="${esc(S.gq || '')}"><div class="tbtns">${toolIcons()}</div></div></header>
       <main id="main" class="pg-${S.view}">${body}</main>
     </div></div>`;
   { const nv = app.querySelector('.rail .nav'), cur = nv && nv.querySelector('[aria-current="page"]');   // pane: keep the current area visible in the scrolling nav row
@@ -6123,8 +6128,8 @@ document.addEventListener('click', e => { const b = e.target.closest?.('.navarr'
 document.addEventListener('scroll', e => { if (e.target?.classList?.contains('nav')) navArrows(); }, true);
 window.addEventListener('resize', navArrows);
 // Toolbar, top right: refresh, full screen, light / dark ("sun / moon": the right one is the mode a press switches to; they swap
-// places on a change), then the slot the Dev Update bell docks in (dev-updates.js). Labels are what a press does (data-tip).
-// Only the visible toolbar gets the slot (the narrow top row or the wide header), so the bell docks where it can be seen.
+// places on a change). Labels are what a press does (data-tip). The Dev Update bell floats (dev-updates.js): it starts bottom
+// right and can be dragged anywhere, so no toolbar holds a slot for it.
 const NARROW = window.matchMedia ? matchMedia('(max-width:899px)') : { matches: false };
 NARROW.addEventListener?.('change', () => { if (S.loaded) render(); });
 const FULL_IC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
@@ -6132,11 +6137,11 @@ function themeIcon(cls){
   const dark = isDark(), tl = dark ? 'Light mode' : 'Dark mode';
   return `<button type="button" class="${cls} theme${dark ? ' is-dark' : ''}${S.themeSwap ? ' swap' : ''}" data-act="pvTheme" data-tip="${tl}" aria-label="Switch to ${tl.toLowerCase()}" aria-pressed="${dark}">${dark ? `<span class="tcur">${PV_IC.moon}</span><span class="tsl">/</span><span class="tgo">${PV_IC.sun}</span>` : `<span class="tcur">${PV_IC.sun}</span><span class="tsl">/</span><span class="tgo">${PV_IC.moon}</span>`}</button>`;
 }
-function toolIcons(slot){
+function toolIcons(){
   const full = S.mode === 'pane' && S.canFull ? ['full', 'Full screen'] : S.mode === 'dialog' ? ['exitFull', 'Exit full screen'] : S.mode === 'demo' ? ['fsDemo', fsOn() ? 'Exit full screen' : 'Full screen'] : null;
   return `<button type="button" class="tbtn" data-act="refresh" data-tip="Refresh" aria-label="Refresh">${NAV_IC.refresh}</button>`
     + (full ? `<button type="button" class="tbtn" data-act="${full[0]}" data-tip="${full[1]}" aria-label="${full[1]}">${FULL_IC}</button>` : '')
-    + themeIcon('tbtn') + (slot ? '<span class="du-slot"></span>' : '');
+    + themeIcon('tbtn');
 }
 const PV_IC = {
   sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>',
