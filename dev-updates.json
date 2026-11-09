@@ -1,6 +1,16 @@
 {
   "updates": [
     {
+      "id": "2026-11-08-bell-home",
+      "date": "2026-11-08",
+      "bullets": [
+        "Changed: The Dev Update bell now shows only in full screen, at the top left beside the ESK Tracker logo and name (in ESK Bays full screen, beside the Bays title). It is gone from the side panel.",
+        "Changed: A red dot on the bell means something new. Nothing pops up any more: click the bell to read it, and the dot clears.",
+        "Changed: You can still drag the bell away; drop it near its spot and it goes back.",
+        "Changed: The sun and moon on the light/dark button are whole again."
+      ]
+    },
+    {
       "id": "2026-11-08-bell-float",
       "date": "2026-11-08",
       "bullets": [
