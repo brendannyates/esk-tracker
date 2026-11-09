@@ -3180,11 +3180,29 @@ async function accXlsx(){
 }
 
 // ---------- ordering ----------
-function weeksFor(od){ const d = dowOf(od); let add = (1 - d + 7) % 7; if (add === 0) add = 7; const m = od + add; return [[m, m+4], [m+7, m+11]]; }
+// Besse's weekly order day (0 = Sun): Settings › Admin › Pharmacies; else the weekday most used in the Besse Order tab's history; else Friday.
+function besseOrderDow(){
+  const w = phCfg().list.find(phIsStock)?.orderDow; if (w !== '' && w != null && +w >= 0 && +w <= 6) return +w;
+  const b = S.besse, n = [0, 0, 0, 0, 0, 0, 0];
+  if (b?.hist) for (let r = b.hist.hdr + 1; r < (b.vals || []).length; r++){ const v = b.vals[r], d = toSerial(v[b.hist.c]); if (d != null && [v[b.hist.c + 1], v[b.hist.c + 2]].some(q => q !== '' && q != null)) n[dowOf(d)]++; }
+  const top = n.indexOf(Math.max(...n)); return n[top] && top >= 1 && top <= 5 ? top : 5;
+}
+// Weeks a Besse order covers. On or after the weekly order day (or a weekend): next Mon–Fri, then the week after.
+// Mon–Fri before that week's order day is a late order for the current week: Next week runs from the order date to Friday,
+// so visits already past aren't counted, and 2 weeks out stays the following week. early (S.besseWk 'next') reads it as an early order instead.
+// due = the regular order day for the week being ordered.
+function weeksFor(od, R = besseOrderDow(), early = S.besseWk === 'next'){
+  const i = (dowOf(od) + 6) % 7, r = (R + 6) % 7, mon = od - i;   // Monday = 0
+  const lateable = i < 5 && i < r, late = lateable && !early, m = late ? mon : mon + 7;
+  return Object.assign([[late ? od : m, m + 4], [m + 7, m + 11]], { late, lateable, due: m - ((1 - R + 7) % 7 || 7) });
+}
+// a visit that still needs a Besse kit: not before today and no kit given that day. Today's visits count even after their time,
+// since on hand only drops once the kit is given (a late order placed mid-day would otherwise come up short).
+function besseNeeds(a){ return a.date >= todaySerial() && !S.K.some(k => k.mrn === a.mrn && k.administered && k.adminDate === a.date); }
 function besseModel(){
   const w = weeksFor(S.orderDate); const rows = { 56:{ w1:0, w2:0 }, 84:{ w1:0, w2:0 } }; const list = [], review = [];
   for (const a of S.A){
-    if (!a.active || a.date < w[0][0] || a.date > w[1][1] || !pendingAppt(a)) continue;
+    if (!a.active || a.date < w[0][0] || a.date > w[1][1] || !besseNeeds(a)) continue;
     const wk = a.date <= w[0][1] ? 1 : a.date >= w[1][0] ? 2 : 0; if (!wk) continue;
     const inf = apptInfo(a);
     if (inf.pharm !== 'BESSE'){ if (!inf.pharm) review.push({ a, why:'Not on the patient tracker — pharmacy unknown' }); continue; }
@@ -4799,6 +4817,8 @@ function besseHTML(){
   const h = findHistRow(); const tot = rows.reduce((n, r) => n + r.order, 0);
   return `<div class="card print-target" id="besseTbl"><div class="inv-ch"><h3>Order quantities</h3><span class="inv-od noprint"><label class="small muted" for="orderDate">Order date</label><input id="orderDate" type="date" class="fld" data-act-change="orderDate" value="${isoOf(S.orderDate)}"></span><button class="btn sm noprint" data-act="orderEmail" data-p="BESSE">Besse order email…</button></div>
     <p class="small muted">Counts Monday to Friday visits. Next week ${fmtD(w1[0], 'dow')}–${fmtD(w1[1], 'dow')} · 2 weeks out ${fmtD(w2[0], 'dow')}–${fmtD(w2[1], 'dow')}</p>
+    ${m.w.late ? `<div class="msg info small noprint">Late order (the weekly order was due ${fmtD(m.w.due, 'dow')}): next week counts from the order date, so visits already past aren’t counted. <button class="btn sm ghost" data-act="besseWk" data-w="next">It’s for next week</button></div>`
+      : m.w.lateable ? `<div class="msg info small noprint">Counted as an early order for next week. <button class="btn sm ghost" data-act="besseWk" data-w="">It’s a late order for this week</button></div>` : ''}
     <div class="tw"><table class="t rt"><thead><tr><th>Dose</th><th class="num">On hand</th><th class="num">Next week</th><th class="num">2 weeks out</th><th class="num">Overage</th><th class="num">To be ordered</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td data-l="Dose"><b>${r.mg} mg</b></td><td data-l="On hand" class="num">${r.oh}</td><td data-l="Next week" class="num">${r.w1}</td><td data-l="2 weeks out" class="num">${r.w2}</td><td data-l="Overage" class="num"><input class="ov" type="number" step="1" data-ov="${r.mg}" value="${r.ov}" aria-label="Overage ${r.mg} mg"></td><td data-l="To be ordered" class="num"><span class="big">${r.order}</span></td></tr>`).join('')}
     </tbody></table></div>
@@ -4945,9 +4965,11 @@ function openOrderEmail(ph){
       <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="oCopy">Copy email</button><button class="btn" data-act="oAddr">Copy To / Cc</button><button class="btn primary" data-act="oMail" ${e.to ? '' : 'disabled'}>Copy &amp; open in Outlook</button></div>`, true); };
   S.oDraw = draw; draw();
 }
-function findHistRow(){ // the history's DATE column holds one row per order week: use this date, or the next one within 6 days
-  const b = S.besse; if (!b?.hist) return null; const vals = b.vals || []; let best = null;
-  for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null) continue; const diff = d - S.orderDate; if (diff >= 0 && diff <= 6 && (best == null || diff < best.diff)) best = { r, d, diff }; }
+// the history's DATE column holds one row per order week: the row on the regular order day for the week being ordered, or the next one
+// within 6 days (a late Monday order logs on last Friday's row, not this Friday's)
+function findHistRow(){
+  const b = S.besse; if (!b?.hist) return null; const vals = b.vals || []; let best = null; const from = weeksFor(S.orderDate).due;
+  for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null) continue; const diff = d - from; if (diff >= 0 && diff <= 6 && (best == null || diff < best.diff)) best = { r, d, diff }; }
   return best;
 }
 
@@ -6369,12 +6391,13 @@ Object.assign(ACT_SCHEDULE, {
 // scheduledNeedingMeds, followModel, besseModel) and the derived kit flags in S.K. Nothing here writes.
 const invPl = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 const invClock = ms => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-// Besse weekly order: recorded when the history row for this week (0-6 days on or after today, the same rule findHistRow uses
-// for the order date) has a quantity, or when "Besse N mg order" lines were logged in the last 7 days.
+// Besse weekly order: recorded when the history row for the week due today (0-6 days on or after its regular order day, the same rule
+// findHistRow uses) has a quantity, or when "Besse N mg order" lines were logged since that order day. A late Monday order
+// therefore doesn't hide Friday's reminder for the week after.
 function invBesseDone(){
-  const T = todaySerial(); const b = S.besse; let hist = null;
-  if (b?.hist){ const vals = b.vals || []; for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null || d < T || d > T + 6) continue; const q = [vals[r][b.hist.c + 1], vals[r][b.hist.c + 2]]; if (q.some(v => v !== '' && v != null) && (!hist || d < hist.d)) hist = { d }; } }
-  const lines = S.K.filter(k => k.pharm === 'BESSE' && k.ordered != null && k.ordered >= T - 6 && k.ordered <= T && /^Besse \d+ mg order/i.test(String(k.comments ?? '')));
+  const T = todaySerial(); const b = S.besse; let hist = null; const due = weeksFor(T, undefined, false).due;
+  if (b?.hist){ const vals = b.vals || []; for (let r = b.hist.hdr + 1; r < vals.length; r++){ const d = toSerial(vals[r][b.hist.c]); if (d == null || d < due || d > due + 6) continue; const q = [vals[r][b.hist.c + 1], vals[r][b.hist.c + 2]]; if (q.some(v => v !== '' && v != null) && (!hist || d < hist.d)) hist = { d }; } }
+  const lines = S.K.filter(k => k.pharm === 'BESSE' && k.ordered != null && k.ordered >= due && k.ordered <= T && /^Besse \d+ mg order/i.test(String(k.comments ?? '')));
   const last = lines.length ? Math.max(...lines.map(k => k.ordered)) : null;
   return { done: !!hist || !!lines.length, hist, lines: lines.length, last };
 }
@@ -8470,6 +8493,7 @@ const ACT = {
   fuEmail: el => openFollowEmail((el.dataset.ids || '').split(',').filter(Boolean)),
   fuCopy: async () => { const ids = followItems(S.fuPh).map(x => x.id).filter(id => S.fuSel.has(id)); const e = followEmail(ids); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Email copied — paste it into Outlook.'); },
   orderEmail: el => openOrderEmail(el.dataset.p || 'BESSE'),
+  besseWk: el => { S.besseWk = el.dataset.w || ''; render(); },
   fuPh: el => { S.fuPh = el.dataset.v; S.fuSel = new Set(followItems(S.fuPh).map(x => x.id)); S.fuDraw(); },
   oCopy: async () => { const e = orderEmail(); toast((await copyText(e.text, e.html)) ? 'ok' : 'bad', 'Order email copied.'); },
   oMail: async () => { const e = orderEmail(); await copyText(e.text, e.html); openMail(e.to, e.subj); toast('info', 'Email opened with To, Cc and Subject — paste (Ctrl+V) the formatted order into the body.'); },
@@ -8612,7 +8636,7 @@ document.addEventListener('change', e => {
   if ((el.dataset.co || el.dataset.rx != null) && S.co) coAutosave();
   if (el.dataset.co && S.co){ const k = el.dataset.co; S.co[k] = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? (/^\d+$/.test(el.value) ? +el.value : el.value) : k === 'ngSed' ? (el.value === '' ? null : +el.value) : el.value; if (S.coEdit == null) coRefresh(); else coRefresh(); }
   if (el.dataset.rx != null && S.co && (el.tagName === 'SELECT' || el.type === 'time')){ S.co.rescue[+el.dataset.rx][el.dataset.rf] = el.value; $('#coRx').innerHTML = S.coRescueHTML(); coRefresh(); }
-  if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; render(); } }
+  if (el.dataset.actChange === 'orderDate'){ const s = fromIso(el.value); if (s != null){ S.orderDate = s; S.besseWk = ''; render(); } }
   if (el.dataset.ov){ const v = Number(el.value); if (!isNaN(v)){ S.ov[el.dataset.ov] = v; render(); } }
   if (el.dataset.f){ S[el.dataset.f] = el.value; render(); }
   if (el.dataset.re){ S.re[el.dataset.re] = el.value; S.re.draw(); }
