@@ -1686,6 +1686,7 @@ const SIG = {
   audit:    ['scanhere','auditor2','date'],
   daily:    ['auditornamefirstandlast','scanhere','duplicateentry'],
   benefits: ['mrn','soharstatus','sohardate','imported'],   // Benefits tab (tblBenefits), written by "Import Sohar benefits"
+  orders:   ['mrn','neededbydate','neededbytime','orderdate','status'],   // Appt List › tblOrders: the Master tracker's Order Status formula reads it (optional)
 };
 const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
 const snapMatch = (vals, snap) => snap.every((s, c) => s === null || same(vals[c], s));
@@ -2444,7 +2445,7 @@ function DemoStore(){
   const store = {
     live: false,
     async load(){
-      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET }[k], h, v.map(r => r.slice()), F(v, fs));
+      const tables = {}; for (const [k, [h, v, fs]] of Object.entries(t)) tables[k] = new Tbl(k, { kits:'Table2', patients:'Table1', appts:'Table47', audit:'Table3', daily:'Table35', benefits:BEN_TABLE, orders:'tblOrders' }[k], { kits:'Inventory', patients:'Master Patient Tracker', appts:'Appt List', audit:'SN Audit', daily:'Daily Count', benefits:BEN_SHEET, orders:'Appt List' }[k], h, v.map(r => r.slice()), F(v, fs));
       return { tables, ref: JSON.parse(JSON.stringify(ref)),
         besse: parseBesse(besse), besseSheet: 'Besse Order', dailyHdr: { sheet: dh.sheet, values: dh.values.map(r => r.slice()), formulas: dh.values.map(r => r.map(() => '')) }, rems: parseRemsRows([REMS_COLS, ...rems]), phx: phxDemo.map(r => r.slice()), vlog: parseVlog([VLOG_COLS, ...vlogDemo]), elig: eligDemo.map(r => r.slice()) };
     },
@@ -3415,6 +3416,44 @@ async function syncOrderStatus(){
   catch (e){ console.error(e); toast('bad', `Order Status wasn’t updated: ${esc(e.message || String(e))}`); }
   finally { S._selfWriteAt = Date.now(); }   // the watcher ignores the change events from this write
 }
+// tblOrders (Appt List). Where Order Status is a formula, it shows the patient's next visit from this table: Status "In Transit" + Order Date
+// → "Ordered m/d | Needed by …", "Received" + Received Date → "Received m/d | …". Marking a Genoa / specialty kit as ordered adds (or reuses)
+// the visit's row; receiving or clearing that kit's Inventory line updates it. Workbooks without tblOrders skip all of this.
+const ORD_OPEN = ['in transit', 'delayed'];
+function apptTimeVal(a){ const t = S.tables.appts, c = t?.cols.time, v = c == null || a.r == null ? null : t.values[a.r]?.[c]; return typeof v === 'number' ? v : a.time != null ? a.time / 1440 : ''; }   // the formula matches Table47's own time value
+const sameTimeVal = (x, y) => (x === '' || x == null) && (y === '' || y == null) || (typeof x === 'number' && typeof y === 'number' && Math.abs(x - y) < 1e-6);
+function orderRows(){ const t = S.tables.orders; if (!t) return []; const out = [];
+  t.values.forEach((_, r) => { const mrn = mrnKey(t.get(r, 'mrn')); if (mrn) out.push({ r, mrn, need: toSerial(t.get(r, 'neededbydate')), time: t.get(r, 'neededbytime'), ordered: toSerial(t.get(r, 'orderdate')), mg: num(t.get(r, 'dosemg')), st: String(t.get(r, 'status') ?? '').trim().toLowerCase() }); });
+  return out;
+}
+// rows: [{ a, mg, pharm }] — the visits just marked as ordered today (T)
+async function ordersMarked(rows, T){
+  const t = S.tables.orders; if (!t) return 0;
+  const cur = orderRows(), adds = [], ups = [];
+  for (const x of rows){ const a = x.a; if (!a || a.test) continue; const tv = apptTimeVal(a);
+    const { out } = changesFor('orders', { mrn: mrnVal(a.mrn), patient: nm(a.mrn), pharmacy: x.pharm, dosemg: x.mg ?? '', neededbydate: { date: a.date }, neededbytime: tv, orderdate: { date: T }, receiveddate: '', status: 'In Transit', notes: `Marked ordered ${fmtD(T)}${CFG.me ? ' by ' + CFG.me : ''}` });
+    const hit = cur.find(o => o.mrn === a.mrn && o.need === a.date && sameTimeVal(o.time, tv) && !ORD_OPEN.includes(o.st) && o.st !== 'received');
+    if (hit) ups.push({ r: hit.r, snap: t.snap(hit.r), changes: out }); else adds.push(out);
+  }
+  if (ups.length) await S.store.updateMany('orders', ups);
+  if (adds.length) await S.store.addMany('orders', adds);
+  return ups.length + adds.length;
+}
+// the open tblOrders row for an Inventory order line: same patient, ordered the same day if it can tell, else the visit needed soonest
+function orderRowFor(k){
+  const o = orderRows().filter(o => o.mrn === k.mrn && ORD_OPEN.includes(o.st)); if (!o.length) return null;
+  const mg = k.recv || lineMg(k), by = l => l.sort((a, b) => (a.need ?? 9e9) - (b.need ?? 9e9))[0];
+  return by(o.filter(x => x.ordered === k.ordered && (!mg || !x.mg || x.mg === mg))) || by(o.filter(x => x.ordered === k.ordered)) || by(o);
+}
+async function orderRowSet(k, obj){
+  const t = S.tables.orders; if (!t || !k?.mrn) return false; const o = orderRowFor(k); if (!o) return false;
+  const { out } = changesFor('orders', obj); if (!out.length) return false;
+  await S.store.update('orders', o.r, t.snap(o.r), out); return true;
+}
+const ordersReceived = (k, T) => orderRowSet(k, { status: 'Received', receiveddate: { date: T } });
+const ordersCleared = k => orderRowSet(k, { status: 'Cancelled', notes: `Order line cleared ${fmtD(todaySerial())}${CFG.me ? ' by ' + CFG.me : ''}` });
+// tblOrders is a second write after the Inventory one: if it fails, the kit is still logged, so say so rather than fail the whole action
+async function ordersSafe(fn){ try { await fn(); } catch (e){ console.error(e); toast('warn', `Inventory was updated, but Order Status (tblOrders on Appt List) wasn’t: ${esc(e.message || String(e))}`); } }
 function defaultWindow(){ const T = todaySerial(); const d = dowOf(T); let add = (1 - d + 7) % 7; if (add === 0) add = 7; return { from: T, to: T + add + 4 }; } // today → Friday of next week
 function genoaModel(from, to){
   const T = todaySerial(); from = from ?? S.win.from; to = to ?? S.win.to;
@@ -4985,7 +5024,7 @@ async function recvScan(raw){
     const skipped = L.indexOf(line) > 0 ? L[0] : null;
     const obj = { scanhere: scan, datereceived: { date: T } }; if (!line.pct) obj.loggingpct = me; if (!line.pharmRaw) obj.pharmacy = pharmText(line.mrn ? (S.byMrn.get(line.mrn)?.pharm || 'GENOA') : 'GENOA');
     const { out } = changesFor('kits', obj); const who = line.mrn ? nm(line.mrn) : 'Genoa stock';
-    if (await write(null, () => S.store.update('kits', line.r, S.tables.kits.snap(line.r), out))){
+    if (await write(null, async () => { await S.store.update('kits', line.r, S.tables.kits.snap(line.r), out); if (line.mrn) await ordersSafe(() => ordersReceived({ ...line, recv: p.mg }, T)); })){
       if (S.rcvFirst === line.id) S.rcvFirst = null;
       const warn = skipped ? `${p.mg} mg — skipped ${skipped.mrn ? nm(skipped.mrn) : 'stock'} (${lineMg(skipped)} mg)` : '';
       rcvLogAdd({ id: 'S:' + sn, who, mg: p.mg, serial: p.serial, warn });
@@ -5022,7 +5061,7 @@ function needHTML(g){
     ${need.length ? `<div class="tw"><table class="t rt"><thead><tr><th class="inv-cb"><input type="checkbox" data-gall ${sel === need.length ? 'checked' : ''} aria-label="Select all"></th><th>Needed by</th><th>Patient</th><th>MRN</th><th class="num">Dose</th><th>Pharmacy</th><th></th></tr></thead><tbody>
       ${need.map(r => `<tr><td data-l="Select" class="inv-cb"><input type="checkbox" data-gsel="${esc(r.a.key)}" ${S.genoaSel.has(r.a.key) ? 'checked' : ''} aria-label="Select ${esc(nm(r.a.mrn))}"></td><td data-l="Needed by"><b>${fmtD(r.a.date, 'dow')}</b> ${fmtT(r.a.time)}</td><td data-l="Patient"><b>${esc(nm(r.a.mrn))}</b></td><td data-l="MRN">${esc(r.a.mrn)}</td><td data-l="Dose" class="num">${r.inf.mg ?? '?'} mg</td><td data-l="Pharmacy">${esc(phLabel(r.inf))}</td><td data-l="">${urg(r)}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="inv-foot2"><span class="small muted">Marking as ordered opens one Inventory line per kit (MRN, Pharmacy, Date Ordered). It then shows under <b>On order</b> until received.</span><button class="btn primary" data-act="genoaOrder" ${sel ? '' : 'disabled'}>Mark ${sel || ''} as ordered today</button></div>`
+    <div class="inv-foot2"><span class="small muted">Marking as ordered opens one Inventory line per kit (MRN, Pharmacy, Date Ordered)${S.tables.orders ? ' and logs the order date and needed-by visit in tblOrders, which fills Order Status on the Master Patient Tracker' : ''}. It then shows under <b>On order</b> until received.</span><button class="btn primary" data-act="genoaOrder" ${sel ? '' : 'disabled'}>Mark ${sel || ''} as ordered today</button></div>`
     : '<div class="msg ok">Nothing to order for this window. Every visit is covered.</div>'}
   </div>
   ${sm.length ? `<div class="card"><div class="inv-ch"><h3>Scheduled in clinic, no meds yet ${tag('bad', String(sm.length))}</h3></div><p class="small muted">Marked scheduled, but their new visits aren’t in the appointment report yet and there are no spare kits on hand or on order.</p>
@@ -5074,6 +5113,7 @@ async function genoaOrder(){
   const T = todaySerial();
   const ok = await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => {
     await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: phOrderText(r.inf), dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
+    await ordersSafe(() => ordersMarked(rows.map(r => ({ a: r.a, mg: r.inf.mg, pharm: phOrderText(r.inf) })), T));   // → Order Status on the Master tracker
   }, `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered.`);
   if (ok){ S.genoaSel.clear(); render(); }
 }
@@ -5102,7 +5142,7 @@ function openCancel(id){
 async function cancelDo(id){
   const k = S.K.find(x => x.id === id); if (!k) return;
   const { out } = changesFor('kits', { loggingpct: '', mrn: '', pharmacy: '', dateordered: '', comments: '' });
-  if (await write('Clearing…', () => S.store.update('kits', k.r, S.tables.kits.snap(k.r), out), 'Order line cleared.')){ closeModal(); render(); }
+  if (await write('Clearing…', async () => { await S.store.update('kits', k.r, S.tables.kits.snap(k.r), out); if (k.mrn && k.openOrder) await ordersSafe(() => ordersCleared(k)); }, 'Order line cleared.')){ closeModal(); render(); }
 }
 async function saveBesse(){
   const b = S.besse; const m = besseModel(); const cells = []; let histNote = '';
@@ -7640,7 +7680,8 @@ async function phOrder(phId, day){
   const ph = phById(phId), x = phxPlan(S.phDays || 42).find(p => p.ph.id === phId), g = x?.groups.find(g => g.date === +day); if (!ph || !g) return;
   const rows = g.need.filter(r => r.cover === 'need'); if (!rows.length) return; if (!CFG.me) return askWho();
   const T = todaySerial(), refv = (S.ref.pharmacy || []).find(v => phMatch(v)?.id === ph.id) || ph.name;
-  await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, () => S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: refv, dateordered: { date: T }, comments: nm(r.a.mrn) }).out)),
+  await write(`Opening ${rows.length} order line${rows.length > 1 ? 's' : ''}…`, async () => { await S.store.addMany('kits', rows.map(r => changesFor('kits', { loggingpct: CFG.me, mrn: mrnVal(r.a.mrn), pharmacy: refv, dateordered: { date: T }, comments: nm(r.a.mrn) }).out));
+      await ordersSafe(() => ordersMarked(rows.map(r => ({ a: r.a, mg: r.inf.mg, pharm: refv })), T)); },
     `Marked ${rows.length} kit${rows.length > 1 ? 's' : ''} as ordered from ${esc(ph.name)}.`);
 }
 
