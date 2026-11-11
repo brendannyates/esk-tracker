@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESK Tracker</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="notify-settings.js?v=60"></script>
-<script src="notify.js?v=60"></script>
+<script src="notify-settings.js?v=61"></script>
+<script src="notify.js?v=61"></script>
 <link rel="stylesheet" href="dev-updates.css?v=59">
 <script src="dev-updates.js?v=59"></script>
 <style>
@@ -4331,8 +4331,7 @@ function nfyKitSn(a, v){
 function nfyMadrs(p){ return needsMadrs(p) ? { authExp: fmtD(p.authExp), expired: p.authExp < todaySerial(), last: p.lastMadrs ? fmtD(p.lastMadrs) : '' } : null; }
 function nfyData(key, stage, x){
   const a = S.A.find(y => y.key === key), v = visitGet(key) || {}; if (!a) return null;
-  return { key, madrs: a.test ? null : nfyMadrs(S.byMrn.get(a.mrn)), startable: obsAt(v) == null && !v.out,   // no dose time yet: the card can carry Start administration
-    provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: a.test ? 'TEST-' + a.mrn : lasfirOf(nm(a.mrn)), bay: bayLabel(v.bay), clinic: CFG.clinic || '', sentBy: CFG.me || '', sn: nfyKitSn(a, v),
+  return { madrs: a.test ? null : nfyMadrs(S.byMrn.get(a.mrn)), provider: canonProv(a.rendering || S.byMrn.get(a.mrn)?.provider || ''), patient: a.test ? 'TEST-' + a.mrn : lasfirOf(nm(a.mrn)), bay: bayLabel(v.bay), clinic: CFG.clinic || '', sentBy: CFG.me || '', sn: nfyKitSn(a, v),
     vitals: { bp: x.bp || '', hr: x.hr || '', spo2: x.o2 ? x.o2 + '%' : '' }, visit: { vitalsCount: 1, adminTime: null }, stage };
 }
 async function nfyOnSaved(key, stage, x){
@@ -4344,8 +4343,7 @@ async function nfyOnSaved(key, stage, x){
   return nfySendNow(d);
 }
 async function nfySendNow(d, button){
-  try { const { key, ...dd } = d, r = button ? await sendToProviderChatButton(dd) : await onVitalsSaved(dd);
-    if (r.sent && r.start && r.ref && key && visitGet(key)) await visitSet(key, { nfyRefs: [...(visitGet(key).nfyRefs || []), r.ref].slice(-10) });   // the tap comes back with this ref (nfyStartTick)
+  try { const r = button ? await sendToProviderChatButton(d) : await onVitalsSaved(d);
     if (r.sent) toast(r.level === 'emergency' ? 'bad' : 'ok', `Sent to ${esc(d.provider)}’s Teams chat${r.level === 'emergency' ? ' as EMERGENCY' : ''}: ${esc(r.message || '')}`);
     else if (button || !/within limits|are off for this office/.test(r.reason || '')) toast('warn', `Teams: ${esc(r.reason || 'not sent')}`);
     return r; }
@@ -4359,36 +4357,6 @@ async function nfyButton(key){
   if (!S.store?.live) return toast('ok', `Demo: would post ${esc(d.patient)}’s vitals to ${esc(d.provider)}’s Teams chat.`);
   if (S.store.remote) return S.store.relayNotify?.({ ...d, button: true });
   return nfySendNow(d, true);
-}
-// Start administration taps from Teams: the flow adds a tblNotifyActions row { Ref, Action, By, At }. The Excel pane (not the
-// full-screen view) reads it every 15 s while a visit today has sent the button and has no dose time, then sets the dose time to the
-// tap time (never over one already entered; Administer still overwrites it with the time the tech enters) and fills Applied.
-// admTeams { at, by, ref } keeps who tapped and when, for the visit log.
-const NFY_START_EVERY = 15000;
-async function nfyStartTick(){
-  if (!S.loaded || !S.store?.live || S.store.remote || typeof readNotifyActions !== 'function' || S._nfyStartBusy || formBusy()) return;
-  if (Date.now() - (S._nfyStartAt || 0) < NFY_START_EVERY) return;
-  const T = todaySerial(), waiting = Object.entries(S.visit || {}).filter(([k, v]) => Number(k.split('|')[1]) === T && v?.nfyRefs?.length && obsAt(v) == null && !v.out);
-  if (!waiting.length) return;
-  S._nfyStartAt = Date.now(); S._nfyStartBusy = true;
-  try {
-    const rows = await readNotifyActions(); if (!rows?.length) return;
-    const marks = [], today = isoOf(T);
-    for (const x of rows){
-      const hit = Object.entries(S.visit || {}).find(([, v]) => (v?.nfyRefs || []).includes(x.ref));
-      if (!hit){ marks.push({ row: x.row, text: 'Skipped: no visit for this card' }); continue; }
-      const [key, v] = hit, a = S.A.find(y => y.key === key), t = nfyActionTime(x.at) || nfyActionTime(new Date().toISOString());
-      if (x.action !== 'start'){ marks.push({ row: x.row, text: `Skipped: unknown action ${x.action}` }); continue; }
-      if (Number(key.split('|')[1]) !== T || t.day !== today){ marks.push({ row: x.row, text: 'Skipped: tapped on another day' }); continue; }
-      if (obsAt(v) != null || v.out){ marks.push({ row: x.row, text: `Skipped: dose time already ${hhmm(obsAt(v))}` }); continue; }
-      await visitSet(key, { adm: t.min, admTeams: { at: t.min, by: x.by, ref: x.ref } });
-      marks.push({ row: x.row, text: `Dose time set ${hhmm(t.min)}` });
-      toast('ok', `${esc(x.by || 'The provider')} started administration for ${esc(a ? nm(a.mrn) : 'the patient')} at ${fmtT(t.min)} (Teams). The ${esc(CFG.vitalsMin)}-min vitals timer is running from then.`);
-    }
-    if (marks.length) await markNotifyActions(marks);
-    render();
-  } catch (e){ console.error('Start administration from Teams', e); }
-  finally { S._nfyStartBusy = false; }
 }
 // Visits whose fields I changed (mine vs base) that the file's copy doesn't have as I saved them.
 function visitMissing(mine, base, file){
@@ -4425,7 +4393,7 @@ function visitMerge(mine, base, fresh){
 // settings (two people saving at once) is filled back in from its latest row on the next load. Fills blanks only.
 // A patient's rows stay until their next appointment day comes, then the daily prune removes them.
 const VLOG_SHEET = 'ESK Visit Log', VLOG_COLS = ['Logged', 'Visit', 'MRN', 'Appt date', 'Event', 'Time', 'BP', 'HR', 'O2', 'Detail', 'By', 'Snapshot'];
-const VLOG_F = ['start', 'adm', 'admTeams', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc', 'prnOrd', 'em'];
+const VLOG_F = ['start', 'adm', 'bay', 'vit', 'rechk', 'rescue', 'out', 'mv', 'pc', 'prnOrd', 'em'];
 const vlogEmpty = x => x == null || x === '' || (typeof x === 'object' && !Object.keys(x).length);
 function vlogPick(v){ const o = {}; for (const f of VLOG_F) if (v && !vlogEmpty(v[f])) o[f] = v[f]; return JSON.parse(JSON.stringify(o)); }
 const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
@@ -4433,7 +4401,7 @@ const vlogStamp = d => { const p = n => String(n).padStart(2, '0'); return `${d.
 function vlogEvents(p, c){
   const E = [], J = x => JSON.stringify(x ?? null), add = (ev, o = {}) => E.push({ ev, time: '', bp: '', hr: '', o2: '', detail: '', by: '', ...o });
   if (J(p.start) !== J(c.start)) add(c.start != null ? 'Roomed' : 'Room time cleared', { time: hhmm(c.start) });
-  if (J(p.adm) !== J(c.adm)) add(c.adm != null ? 'Dose time' : 'Dose time cleared', { time: hhmm(c.adm), ...(c.adm != null && c.admTeams?.at === c.adm ? { detail: 'Start administration in Teams', by: c.admTeams.by || '' } : {}) });
+  if (J(p.adm) !== J(c.adm)) add(c.adm != null ? 'Dose time' : 'Dose time cleared', { time: hhmm(c.adm) });
   if (J(p.bay) !== J(c.bay)) add('Bay', { detail: c.bay != null ? String(c.bay) : 'cleared' });
   const lab = { init: 'Initial vitals', mid: `${CFG.vitalsMin || 40}-min vitals`, fin: 'Final vitals' };
   for (const w of new Set([...Object.keys(p.vit || {}), ...Object.keys(c.vit || {})])){
@@ -8418,23 +8386,21 @@ function settingsHTML(){
 // S.nfy = what the sheet holds, S.nfyDraft = the provider rows being edited ([{ provider, chatLink, mentionName, mentionId, enabled, was }],
 // was = the name it had on the sheet, '' for a new row).
 const NFY_FLAGS = [['Enabled', 'Send Teams notifications', 'Master switch'], ['MentionProvider', '@mention the provider on the card', 'Uses each provider’s mention name and email below'],
-  ['NotifyInitial', 'Initial vitals'], ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays'],
-  ['StartButton', 'Start administration button on cards', 'Turn on only after the flow posts these cards with “wait for a response”. A tap sets the dose time if none is entered']];
+  ['NotifyInitial', 'Initial vitals'], ['NotifyRecheck', 'Rechecks'], ['Notify40Min', '40-min vitals'], ['NotifyDischarge', 'Final vitals / discharge'], ['InAppAlerts', 'In-app alerts in ESK Bays'], ['AlertSound', 'Sound in ESK Bays']];
 const nfyOn = v => String(v).toUpperCase() === 'TRUE' || v === true;
-const NFY_DEF = { Enabled: true, MentionProvider: true, NotifyInitial: true, NotifyRecheck: true, Notify40Min: true, NotifyDischarge: true, InAppAlerts: true, AlertSound: true, StartButton: false };
+const NFY_DEF = { Enabled: true, MentionProvider: true, NotifyInitial: true, NotifyRecheck: true, Notify40Min: true, NotifyDischarge: true, InAppAlerts: true, AlertSound: true };
 const nfyFlag = (c, k) => c[k] == null || String(c[k]).trim() === '' ? !!NFY_DEF[k] : nfyOn(c[k]);   // a key an older sheet doesn't have yet shows its default
 const nfyFlowOk = u => !u || (typeof nfyFlowUrl === 'function' ? !!nfyFlowUrl(u) : /^https:\/\/\S+\.(powerplatform\.com|logic\.azure\.com)/i.test(u));   // a Power Automate trigger URL
 const nfyChatOf = u => typeof nfyChatId === 'function' ? nfyChatId(u) : ((String(u || '').match(/19:[^\s\/?#&"'<>]+?@(?:thread\.v2|unq\.gbl\.spaces)/i) || [''])[0]);
 const nfyChatOk = u => !String(u || '').trim() || !!nfyChatOf(u) || !!nfyChatOf((() => { try { return decodeURIComponent(u); } catch { return u; } })());
 const nfyIdOk = e => !e || /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(e).trim());
 let _nfyBoot = false;
-TICKS.push(() => { nfyStartTick(); });   // Start administration taps from Teams (nfyStartTick)
 TICKS.push(() => { if (!_nfyBoot && S.loaded && S.store?.live && !S.provView){ _nfyBoot = true; S._nfyAsked = true; nfyLoad(); } });
 // Eligibility feed: the pane (not the full-screen view, not ESK Bays) pulls once a day when the workbook opens (eligPull).
 let _eligBoot = false;
 TICKS.push(() => { if (!_eligBoot && S.loaded && S.mode === 'pane' && S.store?.live && !S.store.remote && !S.provView && S.P?.length && typeof readNotifySettings === 'function'){ _eligBoot = true; eligPull(true); } });
 // The Settings-sheet functions (notify-settings.js / notify.js) need Excel: the pane runs them directly, the full-screen view asks the pane.
-const NFY_FNS = ['notifySettingsStatus', 'readNotifySettings', 'ensureNotifySettings', 'ensureNotifyActions', 'setNotifyConfig', 'upsertNotifyRoute', 'removeNotifyRoute', 'sendNotifyTest'];
+const NFY_FNS = ['notifySettingsStatus', 'readNotifySettings', 'ensureNotifySettings', 'setNotifyConfig', 'upsertNotifyRoute', 'removeNotifyRoute', 'sendNotifyTest'];
 function nfyCall(fn, ...args){
   if (!NFY_FNS.includes(fn)) return Promise.reject(new Error('Unknown Settings-sheet call'));
   if (S.store?.remote) return S.store.nfy(fn, args);
@@ -8530,10 +8496,7 @@ Object.assign(ACT_SETTINGS, {
 // Provider rows type into S.nfyDraft (no re-render while typing, so focus stays); checkboxes save their config flag straight away.
 document.addEventListener('input', e => { const d = e.target.dataset?.nfyr; if (!d || !S.nfyDraft) return; const [i, k] = d.split('|'); if (!S.nfyDraft[+i]) return;
   S.nfyDraft[+i][k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; const b = $('[data-act="nfySaveRoutes"]'); if (b) b.disabled = false; });
-document.addEventListener('change', e => { const k = e.target.dataset?.nfyc, on = e.target.checked;
-  if (k === 'StartButton' && on) nfyWrite('Saving…', async () => { const r = await nfyCall('ensureNotifyActions'); if (r?.blocked) throw new Error(`Not turned on. ${r.blocked}`);   // the table the flow writes taps into
-    await nfyCall('setNotifyConfig', k, 'TRUE'); return r?.created ? 'Saved. Added the tblNotifyActions table on the Settings sheet for the flow to write into.' : 'Saved.'; });
-  else if (k) nfyWrite('Saving…', () => nfyCall('setNotifyConfig', k, on ? 'TRUE' : 'FALSE'), 'Saved.');
+document.addEventListener('change', e => { const k = e.target.dataset?.nfyc; if (k) nfyWrite('Saving…', () => nfyCall('setNotifyConfig', k, e.target.checked ? 'TRUE' : 'FALSE'), 'Saved.');
   else if (e.target.dataset?.nfyr && S.view === 'settings') render(); });
 // ---------- Settings › Admin (PIN) ----------
 // PIN: eskShared.adminPin = { salt, h } (SHA-256 of salt + PIN). Anyone who can open the workbook could read the hash, so it's a speed bump,
