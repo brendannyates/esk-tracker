@@ -26,6 +26,9 @@ ESK Tracker and ESK Bays are separate add-ins with their own Ids, and Office kee
 ## Visit log
 Every visit action (room time, dose time, bay, initial / 40-min / final vitals, rechecks, PRN meds, discharge, moves) is written to the hidden **ESK Visit Log** sheet as it's saved, one row per change, with the MRN, the time and who recorded it. It's a backup: if a visit's vitals or times go missing from the tracker (for example two people saving at once), the next refresh fills the blanks back in from the log. It never overwrites what's there. A patient's rows stay until the day of their next appointment, then they're cleared.
 
+## Protocol and consent renewal
+"New protocol and consent needed" shows once the protocol has expired, or from whichever comes first: 7 days before it expires, or the patient's last booked visit before it expires. The consent is signed with each renewal. The 30-day scheduling window (Schedule out) is separate and unchanged.
+
 ## Teams notifications
 Vitals cards go to each provider's Teams group chat through one Power Automate flow, **ESK Tracker to Teams**, shared by every office (built from blank, not the Teams Workflows template, so there's no "used a Workflow template" footer). The add-in decides whether to send, builds the card (title, stage, vitals with a bold HIGH / EMERGENCY / LOW flag, sent by, and an @mention of the provider) and names the chat; the flow only posts it as Workflows.
 
@@ -34,16 +37,3 @@ Set it up in **Settings › Teams notifications**: paste the flow's HTTP URL onc
 Thresholds are constants in `notify.js`: emergency at or above 180/120, HIGH over 140/90, LOW under 92% SpO2.
 
 When the tracker shows **Needs MADRS** for the patient (from 30 days before auth expiry until Last MADRS falls in that window), the card adds a line under the vitals: `MADRS: DUE · auth exp 12/5 · last 10/2`, with DUE in bold red.
-
-### Start administration from Teams
-With **Start administration button on cards** turned on (Settings › Teams notifications, off by default), a card for a visit with no dose time yet gets a **Start administration** button. Emergency cards never get it. A tap sets the visit's dose time to the tap time, which starts the 40-min and final vitals timers. It never replaces a dose time already entered, and the tech's time in Administer still replaces it. The pane shows a toast, and the visit log records the dose time as "Start administration in Teams" with the name of whoever tapped. Anyone in the chat can tap, and only the first tap counts.
-
-Turning the setting on adds **tblNotifyActions** (`Ref | Action | By | At | Applied`) at X1 on the Settings sheet. The Excel pane checks it every 15 s while a visit today has a card with the button and no dose time, then fills **Applied** (`Dose time set 10:42`, or why the tap was skipped).
-
-The flow needs these changes **before** you turn the setting on. A plain "Post card" can't take a tap, so the button would show an error.
-1. In **Apply to each** over `chats`, add a **Condition**: `triggerBody()?['wait']` is equal to `true`.
-2. **If yes:** Microsoft Teams › **Post adaptive card and wait for a response**. Post as Flow bot, in a Group chat, Group chat = `item()`, Message = the card (`triggerBody()?['card']`), Update message `Administration started`, Should update card = Yes. In its Settings, set Timeout to `PT4H`. Then Excel Online (Business) › **Add a row into a table** in that office's workbook, with a Switch on `triggerBody()?['clinic']` and one case per office. Table `tblNotifyActions`. Ref = `body('Post_adaptive_card_and_wait_for_a_response')?['data']?['ref']`, Action = `…?['data']?['action']`, By = `…?['responder']?['displayName']`, At = `…?['responseTime']`. Leave Applied blank.
-3. **If no:** the existing **Post card in a chat or channel**, unchanged.
-4. Turn on concurrency for the Apply to each, so a waiting card doesn't hold up the next chat.
-
-Check the output names (`data`, `responder`, `responseTime`) against one test run, because Power Automate's action names follow the names in your flow.
