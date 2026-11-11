@@ -26,6 +26,9 @@ ESK Tracker and ESK Bays are separate add-ins with their own Ids, and Office kee
 ## Visit log
 Every visit action (room time, dose time, bay, initial / 40-min / final vitals, rechecks, PRN meds, discharge, moves) is written to the hidden **ESK Visit Log** sheet as it's saved, one row per change, with the MRN, the time and who recorded it. It's a backup: if a visit's vitals or times go missing from the tracker (for example two people saving at once), the next refresh fills the blanks back in from the log. It never overwrites what's there. A patient's rows stay until the day of their next appointment, then they're cleared.
 
+## Protocol and consent renewal
+"New protocol and consent needed" shows once the protocol has expired, or from whichever comes first: 7 days before it expires, or the patient's last booked visit before it expires. The consent is signed with each renewal. The 30-day scheduling window (Schedule out) is separate and unchanged.
+
 ## Teams notifications
 Vitals cards go to each provider's Teams group chat through one Power Automate flow, **ESK Tracker to Teams**, shared by every office (built from blank, not the Teams Workflows template, so there's no "used a Workflow template" footer). The add-in decides whether to send, builds the card (title, stage, vitals with a bold HIGH / EMERGENCY / LOW flag, sent by, and an @mention of the provider) and names the chat; the flow only posts it as Workflows.
 

@@ -2621,7 +2621,15 @@ function todayModel(day){
   }
   return items;
 }
-function needsProto(p){ if (!p || !/^(active|pending)/i.test(p.status)) return false; return !p.protoExp || p.protoExp < todaySerial() + CFG.schedDays; }
+// New protocol + consent: due once the protocol has expired, or from whichever comes first: PROTO_DAYS before it expires, or the
+// patient's last booked visit before it expires (so it's renewed at that visit). Not tied to the scheduling window (CFG.schedDays).
+const PROTO_DAYS = 7;
+function protoDueFrom(p){
+  if (!p?.protoExp) return null;
+  const last = S.A.reduce((m, a) => a.mrn === p.mrn && a.active && a.date < p.protoExp && a.date > m ? a.date : m, -Infinity);
+  return last === -Infinity ? p.protoExp - PROTO_DAYS : Math.min(p.protoExp - PROTO_DAYS, last);   // no visit booked before it expires: 7 days out
+}
+function needsProto(p){ if (!p || !/^(active|pending)/i.test(p.status)) return false; return !p.protoExp || todaySerial() >= protoDueFrom(p); }
 // From 30 days before auth expiration: due until Last MADRS holds a date inside that window (stays due once the auth lapses).
 const MADRS_DAYS = 30;
 function needsMadrs(p){ if (!p?.authExp || !/^(active|pending)/i.test(p.status)) return false; const from = p.authExp - MADRS_DAYS; return todaySerial() >= from && !(p.lastMadrs != null && p.lastMadrs >= from); }
