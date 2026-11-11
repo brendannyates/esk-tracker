@@ -121,5 +121,41 @@ let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', na
     assert.strictEqual((await C.readNotifyLogSince('2000')).length, before);
     assert(/No group chat set/.test((await C.sendNotifyTest('Dr Z')).reason));
   });
+  await t('MADRS due: its own line after the vitals, DUE flagged red; no line when not due', async () => {
+    await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' }, madrs: { authExp: '12/5', expired: false, last: '10/2' } });
+    let b = posts.at(-1).body; assert.deepStrictEqual([...texts(b.card)].slice(2), ['BP: 120/80', 'MADRS: DUE · auth exp 12/5 · last 10/2', 'SN: 2404 | Sent By: Tech T']);
+    assert(flags(b.card).includes('DUE|Attention')); assert(/MADRS: <b>DUE<\/b> · auth exp 12\/5 · last 10\/2/.test(b.message), b.message);
+    await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' }, madrs: { authExp: '11/1', expired: true, last: '' } });
+    assert(texts(posts.at(-1).body.card).includes('MADRS: DUE · auth expired 11/1'));
+    await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' } });
+    assert(!texts(posts.at(-1).body.card).some(x => /MADRS/.test(x)));
+  });
+  await t('Start administration: only with StartButton on, a visit with no dose time, and not an emergency', async () => {
+    let r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' }, startable: true });
+    assert.strictEqual(posts.at(-1).body.card.actions, undefined, 'StartButton is off by default'); assert.strictEqual(posts.at(-1).body.wait, false); assert.strictEqual(r.start, false);
+    await C.setNotifyConfig('StartButton', 'TRUE');
+    r = await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' }, startable: true });
+    const b = posts.at(-1).body, a = b.card.actions[0];
+    assert.strictEqual(r.start, true); assert.strictEqual(b.wait, true); assert.strictEqual(b.ref, r.ref);
+    assert.strictEqual(a.type, 'Action.Submit'); assert.strictEqual(a.title, 'Start administration'); assert.strictEqual(a.data.action, 'start'); assert.strictEqual(a.data.ref, r.ref);
+    assert((await C.readNotifyLogSince('2000')).some(x => x.id === r.ref), 'the log row carries the same ref');
+    await C.onVitalsSaved({ ...base, stage: 'initial', vitals: { bp: '120/80' }, startable: false });
+    assert.strictEqual(posts.at(-1).body.card.actions, undefined, 'dose time already set');
+    r = await C.onVitalsSaved({ ...base, stage: 'recheck', vitals: { bp: '184/122' }, startable: true });
+    assert.strictEqual(r.level, 'emergency'); assert.strictEqual(posts.at(-1).body.card.actions, undefined, 'never on an emergency'); assert.strictEqual(posts.at(-1).body.wait, false);
+    await C.setNotifyConfig('StartButton', 'FALSE');
+  });
+  await t('taps: tblNotifyActions made on demand, unapplied rows read by header, Applied written back', async () => {
+    assert.strictEqual(await C.readNotifyActions(), null, 'no table yet');
+    assert.strictEqual((await C.ensureNotifyActions()).created, true); assert.strictEqual((await C.ensureNotifyActions()).created, false, 'safe to call again');
+    assert.deepStrictEqual([...await C.readNotifyActions()], [], 'the blank starter row is skipped');
+    const T = C.Excel.run(async ctx => ctx.workbook.tables.getItem('tblNotifyActions'));
+    (await T).rows.add(null, [['r1', 'start', 'Alex Able', '2026-11-11T18:42:10Z', ''], ['r2', 'start', 'Alex Able', '2026-11-11T18:50:00Z', 'Dose time set 10:50']]);
+    const L = await C.readNotifyActions(); assert.strictEqual(L.length, 1); assert.strictEqual(L[0].ref, 'r1'); assert.strictEqual(L[0].by, 'Alex Able'); assert.strictEqual(L[0].action, 'start');
+    await C.markNotifyActions([{ row: L[0].row, text: 'Dose time set 10:42' }]); assert.strictEqual((await C.readNotifyActions()).length, 0);
+    const d = new Date('2026-11-11T18:42:10Z'), at = C.nfyActionTime('2026-11-11T18:42:10Z'); assert.strictEqual(at.min, d.getHours() * 60 + d.getMinutes());
+    const x = C.nfyActionTime(46337 + 0.4375); assert.strictEqual(x.min, 630, 'an Excel date-time number is local wall time'); assert.strictEqual(x.day, '2026-11-11');
+    assert.strictEqual(C.nfyActionTime(''), null); assert.strictEqual(C.nfyActionTime('not a time'), null);
+  });
   console.log(n + ' passed');
 })().catch(e => { console.error(e); process.exit(1); });
