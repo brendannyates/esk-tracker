@@ -6,7 +6,7 @@
 // tblNotifyConfig › WebhookUrl. The add-in decides whether to send, builds the Adaptive Card (title, Stage, flagged vitals, Sent By,
 // @mention of the provider) and names the group chat(s); the flow only forwards the card to each chat as the Flow bot.
 // Tables are found by name anywhere in the workbook, so they can live on the Settings sheet.
-var NOTIFY_TABLES = { config: 'tblNotifyConfig', routes: 'tblNotifyRoutes', templates: 'tblNotifyTemplates', log: 'tblNotifyLog' };
+var NOTIFY_TABLES = { config: 'tblNotifyConfig', routes: 'tblNotifyRoutes', templates: 'tblNotifyTemplates', log: 'tblNotifyLog', actions: 'tblNotifyActions' };
 var NOTIFY_VITALS = [["bp",""],["hr","HR"],["spo2","SpO2"],["temp","Temp"]];   // [field, label] for the log row and toasts. Keys bp and spo2 feed the rules.
 var NOTIFY_THRESHOLDS = {"emergency":{"sys":180,"dia":120},"alert":{"sys":140,"dia":90},"spo2Min":92};   // hardcoded on purpose: change here, not in the workbook
 var NFY_STAGE_LABEL = {"initial":"Initial Vitals","recheck":"Recheck Vitals","40-min":"40-min Vitals","discharge":"Discharge Vitals"};
@@ -33,7 +33,9 @@ function nfyVitals(v){
 //   <at>Provider Name</at> GRECAR is ready in Bay 2         title: the tblNotifyTemplates row, @mention when MentionProvider is on
 //   Stage: Recheck Vitals *EMERGENCY* at or above 180/120   an emergency is flagged next to the stage, *EMERGENCY* in red
 //   BP: 142/87 HIGH (over 140/90), HR: 69, SpO2: 99%        vitals on one line; HIGH in red over 140/90, LOW in blue under 92% SpO2
+//   MADRS: DUE · auth exp 12/5 · last 10/2                 only when the tracker says the patient needs a MADRS (DUE in red)
 //   SN: 2404 | Sent By: John C.                          greyed: last four of the kit's serial number (when known), then the sender
+//   [Start administration]                                 when StartButton is on, the visit has no dose time and it isn't an emergency
 // Vitals that were not taken are left out. There is no Provider row; the card lands in the provider's own chat.
 // The title is a markdown TextBlock (it carries the mention); the other lines are RichTextBlocks of plain-text runs, which is
 // what lets a single word be colored, and means their text is shown exactly as written (no markdown).
@@ -71,7 +73,13 @@ function nfyVitalsRuns(v){
   var out = []; parts.forEach(function(p, i){ if (i) out.push(nfyRun(', ')); out.push.apply(out, p); });
   return out;
 }
-// d: { title, stage, vitals: { bp, hr, spo2, temp }, sn, sentBy }  ->  lines: the title { md }, then { runs } for the rest
+// The MADRS line, or null. m: { authExp: '12/5', expired: true|false, last: '10/2' or '' } (only passed when a MADRS is due).
+function nfyMadrsRuns(m){
+  if (!m) return null;
+  var tail = ' · auth ' + (m.expired ? 'expired ' : 'exp ') + String(m.authExp || '').trim() + (String(m.last || '').trim() ? ' · last ' + String(m.last).trim() : '');
+  return [nfyRun('MADRS: '), nfyRun('DUE', { bold: true, color: NFY_FLAG_COLOR.high }), nfyRun(m.authExp ? tail : '')];
+}
+// d: { title, stage, vitals: { bp, hr, spo2, temp }, madrs, sn, sentBy }  ->  lines: the title { md }, then { runs } for the rest
 function nfyLines(d){
   var v = d.vitals || {}, T = NOTIFY_THRESHOLDS, out = [{ md: d.title }], stage = [];
   if (d.stage) stage.push(nfyRun('Stage: ' + (NFY_STAGE_LABEL[d.stage] || d.stage)));
@@ -81,6 +89,7 @@ function nfyLines(d){
   }
   if (stage.length) out.push({ runs: stage });
   var vr = nfyVitalsRuns(v); if (vr.length) out.push({ runs: vr });
+  var mr = nfyMadrsRuns(d.madrs); if (mr) out.push({ runs: mr });
   var foot = [], sn = String(d.sn == null ? '' : d.sn).trim(), by = String(d.sentBy == null ? '' : d.sentBy).trim();
   if (sn) foot.push('SN: ' + sn);
   if (by) foot.push('Sent By: ' + by);
@@ -89,7 +98,10 @@ function nfyLines(d){
 }
 // mention: { name, id } or null. id is the provider's email (UPN); if Teams shows the name as plain text, use the Entra object ID instead.
 // The <at> text in the title must match the entity text exactly, which is why both come from the same string.
-function nfyCard(lines, mention){
+// ref: when set, the card gets a Start administration button (Action.Submit) whose data carries { action: 'start', ref }. Only the
+// flow's "Post adaptive card and wait for a response" can take the tap; the flow writes it to tblNotifyActions (readNotifyActions).
+function nfyStartAction(ref){ return { type: 'Action.Submit', id: 'start', title: 'Start administration', data: { action: 'start', ref: String(ref) } }; }
+function nfyCard(lines, mention, ref){
   var body = lines.map(function(l, i){
     var spacing = i === 0 ? 'Default' : 'Medium';   // room between the title and each line, with a separator line in it
     var b = l.md != null ? { type: 'TextBlock', text: l.md, wrap: true, spacing: spacing } : { type: 'RichTextBlock', inlines: l.runs, spacing: spacing };
@@ -98,6 +110,7 @@ function nfyCard(lines, mention){
     return b;
   });
   var card = { $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4', body: body };
+  if (ref) card.actions = [nfyStartAction(ref)];
   if (mention && mention.id) {
     var at = '<at>' + mention.name + '</at>';
     body[0].text = at + ' ' + body[0].text;
@@ -175,7 +188,8 @@ async function loadNotifySettings(){
     var config = {};    cfg.values.forEach(function(r){ config[String(r[0]).trim()] = r[1]; });
     function flag(key, dflt){ var v = config[key]; return (v == null || String(v).trim() === '') ? dflt : nfyTruthy(v); }
     var toggles = {   // office stage toggles, applied here; emergencies ignore them
-      stages: { initial: flag('NotifyInitial', true), recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) }
+      stages: { initial: flag('NotifyInitial', true), recheck: flag('NotifyRecheck', true), '40-min': flag('Notify40Min', true), discharge: flag('NotifyDischarge', true) },
+      startButton: flag('StartButton', false)   // off until the flow posts these cards with "wait for a response"; a plain post can't take the tap
     };
     // Provider | ChatLink | MentionName | MentionId | Enabled, found by header (older sheets: FlowUrl / Email)
     var col = {}; rts.values[0].forEach(function(h, i){ col[nfyNorm(h)] = i; });
@@ -195,7 +209,10 @@ async function loadNotifySettings(){
 //         vitals: { bp:'120/80', hr:'72', spo2:'98%', temp:'98.2' },   whatever was taken
 //         sn:     last four of the kit's serial number, shown at the bottom of the card (optional)
 //         visit:  { vitalsCount: 0, adminTime: null },                  where the patient is in the visit
-//         stage:  optional override of the computed stage }
+//         stage:  optional override of the computed stage
+//         madrs:  { authExp, expired, last } when a MADRS is due (optional)
+//         startable: true when the visit has no dose time yet: the card gets Start administration (StartButton on, not an emergency)
+//         ref:    optional id for the log row and the button; one is made when missing }
 
 // Call when vitals are saved. Returns { sent, stage, level, message } or { sent:false, stage, reason }.
 async function onVitalsSaved(data){
@@ -248,21 +265,23 @@ async function sendToProviderChat(data){
 
   var now = new Date();
   var title = nfyRender(tpl, Object.assign({ time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, data, { vitals: vitalsText, reasons: (data.reasons || []).join('; ') }));
-  var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, sn: data.sn, sentBy: data.sentBy });
+  var lines = nfyLines({ title: title, stage: data.stage, vitals: typeof data.vitals === 'object' ? data.vitals : {}, madrs: data.madrs, sn: data.sn, sentBy: data.sentBy });
   var mention = nfyMention(s, route, data.provider);
-  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
+  var ref = String(data.ref || nfyId()), start = !!(s.toggles.startButton && data.startable && level !== 'emergency');
+  // wait = true: the flow posts this one with "Post adaptive card and wait for a response" and writes the tap to tblNotifyActions.
+  var payload = { event: 'vitals', chats: route.chats, card: nfyCard(lines, mention, start ? ref : ''), message: nfyHtml(lines), mentionId: mention ? mention.id : '',
                   level: level, stage: data.stage || '', patient: data.patient || '', bay: String(data.bay || ''), clinic: data.clinic || '', sn: String(data.sn || ''),
-                  sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker' };
+                  sentBy: data.sentBy || '', sentAt: now.toISOString(), source: 'ESK Tracker', ref: ref, wait: start };
 
   // 1) Log row: drives the in-app flag + sound for provider view, and is the audit trail.
-  try { await appendNotifyLog({ provider: data.provider || '', patient: payload.patient, bay: payload.bay, stage: payload.stage, vitals: vitalsText, level: level, sentBy: payload.sentBy, sentAt: payload.sentAt }); }
+  try { await appendNotifyLog({ id: ref, provider: data.provider || '', patient: payload.patient, bay: payload.bay, stage: payload.stage, vitals: vitalsText, level: level, sentBy: payload.sentBy, sentAt: payload.sentAt }); }
   catch (e) { console.warn('notify log', e); }
 
   // 2) Teams, through the flow.
   try {
     var a = await nfyPost(s.webhook, payload);
     if (!a.ok) return { ok: false, reason: a.reason };
-    return { ok: true, message: nfyPlain(title), unconfirmed: !!a.unconfirmed };
+    return { ok: true, message: nfyPlain(title), unconfirmed: !!a.unconfirmed, ref: ref, start: start };
   } catch (e) {
     return { ok: false, reason: 'Network error: ' + e.message };
   }
@@ -286,7 +305,7 @@ async function sendNotifyTest(provider, sentBy){
 async function appendNotifyLog(p){        // Id | Provider | Patient | Bay | Stage | Vitals | Level | SentBy | SentAt | Seen
   return Excel.run(async function(ctx){
     ctx.workbook.tables.getItem(NOTIFY_TABLES.log).rows.add(null,
-      [[ nfyId(), p.provider, p.patient, p.bay, p.stage, p.vitals, p.level, p.sentBy, p.sentAt, 'FALSE' ]]);
+      [[ p.id || nfyId(), p.provider, p.patient, p.bay, p.stage, p.vitals, p.level, p.sentBy, p.sentAt, 'FALSE' ]]);
     await ctx.sync();
   });
 }
@@ -299,6 +318,43 @@ async function readNotifyLogSince(iso){
       .filter(function(v){ return v[0] && String(v[8]) > iso; })
       .map(function(v){ return { id: v[0], provider: v[1], patient: v[2], bay: String(v[3]), stage: v[4], vitals: v[5], level: v[6], sentBy: v[7], sentAt: v[8] }; });
   });
+}
+
+// ---- Start administration taps (tblNotifyActions, written by the flow). Columns are found by header.
+// Rows not applied yet: [{ row, ref, action, by, at }] (row = index in the data body). null when the table isn't there.
+async function readNotifyActions(){
+  return Excel.run(async function(ctx){
+    var t = ctx.workbook.tables.getItemOrNullObject(NOTIFY_TABLES.actions); await ctx.sync();
+    if (t.isNullObject) return null;
+    var r = t.getRange().load('values'); await ctx.sync();
+    var col = {}; r.values[0].forEach(function(h, i){ col[nfyNorm(h)] = i; });
+    function cell(v, n){ var i = col[n]; return i == null ? '' : v[i]; }
+    var out = [];
+    r.values.slice(1).forEach(function(v, i){
+      var ref = String(cell(v, 'ref') == null ? '' : cell(v, 'ref')).trim();
+      if (ref && String(cell(v, 'applied') == null ? '' : cell(v, 'applied')).trim() === '') out.push({ row: i, ref: ref, action: nfyNorm(cell(v, 'action')) || 'start', by: String(cell(v, 'by') || '').trim(), at: cell(v, 'at') });
+    });
+    return out;
+  });
+}
+// marks: [{ row, text }]  ->  Applied = text for each
+async function markNotifyActions(marks){
+  if (!marks || !marks.length) return;
+  return Excel.run(async function(ctx){
+    var t = ctx.workbook.tables.getItem(NOTIFY_TABLES.actions), h = t.getRange().load('values'); await ctx.sync();
+    var c = h.values[0].map(nfyNorm).indexOf('applied'); if (c < 0) throw new Error('tblNotifyActions has no Applied column');
+    var body = t.getDataBodyRange();
+    marks.forEach(function(m){ body.getCell(m.row, c).values = [[m.text]]; });
+    await ctx.sync();
+  });
+}
+// When the tap happened, as minutes after local midnight plus the local date (yyyy-mm-dd), or null.
+// The flow writes an ISO time (utcNow() or the response time); an Excel date-time number also works.
+function nfyActionTime(at){
+  var d = typeof at === 'number' ? new Date(Math.round((at - 25569) * 86400000) + new Date().getTimezoneOffset() * 60000) : new Date(String(at == null ? '' : at).trim());
+  if (at === '' || at == null || isNaN(d.getTime())) return null;
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  return { min: d.getHours() * 60 + d.getMinutes(), day: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) };
 }
 
 // ---- Provider view: call startProviderAlerts(myProvider, onAlert) when the user picks "I'm this provider",

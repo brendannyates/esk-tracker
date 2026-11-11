@@ -22,6 +22,9 @@
 //                            MentionName the provider's name as Teams shows it;  MentionId their email (UPN) or Entra object ID
 //   tblNotifyTemplates  I1   Event | Template | Enabled             rows: standard, emergency (the card's title line, plain text)
 //   tblNotifyLog        M1   Id | Provider | Patient | Bay | Stage | Vitals | Level | SentBy | SentAt | Seen   (written by notify.js)
+//   tblNotifyActions    X1   Ref | Action | By | At | Applied   (made when StartButton is turned on; the flow adds a row when a
+//                            provider taps Start administration, the add-in fills Applied once it has set the dose time)
+//                            StartButton (tblNotifyConfig, default FALSE): turn on only after the flow waits for a response
 //
 // Thresholds are deliberately not here; they are constants in notify.js.
 
@@ -55,6 +58,25 @@ var NOTIFY_SETTINGS_SPEC = [
       ['', '', '', '', '', '', '', '', '', '']           // blank starter row; notify.js skips rows with no Id
   ] }
 ];
+
+// Not in NOTIFY_SETTINGS_SPEC on purpose: older workbooks would then show "Missing" and hide the Teams settings until set up again.
+var NOTIFY_ACTIONS_SPEC = { name: 'tblNotifyActions', anchor: 'X1', columns: ['Ref', 'Action', 'By', 'At', 'Applied'] };
+// Creates tblNotifyActions on the Settings sheet if it's missing. Returns { created, blocked } (blocked: the cells hold something).
+async function ensureNotifyActions(){
+  return Excel.run(async function(ctx){
+    var t = ctx.workbook.tables.getItemOrNullObject(NOTIFY_ACTIONS_SPEC.name), sheet = ctx.workbook.worksheets.getItemOrNullObject(NOTIFY_SETTINGS_SHEET);
+    await ctx.sync();
+    if (!t.isNullObject) return { created: false };
+    if (sheet.isNullObject) return { created: false, blocked: 'There is no Settings sheet. Set up Teams notifications first.' };
+    var spec = NOTIFY_ACTIONS_SPEC, values = [spec.columns, spec.columns.map(function(){ return ''; })], address = nfyRangeFrom(spec.anchor, 2, spec.columns.length);
+    var target = sheet.getRange(address); target.load('values'); await ctx.sync();
+    if (target.values.some(function(r){ return r.some(function(v){ return v !== '' && v != null; }); })) return { created: false, blocked: 'Settings ' + address + ' already holds something. Clear it, then turn the button on again.' };
+    target.values = values;
+    var table = sheet.tables.add(address, true); table.name = spec.name;
+    await ctx.sync();
+    return { created: true };
+  });
+}
 
 // The group chat id out of whatever was pasted: the chat's Teams web address (encoded or not) or the id itself. '' if none.
 function nfyChatId(v){
