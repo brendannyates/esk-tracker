@@ -7,8 +7,8 @@
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script src="notify-settings.js?v=61"></script>
 <script src="notify.js?v=61"></script>
-<link rel="stylesheet" href="dev-updates.css?v=59">
-<script src="dev-updates.js?v=59"></script>
+<link rel="stylesheet" href="dev-updates.css?v=62">
+<script src="dev-updates.js?v=62"></script>
 <style>
 /* ===== foundation: fonts ===== */
 @font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2")}
@@ -73,7 +73,7 @@ h3:first-child{margin-top:0}
 .rail .brand{display:flex;flex-direction:column;align-items:flex-start;gap:2px;flex:none;min-width:0;padding:4px 10px 18px;font-weight:600;letter-spacing:0}
 .rail .brand .mlogo{height:40px;max-width:100%;margin-bottom:10px;border-radius:6px}
 .rail .brand .bsep,.rail .brand .dot{display:none}
-.rail .brand b,.rail .brand strong,.rail .brand>span{display:block;font-size:17px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.rail .brand .bt b,.rail .brand strong,.rail .brand>span:not(.du-home){display:block;font-size:17px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
 .rail .brand small,.rail .brand .bt>span{display:block;font-size:13px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .rail .brand .bt{min-width:0;max-width:100%}
 .nav{display:flex;flex-direction:column;gap:2px}
@@ -106,10 +106,14 @@ h3:first-child{margin-top:0}
 /* both symbols whole, the same size as the toolbar icons beside them (19px; 20px in ESK Bays) */
 .tbtn.theme svg{width:19px;height:19px}
 .app.prov .btn.ico.theme{width:auto;padding:0 8px}.app.prov .btn.ico.theme svg{width:20px;height:20px}
-/* full screen only: the Dev Update bell's home (dev-updates.js), right of the logo and name, level with the page title */
-.rail .brand{position:relative}
-.rail .brand .du-home{position:absolute;right:-6px;top:-5px}
-.pbar h1 .du-home{vertical-align:middle;margin:-12px 0 -10px 10px}
+/* full screen only: the Dev Update bell (dev-updates.js) sits inside .du-home right after the name, centred on it; the 20px
+   icon starts 16px after the name's widest line. Negative margins keep the 44px hit area from moving the name or what's below. */
+.rail .brand{display:grid;grid-template-columns:minmax(0,auto);justify-content:start;justify-items:start;align-items:center;gap:2px 6px}
+.rail .brand .mlogo{grid-area:1/1}.rail .brand .bt{grid-area:2/1}   /* the logo above, the name below; the bell (full screen only) adds a second column */
+.rail .brand .du-home{grid-area:2/2;margin:-10px -24px -10px -2px}   /* -24px: its hit area may use the brand and rail padding, up to the rail edge, so the second line keeps its room */
+.pbar h1 .du-home{vertical-align:middle;margin:-13px 0 -7px 4px}   /* 3px higher than middle: centred on the title text */
+/* the bell and its history sit inside the name and title: don't let their text styles (bold, nowrap, 17px) leak in */
+.rail .brand .du-home,.pbar h1 .du-home{font-size:14px;font-weight:400;letter-spacing:normal;line-height:1.45;white-space:normal;color:var(--ink)}
 .rtools{display:none}
 .pres{position:relative;display:flex;align-items:center}.pres:empty{display:none}.rail .sec .pres-chip{display:none}
 .pres-btn{display:flex;align-items:center;height:44px;padding:0 6px;border:0;border-radius:22px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
@@ -145,12 +149,12 @@ main>.alert{margin:0 0 16px}
 @media (max-width:899px){main>.alert{margin-bottom:12px}.app.full .rail{padding-bottom:8px}.app.full main{padding-top:12px}}
 @media (max-width:899px){
   .rail{height:auto;overflow:visible;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 12px 0;background:var(--surface3);box-shadow:0 1px 0 var(--line)}
-  .rail .brand{order:0;flex:1 0 auto;max-width:100%;flex-direction:row;align-items:center;gap:8px;padding:0;min-width:0}
+  .rail .brand{order:0;flex:1 0 auto;max-width:100%;display:flex;flex-direction:row;align-items:center;gap:8px;padding:0;min-width:0}
   .rail .brand .mlogo{height:26px;margin:0;flex:none}
   .rail .brand .bt{display:flex;align-items:baseline;gap:8px;min-width:0}
-  .rail .brand b,.rail .brand strong,.rail .brand>span{font-size:15px}
+  .rail .brand .bt b,.rail .brand strong,.rail .brand>span:not(.du-home){font-size:15px}
   .rail .brand small,.rail .brand .bt>span{flex:0 1 auto;min-width:0}
-  .rail .brand .du-home{position:static;margin:-9px -6px -9px auto}
+  .rail .brand .du-home{margin:-10px 0 -10px -4px}
   .rail .sec{order:1;flex:0 1 auto;min-width:0;flex-direction:row;align-items:center;gap:4px;margin:0;padding:0;overflow-x:auto;scrollbar-width:none}
   .rail .sec>button,.rail .sec>.btn{width:auto;flex:none;min-height:36px;padding:0 10px;font-size:14px}
   .rail .conn{order:9;padding:0 4px;gap:0}
@@ -6439,8 +6443,9 @@ document.addEventListener('scroll', e => { if (e.target?.classList?.contains('na
 window.addEventListener('resize', navArrows);
 // Toolbar, top right: refresh, full screen, light / dark ("sun / moon": the right one is the mode a press switches to; they swap
 // places on a change). Labels are what a press does (data-tip). The Dev Update bell (dev-updates.js) shows only in full screen,
-// on DU_HOME right of the rail name (ESK Bays: right of its title); none in the pane, loading or name screen. No toolbar slot.
-const DU_HOME = '<span class="du-home" aria-hidden="true"></span>';
+// inside DU_HOME right after the rail name (ESK Bays: after its title) and stays there; none in the pane, loading or name screen.
+// No aria-hidden: the bell button lives inside it.
+const DU_HOME = '<span class="du-home"></span>';
 const NARROW = window.matchMedia ? matchMedia('(max-width:899px)') : { matches: false };
 NARROW.addEventListener?.('change', () => { if (S.loaded) render(); });
 const FULL_IC = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
