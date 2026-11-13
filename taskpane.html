@@ -1369,11 +1369,25 @@ const ELIG_BEN_MAP = [['Per Nbr', 'pernbr'], ['Sohar Payer', 'soharpayer'], ['Pl
   ['Estimate Note', 'estimatenote']];
 // Feed MRN match: digits only, leading zeros stripped ("00482913" = 482913).
 const eligKey = v => mrnKey(v).replace(/\D/g, '').replace(/^0+/, '');
+// The Sohar webhook's table rows ({ csv, rows } from the Eligibility feed flow) appended to the history CSV as text, so the
+// parser below reads one file. A Sohar ID the history already has is skipped (the rotation's row carries the estimate); among
+// webhook duplicates the newest Pulled At wins; Excel's blank first table row (no Sohar ID) is dropped.
+const FEED_MERGE_COLS = ["Pulled At","LASFIR","MRN","Per Nbr","Clinic","Kind","Sohar Status","Sohar Payer","Plan","Network","Coverage Level","Coverage Start","Coverage End","Copay","Coinsurance","Deductible","Deductible Remaining","Deductible Status","OOP Max","OOP Remaining","OOP Status","Benefit Flag","Sohar ID","Sohar Link","Related Sohar IDs","Projected Patient Responsibility","Estimate Note","Source"];
+function feedMergeRows(csvText, rows){
+  const aoa = parseCSV(String(csvText ?? '').replace(/^﻿/, ''));
+  const hdr = aoa.length && aoa[0].some(v => String(v ?? '').trim()) ? aoa[0].map(v => String(v ?? '').trim()) : FEED_MERGE_COLS.slice();
+  const idCol = hdr.indexOf('Sohar ID'), have = new Set(aoa.slice(1).map(r => String((r || [])[idCol] ?? '').trim()).filter(Boolean));
+  const when = o => Date.parse(o && o['Pulled At']) || 0, best = new Map();
+  for (const o of rows || []) { const id = String((o && o['Sohar ID']) ?? '').trim(); if (!id || have.has(id)) continue; const b = best.get(id); if (!b || when(o) >= when(b)) best.set(id, o); }
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const body = aoa.length ? aoa.slice(1) : [];
+  return [hdr, ...body, ...[...best.values()].map(o => hdr.map(h => String(o[h] ?? '').trim()))].map(r => r.map(q).join(',')).join('\r\n');
+}
 // The flow's answer: the CSV text itself, or JSON wrapping it as a string or { body | csv | content }. '' if there's nothing to read.
 function feedText(raw){
   const s = String(raw ?? '').replace(/^﻿/, '').trim();
   if (!/^[{"]/.test(s)) return s;
-  try { const j = JSON.parse(s); if (typeof j === 'string') return j; for (const k of ['body', 'csv', 'content']) if (j && typeof j[k] === 'string') return j[k]; } catch {}
+  try { const j = JSON.parse(s); if (typeof j === 'string') return j; if (j && Array.isArray(j.rows)) return feedMergeRows(typeof j.csv === 'string' ? j.csv : '', j.rows); for (const k of ['body', 'csv', 'content']) if (j && typeof j[k] === 'string') return j[k]; } catch {}
   return '';
 }
 // Rows of the file (first row the header) → { header, rows } with every cell trimmed text, or null if it isn't the feed.
